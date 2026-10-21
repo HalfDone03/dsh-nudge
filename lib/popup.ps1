@@ -366,6 +366,34 @@ function New-Card {
     }
     [void]$body.Children.Add($header)
 
+    # The one line that matters: condensed error, the pending decision, or the task name.
+    $headlineText = [string]$Payload.headline
+    if (-not [string]::IsNullOrWhiteSpace($headlineText)) {
+        $headlineBlock = New-Text -Text $headlineText -Size 13 -Color '#F7FFFFFF' -Weight 'SemiBold'
+        $headlineBlock.TextWrapping = 'Wrap'
+        $headlineBlock.TextTrimming = 'CharacterEllipsis'
+        $headlineBlock.LineHeight = 17
+        $headlineBlock.LineStackingStrategy = 'BlockLineHeight'
+        $headlineBlock.MaxHeight = 34
+        $headlineBlock.HorizontalAlignment = 'Left'
+        $headlineBlock.Margin = New-Object System.Windows.Thickness 0,7,0,0
+        $headlineTint = [string]$Payload.headlineTint
+        if ([string]::IsNullOrWhiteSpace($headlineTint)) {
+            [void]$body.Children.Add($headlineBlock)
+        } else {
+            $headlineFrame = New-Object System.Windows.Controls.Border
+            $headlineFrame.Background = New-Brush $headlineTint
+            $headlineFrame.CornerRadius = New-Object System.Windows.CornerRadius 6
+            $headlineFrame.Padding = New-Object System.Windows.Thickness 9,6,9,6
+            $headlineFrame.Margin = New-Object System.Windows.Thickness 0,9,0,0
+            $headlineFrame.SnapsToDevicePixels = $true
+            $headlineBlock.Margin = New-Object System.Windows.Thickness 0
+            $headlineBlock.VerticalAlignment = 'Top'
+            $headlineFrame.Child = $headlineBlock
+            [void]$body.Children.Add($headlineFrame)
+        }
+    }
+
     # Which project / session this batch came from, one muted line under the header.
     $contextText = [string]$Payload.context
     if (-not [string]::IsNullOrWhiteSpace($contextText)) {

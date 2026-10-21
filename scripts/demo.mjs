@@ -27,7 +27,22 @@ const SCENARIOS = {
 	},
 	failed: {
 		title: "执行失败",
-		events: [["turn/end", { reason: { kind: "error", error: { code: "BUILD_FAILED", message: "vite build 退出码 1" } } }]],
+		events: [
+			[
+				"turn/end",
+				{
+					reason: {
+						kind: "error",
+						error: {
+							code: "BUILD_FAILED",
+							// 故意给一段又长又带堆栈的错误，验证卡片只留一行摘要
+							message:
+								"vite build 失败：Could not resolve entry module \"src/main.tsx\"\n    at async PluginContainer.resolveId (file:///D:/repo/node_modules/vite/dist/node/chunks/dep.js:1284:15)\n    at async TransformContext.resolve (file:///D:/repo/node_modules/vite/dist/node/chunks/dep.js:4120:19)",
+						}
+					}
+				}
+			]
+		],
 		note: "回合异常结束"
 	}
 };

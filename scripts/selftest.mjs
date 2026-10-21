@@ -122,8 +122,10 @@ check("dispose 后 helper 退出（无孤儿）", exited,
 mkdirSync(shotDir, { recursive: true });
 const payloads = {
 	completed: { kind: "completed", label: "任务完成", accent: "#2ECC71", glyph: "\u2714", count: 1,
+		headline: "写周报",
+		headlineTint: "",
 		context: "dsh-nudge",
-		items: [{ kind: "completed", title: "写周报", detail: "回合已完成", at: "21:18", count: 1, rowProject: "" }] },
+		items: [] },
 	needs_choice: { kind: "needs_choice", label: "需要你选择", accent: "#F5A623", glyph: "?", count: 2,
 		context: "",
 		items: [
@@ -131,8 +133,10 @@ const payloads = {
 			{ kind: "completed", title: "跑测试", detail: "回合已完成", at: "21:17", count: 1, rowProject: "web-console" }
 		] },
 	failed: { kind: "failed", label: "执行失败", accent: "#E74C3C", glyph: "\u2716", count: 1,
-		context: "dsh-nudge",
-		items: [{ kind: "failed", title: "构建前端", detail: "exit code 1", at: "21:20", count: 1, rowProject: "" }] }
+		headline: "TypeError: Cannot read property 'stdout' of undefined",
+		headlineTint: "#24E74C3C",
+		context: "dsh-nudge · 构建前端",
+		items: [] }
 };
 
 /**
