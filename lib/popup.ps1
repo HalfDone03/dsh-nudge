@@ -25,7 +25,8 @@ param(
     [string]$DsProcess = 'DeepSeek Harness',
     [string]$Snapshot = '',
     [string]$PayloadFile = '',
-    [string]$PayloadB64 = ''
+    [string]$PayloadB64 = '',
+    [int]$SnapshotWidth = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,6 +43,10 @@ Add-Type -Namespace Native -Name Win -MemberDefinition @'
 [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
 [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
 [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+[StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+[DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+[DllImport("user32.dll")] public static extern bool ReleaseCapture();
+[DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 '@
 
 try { [void][Native.Win]::SetProcessDPIAware() } catch { }
@@ -296,7 +301,12 @@ function New-Card {
     $items = @($Payload.items | Where-Object { $null -ne $_ })
 
     $card = New-Object System.Windows.Controls.Border
-    $card.Width = $Width
+    if ($Width -gt 0) {
+        $card.Width = $Width
+    } else {
+        $card.HorizontalAlignment = 'Stretch'
+        $card.VerticalAlignment = 'Stretch'
+    }
     $card.CornerRadius = New-Object System.Windows.CornerRadius $script:CardRadius
     $card.Background = New-VerticalGradient -Top $script:CardTop -Bottom $script:CardBottom
     $card.BorderBrush = New-Brush $script:CardEdge
@@ -489,7 +499,8 @@ if (-not [string]::IsNullOrWhiteSpace($Snapshot)) {
         Write-Status @{ type = 'error'; message = 'snapshot: no payload' }
         exit 2
     }
-    $card = New-Card $payload
+    $cardWidth = if ($SnapshotWidth -gt 0) { $SnapshotWidth } else { $script:CardWidth }
+    $card = New-Card $payload -Width $cardWidth
     $size = Measure-Card $card
 
     # Snapshot output is meant to be published, so it must never contain desktop
@@ -542,12 +553,19 @@ if ($null -ne $payload) {
     $window.SnapsToDevicePixels = $true
     $window.ShowInTaskbar = $false
     $window.Topmost = $true
-    $window.ResizeMode = 'NoResize'
+    $window.ResizeMode = 'CanResize'
     $window.ShowActivated = $false
     $window.WindowStartupLocation = 'Manual'
     $window.SizeToContent = 'Manual'
+    $window.MinWidth = 300
+    $window.MinHeight = 118
     $window.Width = $size.Width
     $window.Height = $size.Height
+    # The card follows the window from here on: no fixed width, content reflows
+    # into whatever space the user drags out.
+    $card.Width = [double]::NaN
+    $card.HorizontalAlignment = 'Stretch'
+    $card.VerticalAlignment = 'Stretch'
     $window.Content = $card
 
     $work = [System.Windows.SystemParameters]::WorkArea
@@ -561,7 +579,67 @@ if ($null -ne $payload) {
     $card.Add_MouseEnter({ try { $card.BorderBrush = New-Brush $script:CardEdgeHover } catch { } })
     $card.Add_MouseLeave({ try { $card.BorderBrush = New-Brush $script:CardEdge } catch { } })
 
+    # A transparent window has no non-client area, so the resize gesture has to be
+    # handed to the system ourselves: press on an edge -> ReleaseCapture + a
+    # WM_NCLBUTTONDOWN with the matching HT code starts the native sizing loop.
+    $script:edgeHit = {
+            param($point)
+            $edge = 8
+            $width = $window.ActualWidth
+            $height = $window.ActualHeight
+            $left = $point.X -lt $edge
+            $right = $point.X -gt ($width - $edge)
+            $top = $point.Y -lt $edge
+            $bottom = $point.Y -gt ($height - $edge)
+            if ($left -and $top) { return 13 }
+            if ($right -and $top) { return 14 }
+            if ($left -and $bottom) { return 16 }
+            if ($right -and $bottom) { return 17 }
+            if ($left) { return 10 }
+            if ($right) { return 11 }
+            if ($top) { return 12 }
+            if ($bottom) { return 15 }
+            return 0
+        }
+
+    $window.Add_PreviewMouseMove({
+            param($sender, $eventArgs)
+            try {
+                $code = & $script:edgeHit $eventArgs.GetPosition($window)
+                $cursor = [System.Windows.Input.Cursors]::Arrow
+                if ($code -eq 13 -or $code -eq 17) { $cursor = [System.Windows.Input.Cursors]::SizeNWSE }
+                elseif ($code -eq 14 -or $code -eq 16) { $cursor = [System.Windows.Input.Cursors]::SizeNESW }
+                elseif ($code -eq 10 -or $code -eq 11) { $cursor = [System.Windows.Input.Cursors]::SizeWE }
+                elseif ($code -eq 12 -or $code -eq 15) { $cursor = [System.Windows.Input.Cursors]::SizeNS }
+                if ($card.Cursor -ne $cursor) { $card.Cursor = $cursor }
+            } catch { }
+        })
+
+    $window.Add_PreviewMouseLeftButtonDown({
+            param($sender, $eventArgs)
+            try {
+                $code = & $script:edgeHit $eventArgs.GetPosition($window)
+                if ($code -eq 0) { return }
+                $eventArgs.Handled = $true
+                $handle = (New-Object System.Windows.Interop.WindowInteropHelper $window).Handle
+                [void][Native.Win]::ReleaseCapture()
+                [void][Native.Win]::SendMessage($handle, 0x00A1, [IntPtr]$code, [IntPtr]::Zero)
+                try { $timer.Stop(); $timer.Start() } catch { }
+            } catch { }
+        })
+
+    # Press and drag moves the card; a press that does not move is a click and
+    # keeps the original behaviour (focus the harness, copy the batch, close).
     $window.Add_MouseLeftButtonDown({
+            try { $timer.Stop() } catch { }
+            $originLeft = $window.Left
+            $originTop = $window.Top
+            try { $window.DragMove() } catch { }
+            $moved = [Math]::Abs($window.Left - $originLeft) + [Math]::Abs($window.Top - $originTop)
+            if ($moved -gt 4) {
+                try { $timer.Stop(); $timer.Start() } catch { }
+                return
+            }
             try { [void](Focus-Ds) } catch { }
             try {
                 if (-not [string]::IsNullOrWhiteSpace($script:lastSummary)) {
@@ -581,8 +659,14 @@ if ($null -ne $payload) {
     $app = New-Object System.Windows.Application
     $app.ShutdownMode = 'OnExplicitShutdown'
 
+    $window.Add_SizeChanged({
+            if (-not [bool]$script:cardReady) { return }
+            try { $timer.Stop(); $timer.Start() } catch { }
+        })
+
     $window.Add_Loaded({
             Show-CardWindow -Window $window
+            $script:cardReady = $true
             try {
                 $fade = New-Object System.Windows.Media.Animation.DoubleAnimation 0, 1, ([System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(180)))
                 $window.BeginAnimation([System.Windows.Window]::OpacityProperty, $fade)
