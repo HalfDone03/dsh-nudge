@@ -1,0 +1,83 @@
+{
+  "format": 1,
+  "title": {
+    "en": "DSH Nudge",
+    "zh": "DSH 轻推提醒"
+  },
+  "description": {
+    "en": "Self-hosted index for the DSH Nudge plugin.",
+    "zh": "DSH 轻推提醒插件的自建索引。"
+  },
+  "metadata": {
+    "categories": {
+      "notify": {
+        "title": {
+          "en": "Notifications & Integrations",
+          "zh": "通知与集成"
+        }
+      }
+    },
+    "labels": {
+      "windows": {
+        "title": {
+          "en": "Windows only",
+          "zh": "仅 Windows"
+        }
+      },
+      "no-focus-steal": {
+        "title": {
+          "en": "Never steals focus",
+          "zh": "不抢焦点"
+        }
+      }
+    }
+  },
+  "plugins": [
+    {
+      "name": "dsh-nudge",
+      "title": {
+        "en": "DSH Nudge",
+        "zh": "DSH 轻推提醒"
+      },
+      "description": {
+        "en": "Bottom-right desktop card when a session turn completes, needs a choice (approval / question), or fails. Topmost, never steals focus, auto-dismisses, click to jump back to the harness and copy the batch to the clipboard.",
+        "zh": "会话回合完成、需要你选择（审批 / 提问）或执行失败时，在 Windows 桌面右下角弹一张置顶卡片：不抢焦点、自动消失，点击回到 DSH 并把这批提醒复制到剪贴板。"
+      },
+      "author": "HalfDone",
+      "homepage": "https://github.com/HalfDone03/dsh-nudge#readme",
+      "repository": {
+        "url": "https://github.com/HalfDone03/dsh-nudge"
+      },
+      "metadata": {
+        "category": "notify",
+        "keywords": [
+          "notification",
+          "desktop",
+          "toast",
+          "alert",
+          "提醒",
+          "弹窗",
+          "通知"
+        ],
+        "labels": [
+          "windows",
+          "no-focus-steal"
+        ]
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1792620000,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/HalfDone03/dsh-nudge",
+            "commit": "bf6dfa80f3c42052f20b7a3da2a715533332215c"
+          },
+          "engines": {
+            "dsh": ">=0.2.1-rc.2"
+          }
+        }
+      ]
+    }
+  ]
+}
