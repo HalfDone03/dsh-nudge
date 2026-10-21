@@ -240,7 +240,32 @@ function New-ItemRow {
     $title.TextTrimming = 'CharacterEllipsis'
     $title.TextWrapping = 'NoWrap'
     $title.HorizontalAlignment = 'Left'
-    [void]$stack.Children.Add($title)
+    # When several projects are queued at once, each row carries its own project chip.
+    $rowProject = [string]$Item.rowProject
+    $titleLine = New-Object System.Windows.Controls.Grid
+    $chipColumn = New-Object System.Windows.Controls.ColumnDefinition
+    $chipColumn.Width = [System.Windows.GridLength]::Auto
+    $nameColumn = New-Object System.Windows.Controls.ColumnDefinition
+    $nameColumn.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+    [void]$titleLine.ColumnDefinitions.Add($chipColumn)
+    [void]$titleLine.ColumnDefinitions.Add($nameColumn)
+    if (-not [string]::IsNullOrWhiteSpace($rowProject)) {
+        $chip = New-Object System.Windows.Controls.Border
+        $chip.Height = 16
+        $chip.CornerRadius = New-Object System.Windows.CornerRadius 4
+        $chip.Background = New-Brush '#1FFFFFFF'
+        $chip.Padding = New-Object System.Windows.Thickness 5,0,5,0
+        $chip.VerticalAlignment = 'Center'
+        $chip.Margin = New-Object System.Windows.Thickness 0,1,7,0
+        $chipText = New-Text -Text $rowProject -Size 9.5 -Color '#A6FFFFFF'
+        $chipText.TextTrimming = 'CharacterEllipsis'
+        $chip.Child = $chipText
+        [System.Windows.Controls.Grid]::SetColumn($chip, 0)
+        [void]$titleLine.Children.Add($chip)
+    }
+    [System.Windows.Controls.Grid]::SetColumn($title, 1)
+    [void]$titleLine.Children.Add($title)
+    [void]$stack.Children.Add($titleLine)
 
     $detailText = [string]$Item.detail
     if (-not [string]::IsNullOrWhiteSpace($detailText)) {
@@ -340,6 +365,23 @@ function New-Card {
         [void]$header.Children.Add($headTime)
     }
     [void]$body.Children.Add($header)
+
+    # Which project / session this batch came from, one muted line under the header.
+    $contextText = [string]$Payload.context
+    if (-not [string]::IsNullOrWhiteSpace($contextText)) {
+        $contextLine = New-Object System.Windows.Controls.StackPanel
+        $contextLine.Orientation = 'Horizontal'
+        $contextLine.Margin = New-Object System.Windows.Thickness 0,6,0,0
+        $folderIcon = New-Text -Text ([string][char]0xE8B7) -Size 10 -Color $script:TextFaint
+        $folderIcon.FontFamily = New-Object System.Windows.Media.FontFamily $script:IconFont
+        $folderIcon.Margin = New-Object System.Windows.Thickness 0,0,5,1
+        [void]$contextLine.Children.Add($folderIcon)
+        $contextLabel = New-Text -Text $contextText -Size 10.5 -Color $script:TextFaint
+        $contextLabel.TextTrimming = 'CharacterEllipsis'
+        $contextLabel.TextWrapping = 'NoWrap'
+        [void]$contextLine.Children.Add($contextLabel)
+        [void]$body.Children.Add($contextLine)
+    }
 
     if ($items.Count -gt 0) {
         $divider = New-Object System.Windows.Controls.Border

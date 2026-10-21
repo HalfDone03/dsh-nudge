@@ -41,7 +41,7 @@ ALL PASS (23 checks)
 & $node .\scripts\selftest.mjs   # 已经包含这一步，产物在 screenshots\*.png
 ```
 
-期望：`completed.png` 436×177、`needs_choice.png` 436×237、`failed.png` 436×177（412 = 卡片 384 宽 + 两侧 14px 阴影留白，再各加 12px 底色留白），均 >4KB。
+期望：`completed.png` 436×199、`needs_choice.png` 436×237、`failed.png` 436×199（412 = 卡片 384 宽 + 两侧 14px 阴影留白，再各加 12px 底色留白），均 >4KB。
 
 ## 3. 卡片图内容自证（纯像素，不需要屏幕）
 
@@ -69,9 +69,9 @@ foreach ($f in 'completed','needs_choice','failed') {
 期望（实测）：
 
 ```
-completed:    436x177 distinct=145 dark=19044 accent=104 text=109
-needs_choice: 436x237 distinct=202 dark=25231 accent=183 text=188
-failed:       436x177 distinct=147 dark=19028 accent=136 text=125
+completed:    436x199 distinct=157 dark=21378 accent=126 text=109
+needs_choice: 436x237 distinct=229 dark=25107 accent=183 text=248
+failed:       436x199 distinct=159 dark=21362 accent=158 text=125
 ```
 
 判定标准：

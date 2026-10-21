@@ -76,7 +76,7 @@ const { dispose } = createPlugin(ctx, { staySeconds: 6, mergeWindowMs: 400 }, {
  * @param {string} sessionId 会话 id
  */
 function emit(type, data, sessionId) {
-	const session = { header: { id: sessionId, title: "假会话 · 演示" } };
+	const session = { header: { id: sessionId, title: "修复弹窗圆角", cwd: process.cwd() } };
 	for (const handler of handlers.get("session/event") ?? []) handler(session, { type, data });
 }
 
@@ -91,7 +91,7 @@ for (const key of picked) {
 	for (const [type, data] of scenario.events) {
 		if (type === "approval/request") {
 			for (const handler of handlers.get("approval/request") ?? []) {
-				handler({ agent: { id: sessionId, session: { header: { id: sessionId, title: "假会话 · 审批" } } }, command: "npm install --production" },
+				handler({ agent: { id: sessionId, session: { header: { id: sessionId, title: "部署到生产环境", cwd: process.cwd() } } }, command: "npm install --production" },
 					() => undefined);
 			}
 			continue;
