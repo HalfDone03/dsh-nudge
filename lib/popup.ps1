@@ -85,7 +85,23 @@ function Resolve-Payload {
 
 $script:CardWidth = 384
 $script:ShadowPad = 14
+$script:CardRadius = 12
 $script:FontStack = 'Microsoft YaHei UI, Microsoft YaHei, Segoe UI, Arial'
+$script:IconFont = 'Segoe MDL2 Assets'
+
+# Palette: one dark surface with a slight vertical lift, plus a four-step
+# text ramp. Every colour below is referenced from here so the card stays
+# consistent if a token changes.
+$script:CardTop = '#F8212530'
+$script:CardBottom = '#F8181B24'
+$script:CardEdge = '#2BFFFFFF'
+$script:CardEdgeHover = '#5CFFFFFF'
+$script:TextPrimary = '#FFFFFFFF'
+$script:TextBody = '#F0FFFFFF'
+$script:TextMuted = '#8AFFFFFF'
+$script:TextFaint = '#5CFFFFFF'
+$script:TextGhost = '#4DFFFFFF'
+$script:RuleColor = '#1FFFFFFF'
 
 function New-Brush {
     param([string]$Hex)
@@ -108,6 +124,10 @@ function New-Text {
     $block.FontWeight = $Weight
     $block.Foreground = New-Brush $Color
     $block.VerticalAlignment = 'Center'
+    $block.SnapsToDevicePixels = $true
+    $block.UseLayoutRounding = $true
+    [System.Windows.Media.TextOptions]::SetTextFormattingMode($block, [System.Windows.Media.TextFormattingMode]::Display)
+    [System.Windows.Media.TextOptions]::SetTextRenderingMode($block, [System.Windows.Media.TextRenderingMode]::ClearType)
     return $block
 }
 
@@ -129,30 +149,61 @@ function Measure-Card {
     }
 }
 
+function New-VerticalGradient {
+    param([string]$Top, [string]$Bottom)
+    $brush = New-Object System.Windows.Media.LinearGradientBrush
+    $brush.StartPoint = New-Object System.Windows.Point 0.5, 0
+    $brush.EndPoint = New-Object System.Windows.Point 0.5, 1
+    $topStop = New-Object System.Windows.Media.GradientStop ([System.Windows.Media.ColorConverter]::ConvertFromString($Top)), 0
+    $bottomStop = New-Object System.Windows.Media.GradientStop ([System.Windows.Media.ColorConverter]::ConvertFromString($Bottom)), 1
+    [void]$brush.GradientStops.Add($topStop)
+    [void]$brush.GradientStops.Add($bottomStop)
+    $brush.Freeze()
+    return $brush
+}
+
 function New-Badge {
     param([string]$Accent, [string]$Glyph)
-    $ring = New-Object System.Windows.Controls.Border
-    $ring.Width = 26
-    $ring.Height = 26
-    $ring.CornerRadius = New-Object System.Windows.CornerRadius 13
-    $ring.Background = New-Brush $Accent
-    $ring.VerticalAlignment = 'Center'
-    $ring.Margin = New-Object System.Windows.Thickness 0,0,10,0
-    $glyphText = New-Text -Text $Glyph -Size 13.5 -Color '#FFFFFFFF' -Weight 'Bold'
+    # A soft tinted disc instead of a solid accent blob: the glyph keeps the
+    # accent colour, so the card carries less visual weight.
+    $disc = New-Object System.Windows.Controls.Border
+    $disc.Width = 22
+    $disc.Height = 22
+    $disc.CornerRadius = New-Object System.Windows.CornerRadius 11
+    $disc.Background = New-Brush ('#2E' + $Accent.Substring(1))
+    $disc.VerticalAlignment = 'Center'
+    $disc.Margin = New-Object System.Windows.Thickness 0,0,10,0
+    $disc.SnapsToDevicePixels = $true
+
+    $glyphText = $null
+    if ($Glyph -eq ([string][char]0x2713) -or $Glyph -eq ([string][char]0x2714)) {
+        # Check mark from the icon font keeps the same optical weight as the
+        # punctuation glyphs used by the other two states.
+        $glyphText = New-Text -Text ([string][char]0xE73E) -Size 11 -Color $Accent -Weight 'Normal'
+        $glyphText.FontFamily = New-Object System.Windows.Media.FontFamily $script:IconFont
+    } else {
+        $glyphText = New-Text -Text $Glyph -Size 13 -Color $Accent -Weight 'Bold'
+    }
     $glyphText.HorizontalAlignment = 'Center'
-    $ring.Child = $glyphText
-    return $ring
+    $glyphText.TextAlignment = 'Center'
+    $glyphText.Margin = New-Object System.Windows.Thickness 0,0,0,1
+    $disc.Child = $glyphText
+    return $disc
 }
 
 function New-CountPill {
     param([int]$Count, [string]$Accent)
     $pill = New-Object System.Windows.Controls.Border
-    $pill.CornerRadius = New-Object System.Windows.CornerRadius 8
-    $pill.Background = New-Brush ('#2E' + $Accent.Substring(1))
-    $pill.Padding = New-Object System.Windows.Thickness 6,1,6,1
+    $pill.Height = 17
+    $pill.CornerRadius = New-Object System.Windows.CornerRadius 8.5
+    $pill.Background = New-Brush ('#24' + $Accent.Substring(1))
+    $pill.BorderBrush = New-Brush ('#38' + $Accent.Substring(1))
+    $pill.BorderThickness = New-Object System.Windows.Thickness 1
+    $pill.Padding = New-Object System.Windows.Thickness 7,0,7,0
     $pill.Margin = New-Object System.Windows.Thickness 8,0,0,0
     $pill.VerticalAlignment = 'Center'
-    $pill.Child = (New-Text -Text ([string]$Count) -Size 10.5 -Color '#F2FFFFFF' -Weight 'Bold')
+    $pill.SnapsToDevicePixels = $true
+    $pill.Child = (New-Text -Text ([string]$Count) -Size 10 -Color $Accent -Weight 'SemiBold')
     return $pill
 }
 
@@ -160,7 +211,7 @@ function New-ItemRow {
     param($Item)
     $accent = Get-KindAccent ([string]$Item.kind)
     $row = New-Object System.Windows.Controls.Grid
-    $row.Margin = New-Object System.Windows.Thickness 0,9,0,0
+    $row.Margin = New-Object System.Windows.Thickness 0,10,0,0
     $colDot = New-Object System.Windows.Controls.ColumnDefinition
     $colDot.Width = [System.Windows.GridLength]::Auto
     $colText = New-Object System.Windows.Controls.ColumnDefinition
@@ -176,7 +227,7 @@ function New-ItemRow {
     $dot.Height = 6
     $dot.Fill = New-Brush $accent
     $dot.VerticalAlignment = 'Top'
-    $dot.Margin = New-Object System.Windows.Thickness 1,7,10,0
+    $dot.Margin = New-Object System.Windows.Thickness 1,6,9,0
     [System.Windows.Controls.Grid]::SetColumn($dot, 0)
     [void]$row.Children.Add($dot)
 
@@ -185,7 +236,7 @@ function New-ItemRow {
 
     $suffix = ''
     if ([int]$Item.count -gt 1) { $suffix = "  x$([int]$Item.count)" }
-    $title = New-Text -Text ("$($Item.title)$suffix") -Size 12.5 -Color '#F2FFFFFF' -Weight 'SemiBold'
+    $title = New-Text -Text ("$($Item.title)$suffix") -Size 12 -Color $script:TextBody -Weight 'SemiBold'
     $title.TextTrimming = 'CharacterEllipsis'
     $title.TextWrapping = 'NoWrap'
     $title.HorizontalAlignment = 'Left'
@@ -193,17 +244,19 @@ function New-ItemRow {
 
     $detailText = [string]$Item.detail
     if (-not [string]::IsNullOrWhiteSpace($detailText)) {
-        $detail = New-Text -Text $detailText -Size 11.5 -Color '#94FFFFFF'
+        $detail = New-Text -Text $detailText -Size 11 -Color $script:TextMuted
         $detail.TextWrapping = 'Wrap'
         $detail.TextTrimming = 'CharacterEllipsis'
-        $detail.MaxHeight = 32
-        $detail.Margin = New-Object System.Windows.Thickness 0,2,0,0
+        $detail.LineHeight = 15
+        $detail.LineStackingStrategy = 'BlockLineHeight'
+        $detail.Height = 30
+        $detail.Margin = New-Object System.Windows.Thickness 0,3,0,0
         $detail.HorizontalAlignment = 'Left'
         [void]$stack.Children.Add($detail)
     }
     [void]$row.Children.Add($stack)
 
-    $time = New-Text -Text ([string]$Item.at) -Size 10 -Color '#59FFFFFF'
+    $time = New-Text -Text ([string]$Item.at) -Size 10 -Color $script:TextGhost
     $time.VerticalAlignment = 'Top'
     $time.Margin = New-Object System.Windows.Thickness 10,2,0,0
     [System.Windows.Controls.Grid]::SetColumn($time, 2)
@@ -219,18 +272,21 @@ function New-Card {
 
     $card = New-Object System.Windows.Controls.Border
     $card.Width = $Width
-    $card.CornerRadius = New-Object System.Windows.CornerRadius 14
-    $card.Background = New-Brush '#F21B1F2A'
-    $card.BorderBrush = New-Brush '#2EFFFFFF'
+    $card.CornerRadius = New-Object System.Windows.CornerRadius $script:CardRadius
+    $card.Background = New-VerticalGradient -Top $script:CardTop -Bottom $script:CardBottom
+    $card.BorderBrush = New-Brush $script:CardEdge
     $card.BorderThickness = New-Object System.Windows.Thickness 1
     $card.Margin = New-Object System.Windows.Thickness $script:ShadowPad
     $card.Cursor = [System.Windows.Input.Cursors]::Hand
+    $card.SnapsToDevicePixels = $true
 
+    # Blur 14 with depth 3 reaches about 10 px, so the 12 px margin cannot
+    # clip the halo the way the previous 16 px blur did.
     $shadow = New-Object System.Windows.Media.Effects.DropShadowEffect
-    $shadow.BlurRadius = 16
+    $shadow.BlurRadius = 14
     $shadow.ShadowDepth = 3
     $shadow.Direction = 270
-    $shadow.Opacity = 0.45
+    $shadow.Opacity = 0.42
     $shadow.Color = [System.Windows.Media.Colors]::Black
     $card.Effect = $shadow
 
@@ -245,12 +301,14 @@ function New-Card {
     $strip = New-Object System.Windows.Controls.Border
     $strip.Width = 3
     $strip.Background = New-Brush $accent
-    $strip.CornerRadius = New-Object System.Windows.CornerRadius 13,0,0,13
+    $strip.CornerRadius = New-Object System.Windows.CornerRadius 1.5
+    $strip.Margin = New-Object System.Windows.Thickness 1,13,0,13
+    $strip.SnapsToDevicePixels = $true
     [System.Windows.Controls.Grid]::SetColumn($strip, 0)
     [void]$outer.Children.Add($strip)
 
     $body = New-Object System.Windows.Controls.StackPanel
-    $body.Margin = New-Object System.Windows.Thickness 15,13,15,13
+    $body.Margin = New-Object System.Windows.Thickness 16,14,16,14
     [System.Windows.Controls.Grid]::SetColumn($body, 1)
 
     $header = New-Object System.Windows.Controls.Grid
@@ -264,7 +322,7 @@ function New-Card {
     $titleLine = New-Object System.Windows.Controls.StackPanel
     $titleLine.Orientation = 'Horizontal'
     [void]$titleLine.Children.Add((New-Badge -Accent $accent -Glyph ([string]$Payload.glyph)))
-    [void]$titleLine.Children.Add((New-Text -Text ([string]$Payload.label) -Size 14.5 -Color '#FFFFFFFF' -Weight 'SemiBold'))
+    [void]$titleLine.Children.Add((New-Text -Text ([string]$Payload.label) -Size 14 -Color $script:TextPrimary -Weight 'SemiBold'))
     if ([int]$Payload.count -gt 1) {
         [void]$titleLine.Children.Add((New-CountPill -Count ([int]$Payload.count) -Accent $accent))
     }
@@ -275,8 +333,9 @@ function New-Card {
     if ($items.Count -gt 0) { $newest = [string]$items[0].at }
     if ([string]::IsNullOrWhiteSpace($newest)) { $newest = [string]$Payload.at }
     if (-not [string]::IsNullOrWhiteSpace($newest)) {
-        $headTime = New-Text -Text $newest -Size 10 -Color '#59FFFFFF'
+        $headTime = New-Text -Text $newest -Size 10 -Color $script:TextFaint
         $headTime.VerticalAlignment = 'Center'
+        $headTime.Margin = New-Object System.Windows.Thickness 8,0,0,0
         [System.Windows.Controls.Grid]::SetColumn($headTime, 1)
         [void]$header.Children.Add($headTime)
     }
@@ -285,8 +344,8 @@ function New-Card {
     if ($items.Count -gt 0) {
         $divider = New-Object System.Windows.Controls.Border
         $divider.Height = 1
-        $divider.Background = New-Brush '#1AFFFFFF'
-        $divider.Margin = New-Object System.Windows.Thickness 0,10,0,0
+        $divider.Background = New-Brush $script:RuleColor
+        $divider.Margin = New-Object System.Windows.Thickness 0,11,0,1
         [void]$body.Children.Add($divider)
     }
 
@@ -294,15 +353,15 @@ function New-Card {
 
     $more = [string]$Payload.more
     if (-not [string]::IsNullOrWhiteSpace($more)) {
-        $moreText = New-Text -Text $more -Size 11 -Color '#73FFFFFF'
-        $moreText.Margin = New-Object System.Windows.Thickness 17,8,0,0
+        $moreText = New-Text -Text $more -Size 10.5 -Color '#75FFFFFF'
+        $moreText.Margin = New-Object System.Windows.Thickness 16,8,0,0
         [void]$body.Children.Add($moreText)
     }
 
     $footerText = [string]$Payload.footer
     if (-not [string]::IsNullOrWhiteSpace($footerText)) {
-        $footer = New-Text -Text $footerText -Size 10.5 -Color '#66FFFFFF'
-        $footer.Margin = New-Object System.Windows.Thickness 0,11,0,0
+        $footer = New-Text -Text $footerText -Size 10 -Color '#59FFFFFF'
+        $footer.Margin = New-Object System.Windows.Thickness 0,12,0,0
         [void]$body.Children.Add($footer)
     }
 
@@ -409,6 +468,8 @@ if ($null -ne $payload) {
     $window.WindowStyle = 'None'
     $window.AllowsTransparency = $true
     $window.Background = [System.Windows.Media.Brushes]::Transparent
+    $window.UseLayoutRounding = $true
+    $window.SnapsToDevicePixels = $true
     $window.ShowInTaskbar = $false
     $window.Topmost = $true
     $window.ResizeMode = 'NoResize'
@@ -427,8 +488,8 @@ if ($null -ne $payload) {
     $card.RenderTransform = $slide
     $window.Opacity = 0
 
-    $card.Add_MouseEnter({ try { $card.BorderBrush = New-Brush '#66FFFFFF' } catch { } })
-    $card.Add_MouseLeave({ try { $card.BorderBrush = New-Brush '#2EFFFFFF' } catch { } })
+    $card.Add_MouseEnter({ try { $card.BorderBrush = New-Brush $script:CardEdgeHover } catch { } })
+    $card.Add_MouseLeave({ try { $card.BorderBrush = New-Brush $script:CardEdge } catch { } })
 
     $window.Add_MouseLeftButtonDown({
             try { [void](Focus-Ds) } catch { }
