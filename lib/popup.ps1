@@ -262,6 +262,7 @@ function New-ItemRow {
         $chip.Padding = New-Object System.Windows.Thickness 5,0,5,0
         $chip.VerticalAlignment = 'Center'
         $chip.Margin = New-Object System.Windows.Thickness 0,1,7,0
+        $chip.MaxWidth = 108
         $chipText = New-Text -Text $rowProject -Size 9.5 -Color '#A6FFFFFF'
         $chipText.TextTrimming = 'CharacterEllipsis'
         $chip.Child = $chipText
@@ -354,12 +355,33 @@ function New-Card {
     [void]$header.ColumnDefinitions.Add($colHead)
     [void]$header.ColumnDefinitions.Add($colHeadTime)
 
-    $titleLine = New-Object System.Windows.Controls.StackPanel
-    $titleLine.Orientation = 'Horizontal'
-    [void]$titleLine.Children.Add((New-Badge -Accent $accent -Glyph ([string]$Payload.glyph)))
-    [void]$titleLine.Children.Add((New-Text -Text ([string]$Payload.label) -Size 14 -Color $script:TextPrimary -Weight 'SemiBold'))
+    # Badge + label + count pill as a grid: the label owns the star column so a
+    # narrow card trims it instead of shoving the timestamp off the edge.
+    $titleLine = New-Object System.Windows.Controls.Grid
+    $colBadge = New-Object System.Windows.Controls.ColumnDefinition
+    $colBadge.Width = [System.Windows.GridLength]::Auto
+    $colLabel = New-Object System.Windows.Controls.ColumnDefinition
+    $colLabel.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+    $colPill = New-Object System.Windows.Controls.ColumnDefinition
+    $colPill.Width = [System.Windows.GridLength]::Auto
+    [void]$titleLine.ColumnDefinitions.Add($colBadge)
+    [void]$titleLine.ColumnDefinitions.Add($colLabel)
+    [void]$titleLine.ColumnDefinitions.Add($colPill)
+    $badge = New-Badge -Accent $accent -Glyph ([string]$Payload.glyph)
+    $badge.VerticalAlignment = 'Center'
+    [System.Windows.Controls.Grid]::SetColumn($badge, 0)
+    [void]$titleLine.Children.Add($badge)
+    $labelText = New-Text -Text ([string]$Payload.label) -Size 14 -Color $script:TextPrimary -Weight 'SemiBold'
+    $labelText.TextTrimming = 'CharacterEllipsis'
+    $labelText.TextWrapping = 'NoWrap'
+    $labelText.VerticalAlignment = 'Center'
+    [System.Windows.Controls.Grid]::SetColumn($labelText, 1)
+    [void]$titleLine.Children.Add($labelText)
     if ([int]$Payload.count -gt 1) {
-        [void]$titleLine.Children.Add((New-CountPill -Count ([int]$Payload.count) -Accent $accent))
+        $pill = New-CountPill -Count ([int]$Payload.count) -Accent $accent
+        $pill.VerticalAlignment = 'Center'
+        [System.Windows.Controls.Grid]::SetColumn($pill, 2)
+        [void]$titleLine.Children.Add($pill)
     }
     [System.Windows.Controls.Grid]::SetColumn($titleLine, 0)
     [void]$header.Children.Add($titleLine)
@@ -434,7 +456,7 @@ function New-Card {
     $more = [string]$Payload.more
     if (-not [string]::IsNullOrWhiteSpace($more)) {
         $moreText = New-Text -Text $more -Size 10.5 -Color '#75FFFFFF'
-        $moreText.Margin = New-Object System.Windows.Thickness 16,8,0,0
+        $moreText.Margin = New-Object System.Windows.Thickness 0,8,0,0
         [void]$body.Children.Add($moreText)
     }
 
@@ -445,7 +467,16 @@ function New-Card {
         [void]$body.Children.Add($footer)
     }
 
-    [void]$outer.Children.Add($body)
+    # The window can be dragged smaller than the content: keep every line
+    # reachable by scrolling instead of clipping it away.
+    $scroll = New-Object System.Windows.Controls.ScrollViewer
+    $scroll.VerticalScrollBarVisibility = 'Hidden'
+    $scroll.HorizontalScrollBarVisibility = 'Disabled'
+    $scroll.PanningMode = 'VerticalOnly'
+    $scroll.Focusable = $false
+    $scroll.Content = $body
+    [System.Windows.Controls.Grid]::SetColumn($scroll, 1)
+    [void]$outer.Children.Add($scroll)
     $card.Child = $outer
     return $card
 }
@@ -535,12 +566,16 @@ if ($null -ne $payload) {
         exit 0
     }
 
-    $summaryParts = @()
-    foreach ($item in @($payload.items)) {
-        if ($null -eq $item) { continue }
-        $summaryParts += ("{0}: {1}" -f $item.title, $item.detail)
+    # Single-item cards carry no rows, so the host sends a flat summary too.
+    $script:lastSummary = [string]$payload.summary
+    if ([string]::IsNullOrWhiteSpace($script:lastSummary)) {
+        $summaryParts = @()
+        foreach ($item in @($payload.items)) {
+            if ($null -eq $item) { continue }
+            $summaryParts += ("{0}: {1}" -f $item.title, $item.detail)
+        }
+        $script:lastSummary = ($summaryParts -join ' | ')
     }
-    $script:lastSummary = ($summaryParts -join ' | ')
 
     $card = New-Card $payload
     $size = Measure-Card $card
@@ -584,7 +619,9 @@ if ($null -ne $payload) {
     # WM_NCLBUTTONDOWN with the matching HT code starts the native sizing loop.
     $script:edgeHit = {
             param($point)
-            $edge = 8
+            # The card is inset by ShadowPad, so a band measured from the window
+            # edge must reach past the halo to cover the visible border.
+            $edge = $script:ShadowPad + 6
             $width = $window.ActualWidth
             $height = $window.ActualHeight
             $left = $point.X -lt $edge

@@ -48,7 +48,7 @@ ALL PASS (23 checks)
 - 样式位包含 `WS_THICKFRAME`（`GetWindowLong(hwnd, GWL_STYLE) & 0x40000`），这是系统执行缩放的前提。
 - 鼠标进入四边/四角 8px 感应区时光标变成 `SizeWE / SizeNS / SizeNWSE / SizeNESW`。
 - 在感应区按下 → `ReleaseCapture()` + `SendMessage(hwnd, WM_NCLBUTTONDOWN, HT<edge>, 0)`，由系统接管缩放；卡片内部按下 → `DragMove()`，位移 < 4px 视为点击（回 DSH + 复制提醒 + 关闭）。
-- 内容自适应可用 `-SnapshotWidth <px>` 验证：同一份 payload 在 240 / 300 / 384 / 560 宽下都能排版，宽度严格跟随参数（图片宽 = 卡片宽 + 24 底边）。
+- 内容自适应可用 `-SnapshotWidth <px>` 验证：同一份 payload 在 240 / 300 / 384 / 560 宽下都能排版，宽度严格跟随参数（图片宽 = 卡片宽 + 28 阴影留白 + 24 底边 = +52）。
 
 ## 3.' 卡片图内容自证（纯像素，不需要屏幕）
 

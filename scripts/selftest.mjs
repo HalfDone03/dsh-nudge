@@ -99,6 +99,40 @@ check("kinds 关闭后不再收", new AlertCenter({ ...defaults, kinds: { comple
 	.push("completed", { sessionId: "s4" }) === false);
 center.dispose();
 
+/** 3.5 卡片内容逻辑（主角行 / 摘要 / 多项目标签）---- */
+const captured = [];
+const probe = new PopupRunner({ ...defaults, mergeWindowMs: 0 }, () => {}, { onStatus: () => {} });
+probe.spawnOnce = (payload) => {
+	captured.push(payload);
+	return true;
+};
+probe.show([{
+	kind: "failed", sessionId: "p1", title: "构建前端", count: 1, at: "21:20", project: "dsh-nudge",
+	detail: "vite build 失败：Could not resolve entry\n    at async PluginContainer.resolveId (file.js:1284:15)"
+}]);
+check("单条卡片不再列清单", captured[0]?.items.length === 0, `items=${captured[0]?.items.length}`);
+check("失败主角行是精简后的错误", captured[0]?.headline === "vite build 失败：Could not resolve entry", JSON.stringify(captured[0]?.headline));
+check("失败主角行带淡红底", captured[0]?.headlineTint === "#24E74C3C", JSON.stringify(captured[0]?.headlineTint));
+check("说明行带项目与会话名", captured[0]?.context === "dsh-nudge · 构建前端", JSON.stringify(captured[0]?.context));
+check("点击复制用的摘要不为空", typeof captured[0]?.summary === "string" && captured[0].summary.includes("构建前端"), JSON.stringify(captured[0]?.summary));
+
+probe.show([{ kind: "completed", sessionId: "p2", title: "写周报", detail: "回合已完成", count: 1, at: "21:21", project: "dsh-nudge" }]);
+check("完成主角行是任务名", captured[1]?.headline === "写周报", JSON.stringify(captured[1]?.headline));
+check("完成不加底色", captured[1]?.headlineTint === "", JSON.stringify(captured[1]?.headlineTint));
+check("完成说明行只留项目", captured[1]?.context === "dsh-nudge", JSON.stringify(captured[1]?.context));
+
+probe.show([{ kind: "needs_choice", sessionId: "p3", title: "部署", detail: "等待你批准：npm i", count: 1, at: "21:22" }]);
+check("待选择主角行是待决定的事", captured[2]?.headline === "等待你批准：npm i", JSON.stringify(captured[2]?.headline));
+
+probe.show([
+	{ kind: "needs_choice", sessionId: "p4", title: "部署", detail: "等待批准", count: 1, at: "21:23", project: "dsh-nudge" },
+	{ kind: "completed", sessionId: "p5", title: "跑测试", detail: "回合已完成", count: 1, at: "21:22", project: "web-console" }
+]);
+check("多条时逐条挂项目标签", captured[3]?.items.map((item) => item.rowProject).join(",") === "dsh-nudge,web-console",
+	JSON.stringify(captured[3]?.items.map((item) => item.rowProject)));
+check("多条时不显示主角行", captured[3]?.headline === "", JSON.stringify(captured[3]?.headline));
+probe.dispose();
+
 /** 4. PopupRunner 真起 helper ---- */
 const statuses = [];
 const runner = new PopupRunner({ ...defaults, staySeconds: 6 }, () => {}, { onStatus: (status) => statuses.push(status) });
@@ -145,12 +179,13 @@ const payloads = {
  * @param {string} out 输出 PNG
  * @returns {Promise<{code: number, out: string}>} 结果
  */
-function renderSnapshot(kind, out) {
+function renderSnapshot(kind, out, width = 0) {
 	const b64 = Buffer.from(JSON.stringify(payloads[kind]), "utf8").toString("base64");
+	const extra = width > 0 ? ["-SnapshotWidth", String(width)] : [];
 	return new Promise((resolve) => {
 		const child = spawn("powershell.exe", [
 			"-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass",
-			"-File", popupScript, "-Snapshot", out, "-PayloadB64", b64
+			"-File", popupScript, "-Snapshot", out, ...extra, "-PayloadB64", b64
 		], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
 		let stdout = "";
 		child.stdout.on("data", (chunk) => { stdout += String(chunk); });
@@ -169,6 +204,17 @@ for (const kind of Object.keys(payloads)) {
 	const height = isPng ? bytes.readUInt32BE(20) : 0;
 	check(`快照 ${kind} 渲染成功`, result.code === 0 && isPng, `code=${result.code}, ${stdoutPlaceholder(result.out)}`);
 	check(`快照 ${kind} 尺寸合理`, width === 436 && height >= 134, `${width}x${height}, bytes=${bytes.length}`);
+}
+
+/** 5.5 宽度自适应：窄宽与宽版都要出图，宽度严格跟随 ---- */
+for (const width of [300, 520]) {
+	const out = join(shotDir, `width-${width}.png`);
+	rmSync(out, { force: true });
+	const result = await renderSnapshot("needs_choice", out, width);
+	const bytes = existsSync(out) ? readFileSync(out) : Buffer.alloc(0);
+	const isPng = bytes.length > 8 && bytes.subarray(1, 4).toString() === "PNG";
+	const actual = isPng ? bytes.readUInt32BE(16) : 0;
+	check(`快照宽度 ${width} 自适应`, result.code === 0 && actual === width + 52, `期望 ${width + 52}, 实际 ${actual}`);
 }
 
 /**
