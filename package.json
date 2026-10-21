@@ -19,11 +19,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/NewDataBag/dsh-nudge.git"
+    "url": "git+https://github.com/HalfDone03/dsh-nudge.git"
   },
-  "homepage": "https://github.com/NewDataBag/dsh-nudge#readme",
+  "homepage": "https://github.com/HalfDone03/dsh-nudge#readme",
   "bugs": {
-    "url": "https://github.com/NewDataBag/dsh-nudge/issues"
+    "url": "https://github.com/HalfDone03/dsh-nudge/issues"
   },
   "main": "./lib/index.js",
   "exports": {
