@@ -1,0 +1,60 @@
+{
+  "name": "dsh-nudge",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "DSH Nudge · 桌面轻推提醒：任务完成 / 需要你选择 / 执行失败时，在 Windows 桌面右下角弹一张置顶、不抢焦点的小卡片。",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek",
+    "harness",
+    "nudge",
+    "notification",
+    "desktop-alert",
+    "toast",
+    "提醒",
+    "弹窗",
+    "通知"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NewDataBag/dsh-nudge.git"
+  },
+  "homepage": "https://github.com/NewDataBag/dsh-nudge#readme",
+  "bugs": {
+    "url": "https://github.com/NewDataBag/dsh-nudge/issues"
+  },
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./popup.ps1": "./lib/popup.ps1",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "scripts",
+    "cordis.patch.yml",
+    "README.md",
+    "VERIFY.md",
+    "screenshots/*.png"
+  ],
+  "engines": {
+    "node": ">=20.3.0",
+    "dsh": ">=0.2.1-rc.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "check": "node --check lib/index.js",
+    "selftest": "node scripts/selftest.mjs",
+    "demo": "node scripts/demo.mjs"
+  }
+}

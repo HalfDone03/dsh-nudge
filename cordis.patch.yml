@@ -1,0 +1,23 @@
+# dsh-nudge bundle patch.
+#
+# 一行 insert 即挂载 Host 侧插件；浏览器半身不需要（本插件不注入渲染进程 UI），
+# 因此 package.json 里没有 dsh.client 段。
+#
+# 用户覆盖层（profile 的 cordis.patch.yml）可以按 id 覆盖这里的 config：
+#
+#   - id: nudge
+#     config:
+#       staySeconds: 12
+#
+- insert:
+    - id: nudge
+      name: 'dsh-nudge'
+      config:
+        enabled: true
+        staySeconds: 8
+        showWhenFocused: true
+        margin: 16
+        mergeWindowMs: 1200
+        maxItems: 5
+        alertOnToolError: true
+        muteRanges: []

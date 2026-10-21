@@ -1,0 +1,8 @@
+node_modules/
+*.bak
+*.bak-*
+*.tmp
+*.log
+screenshots/_probe*.png
+Thumbs.db
+.DS_Store
