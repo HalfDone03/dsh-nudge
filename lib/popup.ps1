@@ -728,7 +728,9 @@ if ($null -ne $payload) {
                     $script:dragging = $false
                     $script:pressX = $point.X
                     $script:pressY = $point.Y
-                    try { $timer.Stop() } catch { }
+                    # The dwell timer keeps running on purpose: stopping it here
+                    # pinned the card forever whenever the button came up outside
+                    # the window, because the mouse-up never reached us again.
                     return
                 }
                 $eventArgs.Handled = $true
@@ -763,9 +765,27 @@ if ($null -ne $payload) {
     $timer = New-Object System.Windows.Threading.DispatcherTimer
     $timer.Interval = [TimeSpan]::FromSeconds([Math]::Max(1, $StaySeconds))
     $timer.Add_Tick({
+            # Never close while the pointer is still down, but keep re-arming: a
+            # lost mouse-up then just costs one more interval instead of leaving a
+            # topmost card stuck on screen.
+            if ([System.Windows.Input.Mouse]::LeftButton -eq 'Pressed') {
+                $timer.Start()
+                return
+            }
             $timer.Stop()
             try { $window.Close() } catch { }
         })
+
+    # Absolute lifetime cap. Whatever happens to the mouse, the card goes away.
+    $script:hardDeadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(30, ($StaySeconds * 4) + 30))
+    $script:watchdog = New-Object System.Windows.Threading.DispatcherTimer
+    $script:watchdog.Interval = [TimeSpan]::FromSeconds(5)
+    $script:watchdog.Add_Tick({
+            $script:watchdog.Stop()
+            if ([DateTime]::UtcNow -ge $script:hardDeadline) { try { $window.Close() } catch { } }
+            else { $script:watchdog.Start() }
+        })
+    $script:watchdog.Start()
 
     $app = New-Object System.Windows.Application
     $app.ShutdownMode = 'OnExplicitShutdown'
