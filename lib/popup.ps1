@@ -49,6 +49,28 @@ Add-Type -Namespace Native -Name Win -MemberDefinition @'
 [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
 [DllImport("user32.dll")] public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int nNewLong);
+[DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr hWnd, uint flags);
+[DllImport("user32.dll")] public static extern IntPtr MonitorFromPoint(POINT pt, uint flags);
+[DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
+[DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT pt);
+[StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+[StructLayout(LayoutKind.Sequential)] public struct MONITORINFO { public int cbSize; public RECT rcMonitor; public RECT rcWork; public uint dwFlags; }
+public static int[] WorkAreaOf(IntPtr monitor) {
+    if (monitor == IntPtr.Zero) return null;
+    MONITORINFO info = new MONITORINFO();
+    info.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+    if (!GetMonitorInfo(monitor, ref info)) return null;
+    return new int[] { info.rcWork.Left, info.rcWork.Top, info.rcWork.Right, info.rcWork.Bottom };
+}
+public static int[] WorkAreaOfWindow(IntPtr hWnd) {
+    if (hWnd == IntPtr.Zero) return null;
+    return WorkAreaOf(MonitorFromWindow(hWnd, 2));
+}
+public static int[] WorkAreaOfCursor() {
+    POINT pt;
+    if (!GetCursorPos(out pt)) return null;
+    return WorkAreaOf(MonitorFromPoint(pt, 2));
+}
 '@
 
 try { [void][Native.Win]::SetProcessDPIAware() } catch { }
@@ -639,9 +661,22 @@ if ($null -ne $payload) {
     $card.VerticalAlignment = 'Stretch'
     $window.Content = $card
 
-    $work = [System.Windows.SystemParameters]::WorkArea
-    $window.Left = $work.Right - $window.Width - $Margin
-    $window.Top = $work.Bottom - $window.Height - $Margin
+    # Place the card on the monitor the user is actually looking at: the one that
+    # holds the harness window, else the one under the cursor, else the primary.
+    # SystemParameters.WorkArea only ever knows the primary monitor.
+    $area = $null
+    try {
+        $dsProc = Get-Process -Name $script:DsExeName -ErrorAction SilentlyContinue |
+            Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+        if ($null -ne $dsProc) { $area = [Native.Win]::WorkAreaOfWindow($dsProc.MainWindowHandle) }
+    } catch { }
+    if ($null -eq $area) { try { $area = [Native.Win]::WorkAreaOfCursor() } catch { } }
+    if ($null -eq $area) {
+        $work = [System.Windows.SystemParameters]::WorkArea
+        $area = @([int]$work.Left, [int]$work.Top, [int]$work.Right, [int]$work.Bottom)
+    }
+    $window.Left = $area[2] - $window.Width - $Margin
+    $window.Top = $area[3] - $window.Height - $Margin
 
     $script:shownAt = [DateTime]::UtcNow
     $slide = New-Object System.Windows.Media.TranslateTransform 0, 10
@@ -743,6 +778,9 @@ if ($null -ne $payload) {
                 try { $timer.Stop(); $timer.Start() } catch { }
             } catch { }
         })
+
+    # Right click just gets rid of the card: no focus change, no clipboard write.
+    $window.Add_MouseRightButtonUp({ try { $window.Close() } catch { } })
 
     # A press that never travels is a click and keeps the original behaviour
     # (focus the harness, copy the batch, close).

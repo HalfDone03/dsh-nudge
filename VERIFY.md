@@ -58,6 +58,8 @@ ALL PASS (23 checks)
 - 明细最多折叠到 6 行（`MaxHeight = 6 × LineHeight`，切在行边界上），窄卡片不会被超长报错撑爆。
 - 卡片外框跟随最严重的 kind 染色：failed `#4DE74C3C`、needs_choice `#45F5A623`、其余 `#2BFFFFFF`，扫一眼就知道出事了。
 - 不打扰：卡片是 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` 窗口，永不被激活、不进 Alt+Tab；纯点击不进入系统拖动循环（位移 >4px 才算拖动）；弹出后 320ms 内的点击被忽略；移进卡片会重置停留计时。
+- 定位：`MonitorFromWindow`（DSH 主窗口）→ `MonitorFromPoint`（光标）→ `SystemParameters.WorkArea` 三级退化，取 `rcWork` 右下角内缩 `margin`；实测本机 2560×1440、任务栏 48px、卡片 412×154 → `left=2132`、`top=1222`（=1392−154−16），与旧主屏逻辑在同一屏上结果一致。
+- 右键只关闭：不调用 `Focus-Ds`、不写剪贴板，也不激活窗口（`WS_EX_NOACTIVATE`）。
 - 快照校验：`screenshots/multi.png` 436×343（4 条 / 3 个项目，逐条可见 kind、项目、任务）、`screenshots/single.png` 436×209（单条：错误 + 项目 · 任务）。
 
 ## 3. 卡片图内容自证（纯像素，不需要屏幕）
