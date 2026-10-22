@@ -26,7 +26,8 @@ param(
     [string]$Snapshot = '',
     [string]$PayloadFile = '',
     [string]$PayloadB64 = '',
-    [int]$SnapshotWidth = 0
+    [int]$SnapshotWidth = 0,
+    [int]$SnapshotHeight = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -469,11 +470,48 @@ function New-Card {
 
     # The window can be dragged smaller than the content: keep every line
     # reachable by scrolling instead of clipping it away.
+    # A slim dark scrollbar: the default one is a light grey block that looks
+    # broken on a dark card. Auto visibility keeps it out of the way otherwise.
     $scroll = New-Object System.Windows.Controls.ScrollViewer
-    $scroll.VerticalScrollBarVisibility = 'Hidden'
+    $scroll.VerticalScrollBarVisibility = 'Auto'
     $scroll.HorizontalScrollBarVisibility = 'Disabled'
     $scroll.PanningMode = 'VerticalOnly'
     $scroll.Focusable = $false
+    try {
+        $barStyle = [System.Windows.Markup.XamlReader]::Parse(@'
+<Style xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" TargetType="ScrollBar">
+  <Setter Property="Margin" Value="0,10,0,10"/>
+  <Setter Property="Background" Value="Transparent"/>
+  <Setter Property="Template">
+    <Setter.Value>
+      <ControlTemplate TargetType="ScrollBar">
+        <Grid Background="Transparent" HorizontalAlignment="Right" Width="5">
+          <Border x:Name="BarTrack" CornerRadius="2.5" Background="#12FFFFFF"/>
+          <Track x:Name="PART_Track" IsDirectionReversed="True">
+            <Track.DecreaseRepeatButton>
+              <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False"/>
+            </Track.DecreaseRepeatButton>
+            <Track.Thumb>
+              <Thumb>
+                <Thumb.Template>
+                  <ControlTemplate TargetType="Thumb">
+                    <Border CornerRadius="2.5" Background="#3DFFFFFF"/>
+                  </ControlTemplate>
+                </Thumb.Template>
+              </Thumb>
+            </Track.Thumb>
+            <Track.IncreaseRepeatButton>
+              <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False"/>
+            </Track.IncreaseRepeatButton>
+          </Track>
+        </Grid>
+      </ControlTemplate>
+    </Setter.Value>
+  </Setter>
+</Style>
+'@)
+        $scroll.Resources.Add([System.Windows.Controls.Primitives.ScrollBar], $barStyle)
+    } catch { }
     $scroll.Content = $body
     [System.Windows.Controls.Grid]::SetColumn($scroll, 1)
     [void]$outer.Children.Add($scroll)
@@ -532,6 +570,9 @@ if (-not [string]::IsNullOrWhiteSpace($Snapshot)) {
     }
     $cardWidth = if ($SnapshotWidth -gt 0) { $SnapshotWidth } else { $script:CardWidth }
     $card = New-Card $payload -Width $cardWidth
+    # A height cap makes the content overflow, which is how the scrollbar gets
+    # captured in a snapshot instead of only on a live window.
+    if ($SnapshotHeight -gt 0) { $card.Height = $SnapshotHeight }
     $size = Measure-Card $card
 
     # Snapshot output is meant to be published, so it must never contain desktop

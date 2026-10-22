@@ -50,6 +50,12 @@ ALL PASS (23 checks)
 - 在感应区按下 → `ReleaseCapture()` + `SendMessage(hwnd, WM_NCLBUTTONDOWN, HT<edge>, 0)`，由系统接管缩放；卡片内部按下 → `DragMove()`，位移 < 4px 视为点击（回 DSH + 复制提醒 + 关闭）。
 - 内容自适应可用 `-SnapshotWidth <px>` 验证：同一份 payload 在 240 / 300 / 384 / 560 宽下都能排版，宽度严格跟随参数（图片宽 = 卡片宽 + 28 阴影留白 + 24 底边 = +52）。
 
+## 2.6 溢出滚动条
+
+- 窗口比内容矮时不裁切，正文可滚：`ScrollViewer` 纵向 `Auto`、横向 `Disabled`。
+- 滚动条的布局宽度被 ScrollViewer 锁在 17px（`ScrollBar.MinWidth` 由系统滚动条宽决定，样式里写 `Width` 无效，实测 `ActualWidth=17`、`MinWidth=17`）。因此把"看得见的部分"做成模板内 5px 右对齐的 Grid：外观是细条，布局仍占 17px。
+- 像素校验（`screenshots/scrollbar.png`，卡片高 168、内容溢出）：滑块在 x≈404..408（5px 宽），y 37..104（68px 高），亮度 >95；滑轨同宽，亮度 50–70；内容放得下时该区域亮度与卡片底色一致（46），即滚动条不显示。
+
 ## 3.' 卡片图内容自证（纯像素，不需要屏幕）
 
 `screenshots\*.png` 是 `-Snapshot` 无头渲染的结果，再合成到纯色底（#1F1F1F，四周 12px 留白），
