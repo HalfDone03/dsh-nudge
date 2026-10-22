@@ -246,45 +246,41 @@ function New-ItemRow {
     $title.TextTrimming = 'CharacterEllipsis'
     $title.TextWrapping = 'NoWrap'
     $title.HorizontalAlignment = 'Left'
-    # When several projects are queued at once, each row carries its own project chip.
-    $rowProject = [string]$Item.rowProject
-    $titleLine = New-Object System.Windows.Controls.Grid
-    $chipColumn = New-Object System.Windows.Controls.ColumnDefinition
-    $chipColumn.Width = [System.Windows.GridLength]::Auto
-    $nameColumn = New-Object System.Windows.Controls.ColumnDefinition
-    $nameColumn.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
-    [void]$titleLine.ColumnDefinitions.Add($chipColumn)
-    [void]$titleLine.ColumnDefinitions.Add($nameColumn)
-    if (-not [string]::IsNullOrWhiteSpace($rowProject)) {
-        $chip = New-Object System.Windows.Controls.Border
-        $chip.Height = 16
-        $chip.CornerRadius = New-Object System.Windows.CornerRadius 4
-        $chip.Background = New-Brush '#1FFFFFFF'
-        $chip.Padding = New-Object System.Windows.Thickness 5,0,5,0
-        $chip.VerticalAlignment = 'Center'
-        $chip.Margin = New-Object System.Windows.Thickness 0,1,7,0
-        $chip.MaxWidth = 108
-        $chipText = New-Text -Text $rowProject -Size 9.5 -Color '#A6FFFFFF'
-        $chipText.TextTrimming = 'CharacterEllipsis'
-        $chip.Child = $chipText
-        [System.Windows.Controls.Grid]::SetColumn($chip, 0)
-        [void]$titleLine.Children.Add($chip)
-    }
-    [System.Windows.Controls.Grid]::SetColumn($title, 1)
-    [void]$titleLine.Children.Add($title)
-    [void]$stack.Children.Add($titleLine)
+    [void]$stack.Children.Add($title)
 
-    $detailText = [string]$Item.detail
-    if (-not [string]::IsNullOrWhiteSpace($detailText)) {
-        $detail = New-Text -Text $detailText -Size 11 -Color $script:TextMuted
-        $detail.TextWrapping = 'Wrap'
-        $detail.TextTrimming = 'CharacterEllipsis'
-        $detail.LineHeight = 15
-        $detail.LineStackingStrategy = 'BlockLineHeight'
-        $detail.Height = 30
-        $detail.Margin = New-Object System.Windows.Thickness 0,3,0,0
-        $detail.HorizontalAlignment = 'Left'
-        [void]$stack.Children.Add($detail)
+    # Which project this row belongs to, spelled out under the task name, so a
+    # glance tells you both "what" and "where" without decoding a badge.
+    $metaText = [string]$Item.detail
+    $rowProject = [string]$Item.rowProject
+    $projectText = ''
+    if (-not [string]::IsNullOrWhiteSpace($rowProject)) { $projectText = $rowProject }
+    if (-not [string]::IsNullOrWhiteSpace($projectText) -or -not [string]::IsNullOrWhiteSpace($metaText)) { 
+        $meta = New-Object System.Windows.Controls.StackPanel
+        $meta.Orientation = 'Horizontal'
+        $meta.Margin = New-Object System.Windows.Thickness 0,3,0,0
+        if (-not [string]::IsNullOrWhiteSpace($projectText)) {
+            $folder = New-Text -Text ([string][char]0xE8B7) -Size 9.5 -Color $script:TextMuted
+            $folder.FontFamily = New-Object System.Windows.Media.FontFamily $script:IconFont
+            $folder.Margin = New-Object System.Windows.Thickness 0,0,4,1
+            [void]$meta.Children.Add($folder)
+            $projectLabel = New-Text -Text $projectText -Size 10.5 -Color $script:TextBody
+            $projectLabel.TextTrimming = 'CharacterEllipsis'
+            $projectLabel.TextWrapping = 'NoWrap'
+            $projectLabel.MaxWidth = 150
+            [void]$meta.Children.Add($projectLabel)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($metaText)) {
+            $sep = New-Text -Text (' ' + [string][char]0x00B7 + ' ') -Size 10.5 -Color $script:TextGhost
+            if (-not [string]::IsNullOrWhiteSpace($projectText)) { [void]$meta.Children.Add($sep) }
+            $detail = New-Text -Text $metaText -Size 10.5 -Color $script:TextMuted
+            $detail.TextWrapping = 'Wrap'
+            $detail.TextTrimming = 'CharacterEllipsis'
+            $detail.LineHeight = 15
+            $detail.LineStackingStrategy = 'BlockLineHeight'
+            $detail.Margin = New-Object System.Windows.Thickness 0,0,0,1
+            [void]$meta.Children.Add($detail)
+        }
+        [void]$stack.Children.Add($meta)
     }
     [void]$row.Children.Add($stack)
 
@@ -437,7 +433,7 @@ function New-Card {
         $folderIcon.FontFamily = New-Object System.Windows.Media.FontFamily $script:IconFont
         $folderIcon.Margin = New-Object System.Windows.Thickness 0,0,5,1
         [void]$contextLine.Children.Add($folderIcon)
-        $contextLabel = New-Text -Text $contextText -Size 10.5 -Color $script:TextFaint
+        $contextLabel = New-Text -Text $contextText -Size 11 -Color $script:TextMuted
         $contextLabel.TextTrimming = 'CharacterEllipsis'
         $contextLabel.TextWrapping = 'NoWrap'
         [void]$contextLine.Children.Add($contextLabel)
@@ -470,51 +466,8 @@ function New-Card {
 
     # The window can be dragged smaller than the content: keep every line
     # reachable by scrolling instead of clipping it away.
-    # A slim dark scrollbar: the default one is a light grey block that looks
-    # broken on a dark card. Auto visibility keeps it out of the way otherwise.
-    $scroll = New-Object System.Windows.Controls.ScrollViewer
-    $scroll.VerticalScrollBarVisibility = 'Auto'
-    $scroll.HorizontalScrollBarVisibility = 'Disabled'
-    $scroll.PanningMode = 'VerticalOnly'
-    $scroll.Focusable = $false
-    try {
-        $barStyle = [System.Windows.Markup.XamlReader]::Parse(@'
-<Style xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" TargetType="ScrollBar">
-  <Setter Property="Margin" Value="0,10,0,10"/>
-  <Setter Property="Background" Value="Transparent"/>
-  <Setter Property="Template">
-    <Setter.Value>
-      <ControlTemplate TargetType="ScrollBar">
-        <Grid Background="Transparent" HorizontalAlignment="Right" Width="5">
-          <Border x:Name="BarTrack" CornerRadius="2.5" Background="#12FFFFFF"/>
-          <Track x:Name="PART_Track" IsDirectionReversed="True">
-            <Track.DecreaseRepeatButton>
-              <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False"/>
-            </Track.DecreaseRepeatButton>
-            <Track.Thumb>
-              <Thumb>
-                <Thumb.Template>
-                  <ControlTemplate TargetType="Thumb">
-                    <Border CornerRadius="2.5" Background="#3DFFFFFF"/>
-                  </ControlTemplate>
-                </Thumb.Template>
-              </Thumb>
-            </Track.Thumb>
-            <Track.IncreaseRepeatButton>
-              <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False"/>
-            </Track.IncreaseRepeatButton>
-          </Track>
-        </Grid>
-      </ControlTemplate>
-    </Setter.Value>
-  </Setter>
-</Style>
-'@)
-        $scroll.Resources.Add([System.Windows.Controls.Primitives.ScrollBar], $barStyle)
-    } catch { }
-    $scroll.Content = $body
-    [System.Windows.Controls.Grid]::SetColumn($scroll, 1)
-    [void]$outer.Children.Add($scroll)
+    # No scrollbar: the card grows with its content, so nothing is ever cut off.
+    [void]$outer.Children.Add($body)
     $card.Child = $outer
     return $card
 }
@@ -739,6 +692,12 @@ if ($null -ne $payload) {
 
     $window.Add_SizeChanged({
             if (-not [bool]$script:cardReady) { return }
+            # Widen/narrow reflows the text, so the card may need more height than
+            # the window has. Lift MinHeight instead of clipping or scrolling.
+            try {
+                $needed = $card.DesiredSize.Height
+                if ($needed -gt 0 -and $window.MinHeight -lt $needed) { $window.MinHeight = $needed }
+            } catch { }
             try { $timer.Stop(); $timer.Start() } catch { }
         })
 

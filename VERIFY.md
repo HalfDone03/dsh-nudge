@@ -41,7 +41,7 @@ ALL PASS (23 checks)
 & $node .\scripts\selftest.mjs   # 已经包含这一步，产物在 screenshots\*.png
 ```
 
-期望：`completed.png` 436×150、`needs_choice.png` 436×237、`failed.png` 436×181（412 = 卡片 384 宽 + 两侧 14px 阴影留白，再各加 12px 底色留白），均 >4KB。
+期望：`completed.png` 436×150、`needs_choice.png` 436×209、`failed.png` 436×181（412 = 卡片 384 宽 + 两侧 14px 阴影留白，再各加 12px 底色留白），均 >4KB。
 
 ## 2.5 窗口可拖动 / 可缩放
 
@@ -50,11 +50,12 @@ ALL PASS (23 checks)
 - 在感应区按下 → `ReleaseCapture()` + `SendMessage(hwnd, WM_NCLBUTTONDOWN, HT<edge>, 0)`，由系统接管缩放；卡片内部按下 → `DragMove()`，位移 < 4px 视为点击（回 DSH + 复制提醒 + 关闭）。
 - 内容自适应可用 `-SnapshotWidth <px>` 验证：同一份 payload 在 240 / 300 / 384 / 560 宽下都能排版，宽度严格跟随参数（图片宽 = 卡片宽 + 28 阴影留白 + 24 底边 = +52）。
 
-## 2.6 溢出滚动条
+## 2.6 多条提醒的可读性
 
-- 窗口比内容矮时不裁切，正文可滚：`ScrollViewer` 纵向 `Auto`、横向 `Disabled`。
-- 滚动条的布局宽度被 ScrollViewer 锁在 17px（`ScrollBar.MinWidth` 由系统滚动条宽决定，样式里写 `Width` 无效，实测 `ActualWidth=17`、`MinWidth=17`）。因此把"看得见的部分"做成模板内 5px 右对齐的 Grid：外观是细条，布局仍占 17px。
-- 像素校验（`screenshots/scrollbar.png`，卡片高 168、内容溢出）：滑块在 x≈404..408（5px 宽），y 37..104（68px 高），亮度 >95；滑轨同宽，亮度 50–70；内容放得下时该区域亮度与卡片底色一致（46），即滚动条不显示。
+- 多条提醒不再折叠成一行：每条渲染成两行，第一行是任务名（12px SemiBold）+ 时间，第二行是「📁 项目 · 明细」（10.5px）。
+- 单条提醒：任务名（或精简后的错误）做 13px 主角行，项目单独一行（11px，`#8AFFFFFF`）。
+- 不加滚动条：卡片按内容长高；窗口 `MinHeight` 跟随内容所需高度，把窗口拖矮时不会裁掉内容。
+- 快照校验：`screenshots/multi.png` 436×329（4 条 / 3 个项目，逐行可见项目与任务）、`screenshots/single.png` 436×209（单条：错误 + 项目 · 任务）。
 
 ## 3.' 卡片图内容自证（纯像素，不需要屏幕）
 
@@ -82,9 +83,9 @@ foreach ($f in 'completed','needs_choice','failed') {
 期望（实测）：
 
 ```
-completed:    436x150 distinct=133 dark=16077 accent=70 text=135
-needs_choice: 436x237 distinct=229 dark=25107 accent=183 text=248
-failed:       436x181 distinct=147 dark=19057 accent=132 text=401
+completed:    436x150 distinct=135 dark=16071 accent=70 text=135
+needs_choice: 436x209 distinct=229 dark=22121 accent=155 text=258
+failed:       436x181 distinct=147 dark=19044 accent=132 text=401
 ```
 
 判定标准：
