@@ -47,6 +47,8 @@ Add-Type -Namespace Native -Name Win -MemberDefinition @'
 [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
 [DllImport("user32.dll")] public static extern bool ReleaseCapture();
 [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+[DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+[DllImport("user32.dll")] public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int nNewLong);
 '@
 
 try { [void][Native.Win]::SetProcessDPIAware() } catch { }
@@ -523,6 +525,11 @@ function Show-CardWindow {
         $helper = New-Object System.Windows.Interop.WindowInteropHelper $Window
         $hwnd = $helper.Handle
         if ($hwnd -eq [IntPtr]::Zero) { return }
+        # WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW: a notification must never become the
+        # active window. Without this, any click on the card activates it and pulls
+        # focus (and effectively the mouse) away from whatever the user is typing in.
+        $exStyle = [Native.Win]::GetWindowLong($hwnd, -20)
+        [void][Native.Win]::SetWindowLong($hwnd, -20, ($exStyle -bor 0x08000000 -bor 0x00000080))
         [void][Native.Win]::ShowWindow($hwnd, 4)
         $topmost = New-Object IntPtr -ArgumentList (-1)
         [void][Native.Win]::SetWindowPos($hwnd, $topmost, 0, 0, 0, 0, 0x0001 -bor 0x0002 -bor 0x0010 -bor 0x0040)
@@ -596,6 +603,7 @@ if ($null -ne $payload) {
     $window.Topmost = $true
     $window.ResizeMode = 'CanResize'
     $window.ShowActivated = $false
+    $window.Focusable = $false
     $window.WindowStartupLocation = 'Manual'
     $window.SizeToContent = 'Manual'
     $window.MinWidth = 260
@@ -613,6 +621,7 @@ if ($null -ne $payload) {
     $window.Left = $work.Right - $window.Width - $Margin
     $window.Top = $work.Bottom - $window.Height - $Margin
 
+    $script:shownAt = [DateTime]::UtcNow
     $slide = New-Object System.Windows.Media.TranslateTransform 0, 10
     $card.RenderTransform = $slide
     $window.Opacity = 0
@@ -645,51 +654,83 @@ if ($null -ne $payload) {
             return 0
         }
 
+    # A press that lands while the card is still fading in almost always belongs to
+    # whatever the user was clicking before the card appeared. Eating it is exactly
+    # what makes a popup feel like it grabbed the mouse.
+    $script:pressGrace = 320
+    $script:pressActive = $false
+    $script:dragging = $false
+    $script:resizing = $false
+    $script:pressX = 0.0
+    $script:pressY = 0.0
+
     $window.Add_PreviewMouseMove({
             param($sender, $eventArgs)
             try {
-                $code = & $script:edgeHit $eventArgs.GetPosition($window)
+                $point = $eventArgs.GetPosition($window)
+                $code = & $script:edgeHit $point
                 $cursor = [System.Windows.Input.Cursors]::Arrow
                 if ($code -eq 13 -or $code -eq 17) { $cursor = [System.Windows.Input.Cursors]::SizeNWSE }
                 elseif ($code -eq 14 -or $code -eq 16) { $cursor = [System.Windows.Input.Cursors]::SizeNESW }
                 elseif ($code -eq 10 -or $code -eq 11) { $cursor = [System.Windows.Input.Cursors]::SizeWE }
                 elseif ($code -eq 12 -or $code -eq 15) { $cursor = [System.Windows.Input.Cursors]::SizeNS }
                 if ($card.Cursor -ne $cursor) { $card.Cursor = $cursor }
+                # Only a press that actually travels becomes a drag. A plain click
+                # never enters the native move loop, so it never captures the mouse.
+                if ($script:pressActive -and -not $script:dragging) {
+                    if (([Math]::Abs($point.X - $script:pressX) + [Math]::Abs($point.Y - $script:pressY)) -gt 4) {
+                        $script:dragging = $true
+                        try { $window.DragMove() } catch { }
+                        try { $timer.Stop(); $timer.Start() } catch { }
+                    }
+                }
             } catch { }
         })
 
     $window.Add_PreviewMouseLeftButtonDown({
             param($sender, $eventArgs)
             try {
-                $code = & $script:edgeHit $eventArgs.GetPosition($window)
-                if ($code -eq 0) { return }
+                if (([DateTime]::UtcNow - $script:shownAt).TotalMilliseconds -lt $script:pressGrace) {
+                    $eventArgs.Handled = $true
+                    return
+                }
+                $point = $eventArgs.GetPosition($window)
+                $code = & $script:edgeHit $point
+                if ($code -eq 0) {
+                    $script:pressActive = $true
+                    $script:dragging = $false
+                    $script:pressX = $point.X
+                    $script:pressY = $point.Y
+                    try { $timer.Stop() } catch { }
+                    return
+                }
                 $eventArgs.Handled = $true
+                $script:resizing = $true
                 $handle = (New-Object System.Windows.Interop.WindowInteropHelper $window).Handle
                 [void][Native.Win]::ReleaseCapture()
                 [void][Native.Win]::SendMessage($handle, 0x00A1, [IntPtr]$code, [IntPtr]::Zero)
+                $script:resizing = $false
+                $script:pressActive = $false
                 try { $timer.Stop(); $timer.Start() } catch { }
             } catch { }
         })
 
-    # Press and drag moves the card; a press that does not move is a click and
-    # keeps the original behaviour (focus the harness, copy the batch, close).
-    $window.Add_MouseLeftButtonDown({
-            try { $timer.Stop() } catch { }
-            $originLeft = $window.Left
-            $originTop = $window.Top
-            try { $window.DragMove() } catch { }
-            $moved = [Math]::Abs($window.Left - $originLeft) + [Math]::Abs($window.Top - $originTop)
-            if ($moved -gt 4) {
-                try { $timer.Stop(); $timer.Start() } catch { }
-                return
-            }
-            try { [void](Focus-Ds) } catch { }
+    # A press that never travels is a click and keeps the original behaviour
+    # (focus the harness, copy the batch, close).
+    $window.Add_MouseLeftButtonUp({
             try {
-                if (-not [string]::IsNullOrWhiteSpace($script:lastSummary)) {
-                    Set-Clipboard -Value ('DeepSeek Harness session alert' + [Environment]::NewLine + $script:lastSummary)
-                }
+                if ($script:resizing) { $script:resizing = $false; return }
+                if ($script:dragging) { $script:dragging = $false; $script:pressActive = $false; return }
+                if (-not $script:pressActive) { return }
+                $script:pressActive = $false
+                try { [void](Focus-Ds) } catch { }
+                try {
+                    if (-not [string]::IsNullOrWhiteSpace($script:lastSummary)) {
+                        Set-Clipboard -Value ('DeepSeekRuntime session alert' + [Environment]::NewLine + $script:lastSummary)
+                    }
+                } catch { }
+                try { $window.Close() } catch { }
             } catch { }
-            try { $window.Close() } catch { }
         })
 
     $timer = New-Object System.Windows.Threading.DispatcherTimer
