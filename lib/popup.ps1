@@ -709,7 +709,9 @@ if ($null -ne $payload) {
                 $probeWidth = [Math]::Max(120, $window.ActualWidth - (2 * $script:ShadowPad))
                 $card.Measure([System.Windows.Size]::new($probeWidth, [double]::PositiveInfinity))
                 $needed = $card.DesiredSize.Height
-                if ($needed -gt 0 -and $window.MinHeight -lt $needed) { $window.MinHeight = $needed }
+                # Always re-derive the floor from the current width: only raising it
+                # would leave the window stuck tall after a narrow-then-wide drag.
+                if ($needed -gt 0) { $window.MinHeight = [Math]::Max(90, $needed) }
             } catch { }
             try { $timer.Stop(); $timer.Start() } catch { }
         })
