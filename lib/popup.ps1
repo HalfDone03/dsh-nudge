@@ -26,8 +26,7 @@ param(
     [string]$Snapshot = '',
     [string]$PayloadFile = '',
     [string]$PayloadB64 = '',
-    [int]$SnapshotWidth = 0,
-    [int]$SnapshotHeight = 0
+    [int]$SnapshotWidth = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -249,35 +248,47 @@ function New-ItemRow {
     [void]$stack.Children.Add($title)
 
     # Which project this row belongs to, spelled out under the task name, so a
-    # glance tells you both "what" and "where" without decoding a badge.
+    # glance tells you both "what" and "where". A grid, not a horizontal stack:
+    # a stack measures children with infinite width, which silently disables
+    # wrapping and pushes long detail past the card edge.
     $metaText = [string]$Item.detail
     $rowProject = [string]$Item.rowProject
-    $projectText = ''
-    if (-not [string]::IsNullOrWhiteSpace($rowProject)) { $projectText = $rowProject }
-    if (-not [string]::IsNullOrWhiteSpace($projectText) -or -not [string]::IsNullOrWhiteSpace($metaText)) { 
-        $meta = New-Object System.Windows.Controls.StackPanel
-        $meta.Orientation = 'Horizontal'
+    if (-not [string]::IsNullOrWhiteSpace($rowProject) -or -not [string]::IsNullOrWhiteSpace($metaText)) {
+        $meta = New-Object System.Windows.Controls.Grid
         $meta.Margin = New-Object System.Windows.Thickness 0,3,0,0
-        if (-not [string]::IsNullOrWhiteSpace($projectText)) {
+        $colMetaLeft = New-Object System.Windows.Controls.ColumnDefinition
+        $colMetaLeft.Width = [System.Windows.GridLength]::Auto
+        $colMetaRight = New-Object System.Windows.Controls.ColumnDefinition
+        $colMetaRight.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+        [void]$meta.ColumnDefinitions.Add($colMetaLeft)
+        [void]$meta.ColumnDefinitions.Add($colMetaRight)
+        if (-not [string]::IsNullOrWhiteSpace($rowProject)) {
+            $left = New-Object System.Windows.Controls.StackPanel
+            $left.Orientation = 'Horizontal'
+            $left.VerticalAlignment = 'Top'
             $folder = New-Text -Text ([string][char]0xE8B7) -Size 9.5 -Color $script:TextMuted
             $folder.FontFamily = New-Object System.Windows.Media.FontFamily $script:IconFont
-            $folder.Margin = New-Object System.Windows.Thickness 0,0,4,1
-            [void]$meta.Children.Add($folder)
-            $projectLabel = New-Text -Text $projectText -Size 10.5 -Color $script:TextBody
+            $folder.Margin = New-Object System.Windows.Thickness 0,0,4,0
+            [void]$left.Children.Add($folder)
+            $projectLabel = New-Text -Text $rowProject -Size 10.5 -Color $script:TextBody
             $projectLabel.TextTrimming = 'CharacterEllipsis'
             $projectLabel.TextWrapping = 'NoWrap'
-            $projectLabel.MaxWidth = 150
-            [void]$meta.Children.Add($projectLabel)
+            $projectLabel.MaxWidth = 132
+            [void]$left.Children.Add($projectLabel)
+            if (-not [string]::IsNullOrWhiteSpace($metaText)) {
+                $sep = New-Text -Text (' ' + [string][char]0x00B7 + ' ') -Size 10.5 -Color $script:TextGhost
+                [void]$left.Children.Add($sep)
+            }
+            [System.Windows.Controls.Grid]::SetColumn($left, 0)
+            [void]$meta.Children.Add($left)
         }
         if (-not [string]::IsNullOrWhiteSpace($metaText)) {
-            $sep = New-Text -Text (' ' + [string][char]0x00B7 + ' ') -Size 10.5 -Color $script:TextGhost
-            if (-not [string]::IsNullOrWhiteSpace($projectText)) { [void]$meta.Children.Add($sep) }
             $detail = New-Text -Text $metaText -Size 10.5 -Color $script:TextMuted
             $detail.TextWrapping = 'Wrap'
-            $detail.TextTrimming = 'CharacterEllipsis'
             $detail.LineHeight = 15
             $detail.LineStackingStrategy = 'BlockLineHeight'
-            $detail.Margin = New-Object System.Windows.Thickness 0,0,0,1
+            $detail.VerticalAlignment = 'Top'
+            [System.Windows.Controls.Grid]::SetColumn($detail, 1)
             [void]$meta.Children.Add($detail)
         }
         [void]$stack.Children.Add($meta)
@@ -523,9 +534,6 @@ if (-not [string]::IsNullOrWhiteSpace($Snapshot)) {
     }
     $cardWidth = if ($SnapshotWidth -gt 0) { $SnapshotWidth } else { $script:CardWidth }
     $card = New-Card $payload -Width $cardWidth
-    # A height cap makes the content overflow, which is how the scrollbar gets
-    # captured in a snapshot instead of only on a live window.
-    if ($SnapshotHeight -gt 0) { $card.Height = $SnapshotHeight }
     $size = Measure-Card $card
 
     # Snapshot output is meant to be published, so it must never contain desktop
@@ -695,6 +703,11 @@ if ($null -ne $payload) {
             # Widen/narrow reflows the text, so the card may need more height than
             # the window has. Lift MinHeight instead of clipping or scrolling.
             try {
+                # Measure at the width we are about to have: DesiredSize still
+                # describes the previous layout pass, so trusting it lags one
+                # resize step and can leave the card clipped.
+                $probeWidth = [Math]::Max(120, $window.ActualWidth - (2 * $script:ShadowPad))
+                $card.Measure([System.Windows.Size]::new($probeWidth, [double]::PositiveInfinity))
                 $needed = $card.DesiredSize.Height
                 if ($needed -gt 0 -and $window.MinHeight -lt $needed) { $window.MinHeight = $needed }
             } catch { }
