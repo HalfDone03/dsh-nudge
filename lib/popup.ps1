@@ -301,11 +301,27 @@ function New-ItemRow {
     }
     [void]$row.Children.Add($stack)
 
+    # The kind word is spelled out next to the timestamp, in the same accent as
+    # the dot: a 6 px dot alone is a weak cue when four notices are stacked.
+    # Stacked, not side by side: on a 260 px card "pending 21:19" in one line is
+    # wide enough to squeeze the task name into the card edge.
+    $timeBox = New-Object System.Windows.Controls.StackPanel
+    $timeBox.Orientation = 'Vertical'
+    $timeBox.VerticalAlignment = 'Top'
+    $timeBox.HorizontalAlignment = 'Right'
+    $timeBox.Margin = New-Object System.Windows.Thickness 10,1,0,0
+    $kindWord = [string]$Item.rowKind
+    if (-not [string]::IsNullOrWhiteSpace($kindWord)) {
+        $kindText = New-Text -Text $kindWord -Size 9.5 -Color $accent
+        $kindText.HorizontalAlignment = 'Right'
+        [void]$timeBox.Children.Add($kindText)
+    }
     $time = New-Text -Text ([string]$Item.at) -Size 10 -Color $script:TextGhost
-    $time.VerticalAlignment = 'Top'
-    $time.Margin = New-Object System.Windows.Thickness 10,2,0,0
-    [System.Windows.Controls.Grid]::SetColumn($time, 2)
-    [void]$row.Children.Add($time)
+    $time.HorizontalAlignment = 'Right'
+    $time.Margin = New-Object System.Windows.Thickness 0,1,0,0
+    [void]$timeBox.Children.Add($time)
+    [System.Windows.Controls.Grid]::SetColumn($timeBox, 2)
+    [void]$row.Children.Add($timeBox)
     return $row
 }
 
@@ -324,7 +340,13 @@ function New-Card {
     }
     $card.CornerRadius = New-Object System.Windows.CornerRadius $script:CardRadius
     $card.Background = New-VerticalGradient -Top $script:CardTop -Bottom $script:CardBottom
-    $card.BorderBrush = New-Brush $script:CardEdge
+    # A failed batch tints the whole outline red, so the card reads as "something
+    # broke" from the corner of your eye before you parse a single word.
+    $script:cardEdgeNow = $script:CardEdge
+    $kindName = [string]$Payload.kind
+    if ($kindName -eq 'failed') { $script:cardEdgeNow = '#4DE74C3C' }
+    elseif ($kindName -eq 'needs_choice') { $script:cardEdgeNow = '#45F5A623' }
+    $card.BorderBrush = New-Brush $script:cardEdgeNow
     $card.BorderThickness = New-Object System.Windows.Thickness 1
     $card.Margin = New-Object System.Windows.Thickness $script:ShadowPad
     $card.Cursor = [System.Windows.Input.Cursors]::Hand
@@ -626,8 +648,13 @@ if ($null -ne $payload) {
     $card.RenderTransform = $slide
     $window.Opacity = 0
 
-    $card.Add_MouseEnter({ try { $card.BorderBrush = New-Brush $script:CardEdgeHover } catch { } })
-    $card.Add_MouseLeave({ try { $card.BorderBrush = New-Brush $script:CardEdge } catch { } })
+    $card.Add_MouseEnter({
+            try { $card.BorderBrush = New-Brush $script:CardEdgeHover } catch { }
+            # Looking at the card should not cost you the card: hovering restarts
+            # the dwell instead of letting the original countdown run out mid-read.
+            try { $timer.Stop(); $timer.Start() } catch { }
+        })
+    $card.Add_MouseLeave({ try { $card.BorderBrush = New-Brush $script:cardEdgeNow } catch { } })
 
     # A transparent window has no non-client area, so the resize gesture has to be
     # handed to the system ourselves: press on an edge -> ReleaseCapture + a

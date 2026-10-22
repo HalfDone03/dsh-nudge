@@ -52,12 +52,15 @@ ALL PASS (23 checks)
 
 ## 2.6 多条提醒的可读性
 
-- 多条提醒不再折叠成一行：每条渲染成两行，第一行是任务名（12px SemiBold）+ 时间，第二行是「📁 项目 · 明细」（10.5px）。
+- 多条提醒不再折叠成一行：每条两行，第一行是任务名（12px SemiBold），第二行是「📁 项目 · 明细」（10.5px）；右侧竖排「完成 / 待批准 / 失败」短标签（颜色跟随该条）+ 时间。横排标签+时间在 260 宽时会把任务名挤到卡片边缘，所以改竖排。
 - 单条提醒：任务名（或精简后的错误）做 13px 主角行，项目单独一行（11px，`#8AFFFFFF`）。
-- 不加滚动条：卡片按内容长高；窗口 `MinHeight` 跟随内容所需高度，把窗口拖矮时不会裁掉内容。
-- 快照校验：`screenshots/multi.png` 436×329（4 条 / 3 个项目，逐行可见项目与任务）、`screenshots/single.png` 436×209（单条：错误 + 项目 · 任务）。
+- 不加滚动条：卡片按内容长高；窗口 `MinHeight` 每次缩放都按新宽度重算，把窗口拖矮时不会裁掉内容。
+- 明细最多折叠到 6 行（`MaxHeight = 6 × LineHeight`，切在行边界上），窄卡片不会被超长报错撑爆。
+- 卡片外框跟随最严重的 kind 染色：failed `#4DE74C3C`、needs_choice `#45F5A623`、其余 `#2BFFFFFF`，扫一眼就知道出事了。
+- 不打扰：卡片是 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` 窗口，永不被激活、不进 Alt+Tab；纯点击不进入系统拖动循环（位移 >4px 才算拖动）；弹出后 320ms 内的点击被忽略；移进卡片会重置停留计时。
+- 快照校验：`screenshots/multi.png` 436×343（4 条 / 3 个项目，逐条可见 kind、项目、任务）、`screenshots/single.png` 436×209（单条：错误 + 项目 · 任务）。
 
-## 3.' 卡片图内容自证（纯像素，不需要屏幕）
+## 3. 卡片图内容自证（纯像素，不需要屏幕）
 
 `screenshots\*.png` 是 `-Snapshot` 无头渲染的结果，再合成到纯色底（#1F1F1F，四周 12px 留白），
 **不含任何桌面内容**，可以安全公开。`selftest.mjs` 每次重跑都会重新生成。
@@ -84,8 +87,8 @@ foreach ($f in 'completed','needs_choice','failed') {
 
 ```
 completed:    436x150 distinct=135 dark=16071 accent=70 text=135
-needs_choice: 436x209 distinct=229 dark=22121 accent=155 text=258
-failed:       436x181 distinct=147 dark=19044 accent=132 text=401
+needs_choice: 436x209 distinct=245 dark=21657 accent=172 text=258
+failed:       436x181 distinct=160 dark=18621 accent=132 text=401
 ```
 
 判定标准：

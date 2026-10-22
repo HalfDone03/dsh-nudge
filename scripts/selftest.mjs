@@ -130,6 +130,9 @@ probe.show([
 ]);
 check("多条时逐条挂项目标签", captured[3]?.items.map((item) => item.rowProject).join(",") === "dsh-nudge,web-console",
 	JSON.stringify(captured[3]?.items.map((item) => item.rowProject)));
+check("多条时逐条挂中文 kind 标签",
+	captured[3]?.items.map((item) => item.rowKind).join(",") === "待批准,完成",
+	JSON.stringify(captured[3]?.items.map((item) => item.rowKind)));
 check("多条时不显示主角行", captured[3]?.headline === "", JSON.stringify(captured[3]?.headline));
 probe.dispose();
 
@@ -164,7 +167,7 @@ const payloads = {
 		context: "",
 		items: [
 			{ kind: "needs_choice", title: "部署到生产", detail: "等待你批准一个操作", at: "21:19", count: 1, rowProject: "dsh-nudge" },
-			{ kind: "completed", title: "跑测试", detail: "回合已完成", at: "21:17", count: 1, rowProject: "web-console" }
+			{ kind: "completed", title: "跑测试", detail: "回合已完成", at: "21:17", count: 1, rowProject: "web-console", rowKind: "完成" }
 		] },
 	failed: { kind: "failed", label: "执行失败", accent: "#E74C3C", glyph: "\u2716", count: 1,
 		headline: "TypeError: Cannot read property 'stdout' of undefined",
