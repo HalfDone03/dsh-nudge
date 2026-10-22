@@ -287,6 +287,10 @@ function New-ItemRow {
             $detail.TextWrapping = 'Wrap'
             $detail.LineHeight = 15
             $detail.LineStackingStrategy = 'BlockLineHeight'
+            # Fold at six lines: a very long error on a narrow card would
+            # otherwise make the card taller than the screen. 90 = 6 * LineHeight,
+            # so the cut lands on a line boundary instead of slicing a glyph.
+            $detail.MaxHeight = 90
             $detail.VerticalAlignment = 'Top'
             [System.Windows.Controls.Grid]::SetColumn($detail, 1)
             [void]$meta.Children.Add($detail)
@@ -594,7 +598,7 @@ if ($null -ne $payload) {
     $window.ShowActivated = $false
     $window.WindowStartupLocation = 'Manual'
     $window.SizeToContent = 'Manual'
-    $window.MinWidth = 300
+    $window.MinWidth = 260
     $window.MinHeight = 118
     $window.Width = $size.Width
     $window.Height = $size.Height
