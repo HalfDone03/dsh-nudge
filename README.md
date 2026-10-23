@@ -20,6 +20,25 @@ DSH 的回合经常跑很久，或者卡在等你批准/回答上，而你切到
 
 ## 安装
 
+**先拿到代码。** 没有 npm 包（`dsh-nudge` 这个名字在 npm 上已被别人占用），
+任选一种：
+
+```powershell
+# A. git（推荐，能跟着 v0.2.0 这个标签走）
+git clone --branch v0.2.0 https://github.com/HalfDone03/dsh-nudge.git
+cd dsh-nudge
+
+# B. 没装 git：下压缩包再解压
+#    https://codeload.github.com/HalfDone03/dsh-nudge/tar.gz/refs/tags/v0.2.0
+```
+
+想在插件市场里直接装（DSH 0.2.1+）：`Plugins → Discover → Index sources` 里加
+`index.json` 的地址即可，仓库根目录那份就是标准格式（已与官方目录逐字段核对）。
+注意它要能被你的网络访问——本机实测 `raw.githubusercontent.com` 和 jsDelivr 都超时，
+`github.com` 与 `codeload.github.com` 正常，所以这条在国内网络下可能需要镜像。
+
+拿到代码后，在**仓库目录里**执行：
+
 ```powershell
 # 只看计划，不写文件
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1 -DryRun
