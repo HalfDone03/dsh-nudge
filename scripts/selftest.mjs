@@ -131,9 +131,19 @@ probe.show([
 check("多条时逐条挂项目标签", captured[3]?.items.map((item) => item.rowProject).join(",") === "dsh-nudge,web-console",
 	JSON.stringify(captured[3]?.items.map((item) => item.rowProject)));
 check("多条时逐条挂中文 kind 标签",
-	captured[3]?.items.map((item) => item.rowKind).join(",") === "待批准,完成",
+	captured[3]?.items.map((item) => item.rowKind).join(",") === "待你选择,完成",
 	JSON.stringify(captured[3]?.items.map((item) => item.rowKind)));
 check("多条时不显示主角行", captured[3]?.headline === "", JSON.stringify(captured[3]?.headline));
+check("完成的明细不再重复写在行里", captured[3]?.items[1]?.detail === "", JSON.stringify(captured[3]?.items[1]?.detail));
+
+// 任务名过长：截到 42 字并带省略号，别让 WPF 在第三行中途切字
+probe.show([{ kind: "failed", sessionId: "p6", title: "把弹窗脚本里所有硬编码的颜色常量统一抽成一个主题表并保证明暗两种背景都能读清楚同时把窗口缩放时的重排逻辑也理顺", detail: "锚点找不到", count: 1, at: "21:24" }]);
+const clipped = captured[4]?.headline ?? "";
+check("超长任务名截到 42 字且带省略号", [...clipped].length === 42 && clipped.endsWith("…"), `${[...clipped].length}字 ${JSON.stringify(clipped)}`);
+
+// 需要你选的卡片要停更久（最少 20 秒）
+check("待选择卡片最少停 20 秒", probe.stayFor({ kind: "needs_choice", items: [] }) >= 20, String(probe.stayFor({ kind: "needs_choice", items: [] })));
+check("完成卡片仍按基础时长", probe.stayFor({ kind: "completed", items: [] }) < 20, String(probe.stayFor({ kind: "completed", items: [] })));
 probe.dispose();
 
 /** 4. PopupRunner 真起 helper ---- */

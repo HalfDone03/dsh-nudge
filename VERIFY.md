@@ -60,6 +60,8 @@ ALL PASS (23 checks)
 - 不打扰：卡片是 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` 窗口，永不被激活、不进 Alt+Tab；纯点击不进入系统拖动循环（位移 >4px 才算拖动）；弹出后 320ms 内的点击被忽略；移进卡片会重置停留计时。
 - 定位：`MonitorFromWindow`（DSH 主窗口）→ `MonitorFromPoint`（光标）→ `SystemParameters.WorkArea` 三级退化，取 `rcWork` 右下角内缩 `margin`；实测本机 2560×1440、任务栏 48px、卡片 412×154 → `left=2132`、`top=1222`（=1392−154−16），与旧主屏逻辑在同一屏上结果一致。
 - 右键只关闭：不调用 `Focus-Ds`、不写剪贴板，也不激活窗口（`WS_EX_NOACTIVATE`）。
+- 标题上限：任务名按 `TITLE_LIMIT = 42` 截断（带 `…`），标题区 `MaxHeight = 63`（三行）。实测 42 字标题在 384 宽排两行、在最小 260 宽排三行，文字最右 281 < 内沿 285，三行都能完整显示。
+- 停留时长：`stayFor()` 里条目越多越久（+2 秒/条），「需要你选择」再乘三且不少于 20 秒（实测 24 秒）；其余仍是 8 秒起。
 - 快照校验：`screenshots/multi.png` 436×337（4 条 / 3 个项目）、`screenshots/single.png` 436×234（失败单条）、`screenshots/single-choice.png` 436×234（待批准单条）、`screenshots/single-done.png` 436×205（完成单条）。像素实测的纵向文字带：头部 12px → 任务名 16px → 状态 12px → 原因 9-11px → 项目 10-11px，最大字号确实落在任务名上。
 
 ## 3. 卡片图内容自证（纯像素，不需要屏幕）

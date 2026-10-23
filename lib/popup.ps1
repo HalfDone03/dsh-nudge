@@ -466,7 +466,7 @@ function New-Card {
         $headlineBlock.TextTrimming = 'CharacterEllipsis'
         $headlineBlock.LineHeight = 21
         $headlineBlock.LineStackingStrategy = 'BlockLineHeight'
-        $headlineBlock.MaxHeight = 42
+        $headlineBlock.MaxHeight = 63
         $headlineBlock.HorizontalAlignment = 'Left'
         $headlineBlock.Margin = New-Object System.Windows.Thickness 0,7,0,0
         [void]$body.Children.Add($headlineBlock)
@@ -484,8 +484,8 @@ function New-Card {
         [void]$verdictRow.ColumnDefinitions.Add($colVerdictLabel)
         [void]$verdictRow.ColumnDefinitions.Add($colVerdictBody)
         if (-not [string]::IsNullOrWhiteSpace($verdictKind)) {
-            # Only add the full-width colon when a reason follows it: "完成" reads
-            # fine on its own, "完成：" with nothing after it does not.
+            # Only add the full-width colon when a reason follows it: the completion
+            # word alone reads fine, with a colon and nothing after it it does not.
             $verdictLabelText = $verdictKind
             if (-not [string]::IsNullOrWhiteSpace($verdictText)) { $verdictLabelText = $verdictKind + [string][char]0xFF1A }
             $verdictLabel = New-Text -Text $verdictLabelText -Size 11.5 -Color (Get-KindAccent ([string]$Payload.kind)) -Weight 'SemiBold'
