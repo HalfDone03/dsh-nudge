@@ -32,10 +32,24 @@ cd dsh-nudge
 #    https://codeload.github.com/HalfDone03/dsh-nudge/tar.gz/refs/tags/v0.2.0
 ```
 
-想在插件市场里直接装（DSH 0.2.1+）：`Plugins → Discover → Index sources` 里加
-`index.json` 的地址即可，仓库根目录那份就是标准格式（已与官方目录逐字段核对）。
-注意它要能被你的网络访问——本机实测 `raw.githubusercontent.com` 和 jsDelivr 都超时，
-`github.com` 与 `codeload.github.com` 正常，所以这条在国内网络下可能需要镜像。
+想在插件市场里直接装（DSH 0.2.1+）：`Plugins → Discover → Index sources` 里加一条索引地址。
+仓库根目录的 `index.json` 就是标准格式（format 1，已与官方 `dsh-plugin-catalog` 逐字段核对）。
+**别用 `raw.githubusercontent.com`**——国内网络经常连不上，用 CDN 镜像：
+
+```
+https://gcore.jsdelivr.net/gh/HalfDone03/dsh-nudge@main/index.json
+```
+
+备选（同一份内容，哪个通就用哪个）：
+
+```
+https://fastly.jsdelivr.net/gh/HalfDone03/dsh-nudge@main/index.json
+https://testingcf.jsdelivr.net/gh/HalfDone03/dsh-nudge@main/index.json
+https://cdn.jsdmirror.com/gh/HalfDone03/dsh-nudge@main/index.json
+```
+
+用 `@main` 而不是 `@v0.2.0`：jsDelivr 对分支有缓存，但对标签会永远返回打标签那一刻的
+`index.json`（那份里的 `commit` 还指向旧提交）。
 
 拿到代码后，在**仓库目录里**执行：
 
