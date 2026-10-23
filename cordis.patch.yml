@@ -18,6 +18,6 @@
         showWhenFocused: true
         margin: 16
         mergeWindowMs: 1200
-        maxItems: 5
+        maxItems: 8
         alertOnToolError: true
         muteRanges: []
