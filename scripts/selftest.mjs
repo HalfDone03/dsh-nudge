@@ -75,6 +75,9 @@ check("normalizeConfig 合并 kinds", normalizeConfig({ kinds: { failed: false }
 	&& normalizeConfig({ kinds: { failed: false } }).kinds.completed === true);
 checkThrows("staySeconds 越界抛错", () => normalizeConfig({ staySeconds: 0 }));
 checkThrows("muteRanges 格式非法抛错", () => normalizeConfig({ muteRanges: ["8-9"] }));
+checkThrows("muteRanges 小时越界抛错", () => normalizeConfig({ muteRanges: ["25:00-08:00"] }));
+checkThrows("muteRanges 分钟越界抛错", () => normalizeConfig({ muteRanges: ["22:60-08:00"] }));
+checkThrows("kinds 非对象抛错", () => normalizeConfig({ kinds: ["completed"] }));
 
 /** 2. 静音时间段 ---- */
 const at = (h, m) => new Date(2026, 0, 1, h, m);
@@ -162,10 +165,12 @@ function makePluginContext(deps = {}) {
 		get(name) {
 			if (name === "approval") return { id: "approval" };
 			if (name === "userQuestions") return deps.questions;
+			if (name === "sessionTitle") return deps.sessionTitle;
 			return undefined;
 		},
 		effect(setup) {
-			disposers.push(setup());
+			const dispose = setup();
+			if (typeof dispose === "function") disposers.push(dispose);
 		},
 		logger: { info() {}, warn() {}, debug() {} }
 	};
@@ -187,9 +192,10 @@ const originalAsk = questions.ask;
 const { ctx: pluginCtx, handlers, disposers } = makePluginContext({ questions });
 const wiredPlugin = createPlugin(pluginCtx, { ...defaults, mergeWindowMs: 0, staySeconds: 5 }, { runner: wiredRunner });
 const wiredSession = { header: { id: "wired-session", cwd: "C:/repo/dsh-nudge" } };
-const emitSession = (type, data) => {
-	for (const handler of handlers.get("session/event") ?? []) handler(wiredSession, { type, data });
+const emitOn = (session, type, data) => {
+	for (const handler of handlers.get("session/event") ?? []) handler(session, { type, data });
 };
+const emitSession = (type, data) => emitOn(wiredSession, type, data);
 const drain = () => {
 	const before = wired.length;
 	wiredPlugin.center.flush();
@@ -207,8 +213,15 @@ emitSession("turn/end", { reason: { kind: "error", error: { message: "boom" } } 
 batch = drain();
 check("turn/end error 产生失败提醒", batch[0]?.kind === "failed" && batch[0]?.detail === "boom", JSON.stringify(batch[0]));
 
+emitSession("turn/end", { reason: { kind: "blocked" } });
+batch = drain();
+check("turn/end blocked 归为失败而非完成", batch[0]?.kind === "failed" && batch[0]?.detail === "回合被策略拦截", JSON.stringify(batch[0]));
+
 emitSession("turn/end", { reason: { kind: "aborted" } });
 check("turn/end aborted 不提醒", drain().length === 0);
+
+emitOn({ header: { id: "child-session", cwd: "C:/repo/dsh-nudge", parentSession: "wired-session", delegationDepth: 1 } }, "turn/end", { reason: { kind: "completed" } });
+check("子代理回合不单独提醒", drain().length === 0);
 
 emitSession("tool/result", {
 	message: {
@@ -299,6 +312,57 @@ try {
 check("userQuestions.ask 的 rejection 不被吞掉", rejectionPropagated);
 for (const dispose of rejecting.disposers.reverse()) dispose();
 
+// 没有 session/title 事件时，标题应来自 sessionTitle 服务（0.2.1 的 SessionHeader 没有 title）。
+const svcEvents = [];
+const svcRunner = { show(items) { svcEvents.push(items); return true; }, dispose() {} };
+const svc = makePluginContext({
+	sessionTitle: { get: (session) => ({ title: session?.header?.id === "svc-session" ? "标题服务会话" : "" }) }
+});
+const svcPlugin = createPlugin(svc.ctx, { ...defaults, mergeWindowMs: 0 }, { runner: svcRunner });
+const svcSession = { header: { id: "svc-session", cwd: "C:/repo/proj" } };
+for (const handler of svc.handlers.get("session/event") ?? []) {
+	handler(svcSession, { type: "turn/end", data: { reason: { kind: "completed" } } });
+}
+svcPlugin.center.flush();
+check("没有 session/title 事件时走 sessionTitle 服务", svcEvents[0]?.[0]?.title === "标题服务会话", JSON.stringify(svcEvents[0]?.[0]?.title));
+for (const dispose of svc.disposers.reverse()) dispose();
+
+// 弹窗 runner 自己抛错时，flush 不能把异常带回事件循环。
+const swallowed = [];
+const throwingCenter = new AlertCenter(
+	{ ...defaults, mergeWindowMs: 0 },
+	{ runner: { show() { throw new Error("runner boom"); }, dispose() {} }, log: (level, message) => swallowed.push({ level, message }) }
+);
+throwingCenter.push("completed", { sessionId: "throw-session" });
+let flushThrew = false;
+try {
+	throwingCenter.flush();
+} catch {
+	flushThrew = true;
+}
+check("runner.show 抛错不冒泡到宿主", flushThrew === false && swallowed.some((entry) => entry.level === "warn"), JSON.stringify(swallowed));
+throwingCenter.dispose();
+
+// stdout 的一行 JSON 可能被拆成两个 chunk。
+const consumed = [];
+const consuming = new PopupRunner({ ...defaults }, () => {}, { onStatus: (status) => consumed.push(status) });
+consuming.consume('{"type":"sho');
+check("半行状态不提前解析", consumed.length === 0);
+consuming.consume('wn","count":1}\n');
+check("跨 chunk 的状态行能拼回来", consumed[0]?.type === "shown" && consumed[0]?.count === 1, JSON.stringify(consumed));
+consuming.dispose();
+
+// 跨零点的排序：00:01 比 23:59 新，不能按 "HH:MM" 字符串排。
+let sortedPayload = null;
+const sortProbe = new PopupRunner({ ...defaults }, () => {});
+sortProbe.spawnOnce = (payload) => { sortedPayload = payload; return true; };
+sortProbe.show([
+	{ kind: "completed", sessionId: "late", title: "跨零点前", detail: "", at: "23:59", atMs: 1000, count: 1 },
+	{ kind: "completed", sessionId: "early", title: "跨零点后", detail: "", at: "00:01", atMs: 2000, count: 1 }
+]);
+check("跨零点按完整时间戳排序", sortedPayload?.items?.[0]?.title === "跨零点后", JSON.stringify(sortedPayload?.items?.map((item) => item.title)));
+sortProbe.dispose();
+
 /** 4. PopupRunner 真起 helper ---- */
 const statuses = [];
 const runner = new PopupRunner({ ...defaults, staySeconds: 6 }, () => {}, { onStatus: (status) => statuses.push(status) });
@@ -308,7 +372,7 @@ const shown = await waitFor(() => statuses.some((status) => status.type === "sho
 check("helper 回报 shown", shown, JSON.stringify(statuses));
 const shownStatus = statuses.find((status) => status.type === "shown");
 if (shownStatus !== undefined) {
-	check("卡片贴右下角（left>屏宽*0.7）", shownStatus.left > 1400, `left=${shownStatus.left}, top=${shownStatus.top}`);
+	check("卡片在屏幕右下半区", shownStatus.left >= shownStatus.width / 2 && shownStatus.top >= shownStatus.height / 2, `left=${shownStatus.left}, top=${shownStatus.top}, ${shownStatus.width}x${shownStatus.height}`);
 	check("卡片计数透传", shownStatus.count === 2, `count=${shownStatus.count}`);
 }
 const child = runner.child;
@@ -359,8 +423,20 @@ function renderSnapshot(kind, out, width = 0) {
 			"-File", popupScript, "-Snapshot", out, ...extra, "-PayloadB64", b64
 		], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
 		let stdout = "";
+		let settled = false;
+		const finish = (code) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			resolve({ code, out: stdout });
+		};
+		const timer = setTimeout(() => {
+			try { child.kill(); } catch {}
+			finish(-1);
+		}, 30000);
 		child.stdout.on("data", (chunk) => { stdout += String(chunk); });
-		child.on("exit", (code) => resolve({ code: code ?? -1, out: stdout }));
+		child.on("error", () => finish(-1));
+		child.on("exit", (code) => finish(code ?? -1));
 	});
 }
 

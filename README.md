@@ -12,11 +12,13 @@ DSH 的回合经常跑很久，或者卡在等你批准/回答上，而你切到
 
 | 时刻 | 触发来源 | 卡片标题 |
 | --- | --- | --- |
-| 回合正常结束 | `session/event` → `turn/end`，`reason.kind` 为 `completed` / `max-tokens` / `blocked` | 任务完成 |
+| 回合正常结束 | `session/event` → `turn/end`，`reason.kind` 为 `completed` / `max-tokens` | 任务完成 |
+| 回合被策略拦截 | `turn/end`，`reason.kind === 'blocked'`（归档会话、过期 goal 等） | 执行失败 |
 | 等你批准或回答 | `approval/request` 事件、`userQuestions.ask()` 被调用 | 需要你选择 |
 | 回合或工具失败 | `turn/end` 的 `reason.kind === 'error'`、`tool/result` 报错 | 执行失败 |
 
 几张卡片同时到达时，1.2 秒合并窗口内的事件会合成一张，标题取最严重的那个，右上角显示累计条数。
+子代理会话（`delegationDepth > 0` 或有 `parentSession`）不单独弹，避免每个子任务都响一次。
 
 ## 安装
 
@@ -180,8 +182,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 ## 发布
 
 包已按可发布形态配好：`type: module`、`main`/`exports`、`dsh.bundle.patch`、
-`files` 白名单（21 个文件、约 245 KB，只含 `lib`/`scripts`/`cordis.patch.yml`/README/VERIFY/CHANGELOG/`screenshots/*.png`；`docs/` 只留在仓库里）、
-`engines: { node: ">=20.3.0", dsh: ">=0.2.1-rc.2" }`、`publishConfig.access: public`。
+`files` 白名单（21 个文件、约 253 KB，只含 `lib`/`scripts`/`cordis.patch.yml`/README/VERIFY/CHANGELOG/`screenshots/*.png`；`docs/` 只留在仓库里）、
+`engines: { node: ">=20.3.0", dsh: ">=0.2.1-rc.2" }`、`os: ["win32"]`、`publishConfig.access: public`。
 
 ```powershell
 npm login
@@ -192,7 +194,7 @@ npm publish            # 名字带 scope 时用 npm publish --access public
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs      # 60 项全绿
+& $node .\scripts\selftest.mjs      # 70 项全绿
 ```
 
 三条硬要求，少一条装上就是坏的：
@@ -224,7 +226,7 @@ $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\nod
 & $node .\scripts\selftest.mjs
 ```
 
-当前 **60 项全绿**，覆盖：配置校验与默认值、静音时段（含跨零点）、事件合并计数、
+当前 **70 项全绿**，覆盖：配置校验与默认值、静音时段（含跨零点）、事件合并计数、
 严重度排序、三类开关、真起弹窗并收到 `{"type":"shown"}` 与右下角坐标、dispose 后无孤儿进程、
 三种状态各渲染一张 384px 宽快照（尺寸与非空校验）。
 
@@ -247,7 +249,7 @@ dsh-nudge/
 ├─ scripts/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
-│  └─ selftest.mjs       60 项自测
+│  └─ selftest.mjs       70 项自测
 ├─ screenshots/          三态卡片图（纯色底，无桌面内容）
 └─ docs/api-notes.md     事件源与弹窗选型的取证笔记（带源码行号）
 ```

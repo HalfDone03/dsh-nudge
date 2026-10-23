@@ -1,12 +1,13 @@
 # dsh-nudge popup helper (Windows PowerShell 5.1, STA required)
 #
-# Two modes:
-#   1. daemon (default): reads one-line JSON commands from stdin and keeps ONE window.
-#        {"type":"show","b64":"<payload JSON, UTF-8, base64>"}
-#        {"type":"show","file":"<payload.json path>"}     (fallback)
-#        {"type":"quit"}
-#      base64 is preferred: the control line stays pure ASCII, so neither the
-#      console code page nor the pipe encoding can corrupt Chinese text.
+# Modes:
+#   1. one-shot (default): renders ONE card, writes status to stdout, then exits
+#      on timeout or click. Payload is passed on the command line:
+#        -PayloadB64 <base64 UTF-8 JSON> | -PayloadFile <path>
+#      plus -StaySeconds, -Margin, and optional -SuppressWhenForeground.
+#      The process is deliberately short-lived: Windows PowerShell 5.1's
+#      [Console]::In over a redirected pipe can stall for seconds, so a
+#      daemon/stdin protocol is not used.
 #   2. snapshot: -Snapshot <out.png> (-PayloadB64 <b64> | -PayloadFile <path>)
 #      Renders the same card offline (no window) so layout can be verified in
 #      automated tests and headless runs.

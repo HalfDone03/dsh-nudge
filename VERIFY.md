@@ -21,15 +21,15 @@ $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\nod
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (60 checks)`，退出码 0。
+- selftest 输出 `ALL PASS (70 checks)`，退出码 0。
 
 证据（实测）：
 
 ```
 PASS  helper 回报 shown  --  [{"left":2132,"width":412,"top":1203,"type":"shown","count":2,"height":173}]
-PASS  卡片贴右下角（left>屏宽*0.7）  --  left=2132, top=1203
+PASS  卡片在屏幕右下半区  --  left=2132, top=1203, 412x173
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
-ALL PASS (60 checks)
+ALL PASS (70 checks)
 ```
 
 其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 173 高 →

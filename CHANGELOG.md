@@ -10,10 +10,15 @@
 - 审批卡片改用 `displayReason / reason / toolName`：不再永远显示「等待你批准一个操作」。
 - 组合包补丁的 `maxItems` 与代码默认值对齐（5 → 8）；索引和标签指向包含该修复的提交。
 - 卸载 `userQuestions.ask` 包装时还原成原函数，不再在服务对象上留下绑定旧实现的 own property。
+- `turn/end` 的 `blocked` 归为失败提醒，不再显示绿色「任务完成」。
+- 标题改为从 `sessionTitle` 服务读取（`SessionHeader` 没有 `title` 字段）；子代理会话不再单独弹窗。
+- 合并卡片按完整时间戳排序，跨零点时 `00:01` 不会排到 `23:59` 后面。
+- `flush()` 兜住 runner 异常并清掉挂着的定时器；stdout 状态行支持跨 chunk 拼接。
+- 静音时段与 `kinds` 增加严格的类型/范围校验；`os` 限定 `win32`。
 
 **测试**
 
-- 自测 60 项，新增 `createPlugin` 事件接线用例：`turn/end`、`tool/result`、`approval/request`、`userQuestions.ask`、dispose 还原与 rejection 透传。
+- 自测 70 项，新增 `createPlugin` 事件接线用例：`turn/end`、`tool/result`、`approval/request`、`userQuestions.ask`、dispose 还原与 rejection 透传；以及标题服务、`blocked`、子代理过滤、异常 runner、跨 chunk、跨零点排序。
 
 ## 0.2.0 — 2026-10-23
 
