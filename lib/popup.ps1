@@ -265,7 +265,7 @@ function New-ItemRow {
 
     $suffix = ''
     if ([int]$Item.count -gt 1) { $suffix = "  x$([int]$Item.count)" }
-    $title = New-Text -Text ("$($Item.title)$suffix") -Size 12 -Color $script:TextBody -Weight 'SemiBold'
+    $title = New-Text -Text ("$($Item.title)$suffix") -Size 13 -Color '#F2FFFFFF' -Weight 'SemiBold'
     $title.TextTrimming = 'CharacterEllipsis'
     $title.TextWrapping = 'NoWrap'
     $title.HorizontalAlignment = 'Left'
@@ -456,31 +456,69 @@ function New-Card {
     }
     [void]$body.Children.Add($header)
 
-    # The one line that matters: condensed error, the pending decision, or the task name.
+    # Reading order, top to bottom: WHICH task (biggest), then whether it worked and
+    # why, then which project. The task name is the one thing that has to be legible
+    # from across the desk, so it gets the largest type on the card.
     $headlineText = [string]$Payload.headline
     if (-not [string]::IsNullOrWhiteSpace($headlineText)) {
-        $headlineBlock = New-Text -Text $headlineText -Size 13 -Color '#F7FFFFFF' -Weight 'SemiBold'
+        $headlineBlock = New-Text -Text $headlineText -Size 15.5 -Color '#FAFFFFFF' -Weight 'SemiBold'
         $headlineBlock.TextWrapping = 'Wrap'
         $headlineBlock.TextTrimming = 'CharacterEllipsis'
-        $headlineBlock.LineHeight = 17
+        $headlineBlock.LineHeight = 21
         $headlineBlock.LineStackingStrategy = 'BlockLineHeight'
-        $headlineBlock.MaxHeight = 34
+        $headlineBlock.MaxHeight = 42
         $headlineBlock.HorizontalAlignment = 'Left'
         $headlineBlock.Margin = New-Object System.Windows.Thickness 0,7,0,0
-        $headlineTint = [string]$Payload.headlineTint
-        if ([string]::IsNullOrWhiteSpace($headlineTint)) {
-            [void]$body.Children.Add($headlineBlock)
+        [void]$body.Children.Add($headlineBlock)
+    }
+
+    # Second line: what happened, in one short sentence.
+    $verdictKind = [string]$Payload.verdictKind
+    $verdictText = [string]$Payload.verdictText
+    if (-not [string]::IsNullOrWhiteSpace($verdictKind) -or -not [string]::IsNullOrWhiteSpace($verdictText)) {
+        $verdictRow = New-Object System.Windows.Controls.Grid
+        $colVerdictLabel = New-Object System.Windows.Controls.ColumnDefinition
+        $colVerdictLabel.Width = [System.Windows.GridLength]::Auto
+        $colVerdictBody = New-Object System.Windows.Controls.ColumnDefinition
+        $colVerdictBody.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+        [void]$verdictRow.ColumnDefinitions.Add($colVerdictLabel)
+        [void]$verdictRow.ColumnDefinitions.Add($colVerdictBody)
+        if (-not [string]::IsNullOrWhiteSpace($verdictKind)) {
+            # Only add the full-width colon when a reason follows it: "完成" reads
+            # fine on its own, "完成：" with nothing after it does not.
+            $verdictLabelText = $verdictKind
+            if (-not [string]::IsNullOrWhiteSpace($verdictText)) { $verdictLabelText = $verdictKind + [string][char]0xFF1A }
+            $verdictLabel = New-Text -Text $verdictLabelText -Size 11.5 -Color (Get-KindAccent ([string]$Payload.kind)) -Weight 'SemiBold'
+            $verdictLabel.VerticalAlignment = 'Top'
+            [System.Windows.Controls.Grid]::SetColumn($verdictLabel, 0)
+            [void]$verdictRow.Children.Add($verdictLabel)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($verdictText)) {
+            $verdictBody = New-Text -Text $verdictText -Size 11.5 -Color '#DCFFFFFF'
+            $verdictBody.TextWrapping = 'Wrap'
+            $verdictBody.TextTrimming = 'CharacterEllipsis'
+            $verdictBody.LineHeight = 16
+            $verdictBody.LineStackingStrategy = 'BlockLineHeight'
+            $verdictBody.MaxHeight = 48
+            $verdictBody.VerticalAlignment = 'Top'
+            [System.Windows.Controls.Grid]::SetColumn($verdictBody, 1)
+            [void]$verdictRow.Children.Add($verdictBody)
+        }
+        $verdictTint = [string]$Payload.headlineTint
+        if ([string]::IsNullOrWhiteSpace($verdictTint)) {
+            $verdictRow.Margin = New-Object System.Windows.Thickness 0,6,0,0
+            [void]$body.Children.Add($verdictRow)
         } else {
-            $headlineFrame = New-Object System.Windows.Controls.Border
-            $headlineFrame.Background = New-Brush $headlineTint
-            $headlineFrame.CornerRadius = New-Object System.Windows.CornerRadius 6
-            $headlineFrame.Padding = New-Object System.Windows.Thickness 9,6,9,6
-            $headlineFrame.Margin = New-Object System.Windows.Thickness 0,9,0,0
-            $headlineFrame.SnapsToDevicePixels = $true
-            $headlineBlock.Margin = New-Object System.Windows.Thickness 0
-            $headlineBlock.VerticalAlignment = 'Top'
-            $headlineFrame.Child = $headlineBlock
-            [void]$body.Children.Add($headlineFrame)
+            # Failure and pending decisions get a faint coloured plate so the reason
+            # reads as a status, not as more body copy.
+            $verdictFrame = New-Object System.Windows.Controls.Border
+            $verdictFrame.Background = New-Brush $verdictTint
+            $verdictFrame.CornerRadius = New-Object System.Windows.CornerRadius 6
+            $verdictFrame.Padding = New-Object System.Windows.Thickness 9,6,9,6
+            $verdictFrame.Margin = New-Object System.Windows.Thickness 0,8,0,0
+            $verdictFrame.SnapsToDevicePixels = $true
+            $verdictFrame.Child = $verdictRow
+            [void]$body.Children.Add($verdictFrame)
         }
     }
 

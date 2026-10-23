@@ -111,18 +111,18 @@ probe.show([{
 	detail: "vite build 失败：Could not resolve entry\n    at async PluginContainer.resolveId (file.js:1284:15)"
 }]);
 check("单条卡片不再列清单", captured[0]?.items.length === 0, `items=${captured[0]?.items.length}`);
-check("失败主角行是精简后的错误", captured[0]?.headline === "vite build 失败：Could not resolve entry", JSON.stringify(captured[0]?.headline));
-check("失败主角行带淡红底", captured[0]?.headlineTint === "#24E74C3C", JSON.stringify(captured[0]?.headlineTint));
-check("说明行带项目与会话名", captured[0]?.context === "dsh-nudge · 构建前端", JSON.stringify(captured[0]?.context));
+check("失败主角行是任务名（最大的字）", captured[0]?.headline === "构建前端", JSON.stringify(captured[0]?.headline));
+check("失败第二行带淡红底", captured[0]?.headlineTint === "#24E74C3C", JSON.stringify(captured[0]?.headlineTint));
+check("失败第二行是精简后的原因", captured[0]?.verdictKind === "失败" && captured[0]?.verdictText === "vite build 失败：Could not resolve entry", JSON.stringify([captured[0]?.verdictKind, captured[0]?.verdictText]));
 check("点击复制用的摘要不为空", typeof captured[0]?.summary === "string" && captured[0].summary.includes("构建前端"), JSON.stringify(captured[0]?.summary));
 
 probe.show([{ kind: "completed", sessionId: "p2", title: "写周报", detail: "回合已完成", count: 1, at: "21:21", project: "dsh-nudge" }]);
 check("完成主角行是任务名", captured[1]?.headline === "写周报", JSON.stringify(captured[1]?.headline));
 check("完成不加底色", captured[1]?.headlineTint === "", JSON.stringify(captured[1]?.headlineTint));
-check("完成说明行只留项目", captured[1]?.context === "dsh-nudge", JSON.stringify(captured[1]?.context));
+check("完成第二行只写完成、不带冗余原因", captured[1]?.verdictKind === "完成" && captured[1]?.verdictText === "", JSON.stringify([captured[1]?.verdictKind, captured[1]?.verdictText]));
 
 probe.show([{ kind: "needs_choice", sessionId: "p3", title: "部署", detail: "等待你批准：npm i", count: 1, at: "21:22" }]);
-check("待选择主角行是待决定的事", captured[2]?.headline === "等待你批准：npm i", JSON.stringify(captured[2]?.headline));
+check("待选择主角行是任务名、第二行才是待决定的事", captured[2]?.headline === "部署" && captured[2]?.verdictKind === "待你选择" && captured[2]?.verdictText === "等待你批准：npm i", JSON.stringify([captured[2]?.headline, captured[2]?.verdictKind, captured[2]?.verdictText]));
 
 probe.show([
 	{ kind: "needs_choice", sessionId: "p4", title: "部署", detail: "等待批准", count: 1, at: "21:23", project: "dsh-nudge" },
@@ -161,9 +161,14 @@ const payloads = {
 	completed: { kind: "completed", label: "任务完成", accent: "#2ECC71", glyph: "\u2714", count: 1,
 		headline: "写周报",
 		headlineTint: "",
+		verdictKind: "完成",
+		verdictText: "",
 		context: "dsh-nudge",
 		items: [] },
 	needs_choice: { kind: "needs_choice", label: "需要你选择", accent: "#F5A623", glyph: "?", count: 2,
+		verdictKind: "待你选择",
+		verdictText: "等待你批准：npm install --production",
+		headlineTint: "#24F5A623",
 		context: "",
 		items: [
 			{ kind: "needs_choice", title: "部署到生产", detail: "等待你批准一个操作", at: "21:19", count: 1, rowProject: "dsh-nudge" },
