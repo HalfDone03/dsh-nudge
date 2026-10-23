@@ -20,27 +20,20 @@ DSH 的回合经常跑很久，或者卡在等你批准/回答上，而你切到
 
 ## 安装
 
-**先拿到代码。** 没有 npm 包（`dsh-nudge` 这个名字在 npm 上已被别人占用），
-任选一种：
+两种装法：**有 Discover 入口就用 A（三步，推荐）**，没有就走 B / C。
 
-```powershell
-# A. git（推荐，能跟着 v0.2.0 这个标签走）
-git clone --branch v0.2.0 https://github.com/HalfDone03/dsh-nudge.git
-cd dsh-nudge
+### A. 插件市场里一键装（DSH 0.2.1+）
 
-# B. 没装 git：下压缩包再解压
-#    https://codeload.github.com/HalfDone03/dsh-nudge/tar.gz/refs/tags/v0.2.0
-```
-
-想在插件市场里直接装（DSH 0.2.1+）：`Plugins → Discover → Index sources` 里加一条索引地址。
-仓库根目录的 `index.json` 就是标准格式（format 1，已与官方 `dsh-plugin-catalog` 逐字段核对）。
-**别用 `raw.githubusercontent.com`**——国内网络经常连不上，用 CDN 镜像：
+`Plugins → Discover → Index sources → 添加`，粘贴：
 
 ```
 https://gcore.jsdelivr.net/gh/HalfDone03/dsh-nudge@main/index.json
 ```
 
-备选（同一份内容，哪个通就用哪个）：
+回到 Discover 就能看到「DSH 轻推提醒」，点安装。市场自己写 profile、跑 pnpm，装完重开 DSH 生效。
+索引是标准的 format 1，`source` 用 git 提交钉死在 `5779c15`，装到的一定是 `0.2.0` 这一版。
+
+上面那条不通就换镜像（同一份内容，路径一样）：
 
 ```
 https://fastly.jsdelivr.net/gh/HalfDone03/dsh-nudge@main/index.json
@@ -48,18 +41,35 @@ https://testingcf.jsdelivr.net/gh/HalfDone03/dsh-nudge@main/index.json
 https://cdn.jsdmirror.com/gh/HalfDone03/dsh-nudge@main/index.json
 ```
 
-用 `@main` 而不是 `@v0.2.0`：jsDelivr 对分支有缓存，但对标签会永远返回打标签那一刻的
-`index.json`（那份里的 `commit` 还指向旧提交）。
+两个坑：
 
-拿到代码后，在**仓库目录里**执行：
+- **别用 `raw.githubusercontent.com`**——国内常年连不上，一条索引读不出来整个 Discover 就是空的；
+- **别用 `@v0.2.0`**——jsDelivr 对标签会永远返回打标签那一刻的 `index.json`，那份里的 `commit` 还是旧指针。用 `@main`。
+
+这条要求机器上有 `git`（pnpm 拉 `git+https` 规格要用它）。没有 git 就走 C。
+
+### B. 手动安装（有 git）
 
 ```powershell
+git clone --branch v0.2.0 https://github.com/HalfDone03/dsh-nudge.git
+cd dsh-nudge
+
 # 只看计划，不写文件
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1 -DryRun
 
 # 真正安装（会先备份 profile 的 package.json）
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 ```
+
+### C. 没有 git
+
+下这个压缩包解压，进目录跑 B 里那两条命令：
+
+```
+https://codeload.github.com/HalfDone03/dsh-nudge/tar.gz/refs/tags/v0.2.0
+```
+
+（npm 上装不到：`dsh-nudge` 这个名字已被别人占用。）
 
 安装脚本做三件事，顺序不能省：
 
