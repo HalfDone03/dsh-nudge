@@ -31,7 +31,7 @@ https://gcore.jsdelivr.net/gh/HalfDone03/dsh-nudge@main/index.json
 ```
 
 回到 Discover 就能看到「DSH 轻推提醒」，点安装。市场自己写 profile、跑 pnpm，装完重开 DSH 生效。
-索引是标准的 format 1，`source` 用 git 提交钉死在 `5779c15`，装到的一定是 `0.2.0` 这一版。
+索引是标准的 format 1，`source` 用 git 提交钉死（仓库根目录 `index.json` 的 `source.commit`），装到的一定是 `0.2.1` 这一版。
 
 上面那条不通就换镜像（同一份内容，路径一样）：
 
@@ -44,14 +44,14 @@ https://cdn.jsdmirror.com/gh/HalfDone03/dsh-nudge@main/index.json
 两个坑：
 
 - **别用 `raw.githubusercontent.com`**——国内常年连不上，一条索引读不出来整个 Discover 就是空的；
-- **别用 `@v0.2.0`**——jsDelivr 对标签会永远返回打标签那一刻的 `index.json`，那份里的 `commit` 还是旧指针。用 `@main`。
+- **别用 `@v0.2.1`**——jsDelivr 对标签会永远返回打标签那一刻的 `index.json`，那份里的 `commit` 还是旧指针。用 `@main`。
 
 这条要求机器上有 `git`（pnpm 拉 `git+https` 规格要用它）。没有 git 就走 C。
 
 ### B. 手动安装（有 git）
 
 ```powershell
-git clone --branch v0.2.0 https://github.com/HalfDone03/dsh-nudge.git
+git clone --branch v0.2.1 https://github.com/HalfDone03/dsh-nudge.git
 cd dsh-nudge
 
 # 只看计划，不写文件
@@ -66,7 +66,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 下这个压缩包解压，进目录跑 B 里那两条命令：
 
 ```
-https://codeload.github.com/HalfDone03/dsh-nudge/tar.gz/refs/tags/v0.2.0
+https://codeload.github.com/HalfDone03/dsh-nudge/tar.gz/refs/tags/v0.2.1
 ```
 
 （npm 上装不到：`dsh-nudge` 这个名字已被别人占用。）
@@ -180,7 +180,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 ## 发布
 
 包已按可发布形态配好：`type: module`、`main`/`exports`、`dsh.bundle.patch`、
-`files` 白名单（20 个文件、约 234 KB，只含 `lib`/`scripts`/`cordis.patch.yml`/文档/`screenshots/*.png`）、
+`files` 白名单（21 个文件、约 245 KB，只含 `lib`/`scripts`/`cordis.patch.yml`/README/VERIFY/CHANGELOG/`screenshots/*.png`；`docs/` 只留在仓库里）、
 `engines: { node: ">=20.3.0", dsh: ">=0.2.1-rc.2" }`、`publishConfig.access: public`。
 
 ```powershell
@@ -192,7 +192,7 @@ npm publish            # 名字带 scope 时用 npm publish --access public
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs      # 41 项全绿
+& $node .\scripts\selftest.mjs      # 60 项全绿
 ```
 
 三条硬要求，少一条装上就是坏的：
@@ -224,9 +224,9 @@ $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\nod
 & $node .\scripts\selftest.mjs
 ```
 
-当前 **23 项全绿**，覆盖：配置校验与默认值、静音时段（含跨零点）、事件合并计数、
+当前 **60 项全绿**，覆盖：配置校验与默认值、静音时段（含跨零点）、事件合并计数、
 严重度排序、三类开关、真起弹窗并收到 `{"type":"shown"}` 与右下角坐标、dispose 后无孤儿进程、
-三种状态各渲染一张 372px 宽快照（尺寸与非空校验）。
+三种状态各渲染一张 384px 宽快照（尺寸与非空校验）。
 
 快照模式可以单独跑，不需要会话也不需要屏幕：
 
@@ -247,7 +247,7 @@ dsh-nudge/
 ├─ scripts/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
-│  └─ selftest.mjs       23 项自测
+│  └─ selftest.mjs       60 项自测
 ├─ screenshots/          三态卡片图（纯色底，无桌面内容）
 └─ docs/api-notes.md     事件源与弹窗选型的取证笔记（带源码行号）
 ```

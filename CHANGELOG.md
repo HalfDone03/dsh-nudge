@@ -2,6 +2,19 @@
 
 本插件按语义化版本记录改动。日期为提交到 `main` 的时间。
 
+## 0.2.1 — 2026-10-24
+
+**修复**
+
+- `tool/result` 改按 `message.isError` 判断失败：普通工具错误不再漏报（`data.error` 只在 HarnessError 时出现）；明细优先取工具结果正文，而不是只显示错误码。
+- 审批卡片改用 `displayReason / reason / toolName`：不再永远显示「等待你批准一个操作」。
+- 组合包补丁的 `maxItems` 与代码默认值对齐（5 → 8）；索引和标签指向包含该修复的提交。
+- 卸载 `userQuestions.ask` 包装时还原成原函数，不再在服务对象上留下绑定旧实现的 own property。
+
+**测试**
+
+- 自测 60 项，新增 `createPlugin` 事件接线用例：`turn/end`、`tool/result`、`approval/request`、`userQuestions.ask`、dispose 还原与 rejection 透传。
+
 ## 0.2.0 — 2026-10-23
 
 **读得清**

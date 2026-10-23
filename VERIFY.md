@@ -21,19 +21,19 @@ $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\nod
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (23 checks)`，退出码 0。
+- selftest 输出 `ALL PASS (60 checks)`，退出码 0。
 
 证据（实测）：
 
 ```
-PASS  helper 回报 shown  --  [{"left":2172,"width":372,"top":1214,"type":"shown","count":2,"height":162}]
-PASS  卡片贴右下角（left>屏宽*0.7）  --  left=2172, top=1214
+PASS  helper 回报 shown  --  [{"left":2132,"width":412,"top":1203,"type":"shown","count":2,"height":173}]
+PASS  卡片贴右下角（left>屏宽*0.7）  --  left=2132, top=1203
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
-ALL PASS (23 checks)
+ALL PASS (60 checks)
 ```
 
-其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 372 宽 162 高 →
-`2560-372-16 = 2172`、`1392-162-16 = 1214`，正好贴在工作区右下角。
+其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 173 高 →
+`2560-412-16 = 2132`、`1392-173-16 = 1203`，正好贴在工作区右下角。
 
 ## 2. 三种状态的无头渲染（不需要屏幕）
 
@@ -41,7 +41,7 @@ ALL PASS (23 checks)
 & $node .\scripts\selftest.mjs   # 已经包含这一步，产物在 screenshots\*.png
 ```
 
-期望：`completed.png` 436×150、`needs_choice.png` 436×209、`failed.png` 436×181（412 = 卡片 384 宽 + 两侧 14px 阴影留白，再各加 12px 底色留白），均 >4KB。
+期望：`completed.png` 436×177、`needs_choice.png` 436×250、`failed.png` 436×175（436 = 卡片 384 宽 + 两侧 14px 阴影留白，再各加 12px 底色留白），均 >4KB。
 
 ## 2.5 窗口可拖动 / 可缩放
 
@@ -58,7 +58,7 @@ ALL PASS (23 checks)
 - 明细最多折叠到 6 行（`MaxHeight = 6 × LineHeight`，切在行边界上），窄卡片不会被超长报错撑爆。
 - 卡片外框跟随最严重的 kind 染色：failed `#4DE74C3C`、needs_choice `#45F5A623`、其余 `#2BFFFFFF`，扫一眼就知道出事了。
 - 不打扰：卡片是 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` 窗口，永不被激活、不进 Alt+Tab；纯点击不进入系统拖动循环（位移 >4px 才算拖动）；弹出后 320ms 内的点击被忽略；移进卡片会重置停留计时。
-- 定位：`MonitorFromWindow`（DSH 主窗口）→ `MonitorFromPoint`（光标）→ `SystemParameters.WorkArea` 三级退化，取 `rcWork` 右下角内缩 `margin`；实测本机 2560×1440、任务栏 48px、卡片 412×154 → `left=2132`、`top=1222`（=1392−154−16），与旧主屏逻辑在同一屏上结果一致。
+- 定位：`MonitorFromWindow`（DSH 主窗口）→ `MonitorFromPoint`（光标）→ `SystemParameters.WorkArea` 三级退化，取 `rcWork` 右下角内缩 `margin`；实测本机 2560×1440、任务栏 48px、卡片 412×173 → `left=2132`、`top=1203`（=1392−173−16），与旧主屏逻辑在同一屏上结果一致。
 - 右键只关闭：不调用 `Focus-Ds`、不写剪贴板，也不激活窗口（`WS_EX_NOACTIVATE`）。
 - 标题上限：任务名按 `TITLE_LIMIT = 42` 截断（带 `…`），标题区 `MaxHeight = 63`（三行）。实测 42 字标题在 384 宽排两行、在最小 260 宽排三行，文字最右 281 < 内沿 285，三行都能完整显示。
 - 停留时长：`stayFor()` 里条目越多越久（+2 秒/条），「需要你选择」再乘三且不少于 20 秒（实测 24 秒）；其余仍是 8 秒起。
@@ -90,9 +90,9 @@ foreach ($f in 'completed','needs_choice','failed') {
 期望（实测）：
 
 ```
-completed:    436x150 distinct=135 dark=16071 accent=70 text=135
-needs_choice: 436x209 distinct=245 dark=21657 accent=172 text=258
-failed:       436x181 distinct=160 dark=18621 accent=132 text=401
+completed:    436x177 distinct=140 dark=19008 accent=135 text=169
+needs_choice: 436x250 distinct=269 dark=25831 accent=263 text=405
+failed:       436x175 distinct=171 dark=17774 accent=125 text=610
 ```
 
 判定标准：

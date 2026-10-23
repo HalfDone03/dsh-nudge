@@ -17,7 +17,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { AlertCenter, DEFAULTS, PopupRunner, inMuteRange, normalizeConfig } from "../lib/index.js";
+import { AlertCenter, DEFAULTS, PopupRunner, createPlugin, inMuteRange, normalizeConfig } from "../lib/index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -145,6 +145,159 @@ check("超长任务名截到 42 字且带省略号", [...clipped].length === 42 
 check("待选择卡片最少停 20 秒", probe.stayFor({ kind: "needs_choice", items: [] }) >= 20, String(probe.stayFor({ kind: "needs_choice", items: [] })));
 check("完成卡片仍按基础时长", probe.stayFor({ kind: "completed", items: [] }) < 20, String(probe.stayFor({ kind: "completed", items: [] })));
 probe.dispose();
+
+/** 3.6 createPlugin 事件接线 ---- */
+/**
+ * 造一个只够 createPlugin 用的 ctx。
+ * @param {{questions?: object}} [deps] 可选服务
+ * @returns {{ctx: object, handlers: Map<string, Function[]>, disposers: Function[]}} mock 上下文
+ */
+function makePluginContext(deps = {}) {
+	const handlers = new Map();
+	const disposers = [];
+	const ctx = {
+		on(type, handler) {
+			handlers.set(type, [...(handlers.get(type) ?? []), handler]);
+		},
+		get(name) {
+			if (name === "approval") return { id: "approval" };
+			if (name === "userQuestions") return deps.questions;
+			return undefined;
+		},
+		effect(setup) {
+			disposers.push(setup());
+		},
+		logger: { info() {}, warn() {}, debug() {} }
+	};
+	return { ctx, handlers, disposers };
+}
+
+const wired = [];
+const wiredRunner = {
+	show(items) {
+		wired.push(structuredClone(items));
+		return true;
+	},
+	dispose() {}
+};
+const questions = {
+	ask: async (request) => ({ answers: [{ id: request.questions[0].id, selected: [] }] })
+};
+const originalAsk = questions.ask;
+const { ctx: pluginCtx, handlers, disposers } = makePluginContext({ questions });
+const wiredPlugin = createPlugin(pluginCtx, { ...defaults, mergeWindowMs: 0, staySeconds: 5 }, { runner: wiredRunner });
+const wiredSession = { header: { id: "wired-session", cwd: "C:/repo/dsh-nudge" } };
+const emitSession = (type, data) => {
+	for (const handler of handlers.get("session/event") ?? []) handler(wiredSession, { type, data });
+};
+const drain = () => {
+	const before = wired.length;
+	wiredPlugin.center.flush();
+	return wired.length > before ? wired.at(-1) : [];
+};
+
+emitSession("session/title", { title: "修构建脚本" });
+emitSession("turn/end", { reason: { kind: "completed" } });
+let batch = drain();
+check("turn/end completed 产生完成提醒", batch.length === 1 && batch[0].kind === "completed", JSON.stringify(batch));
+check("会话标题从 session/title 缓存", batch[0]?.title === "修构建脚本", JSON.stringify(batch[0]?.title));
+check("项目名取会话 cwd 末段", batch[0]?.project === "dsh-nudge", JSON.stringify(batch[0]?.project));
+
+emitSession("turn/end", { reason: { kind: "error", error: { message: "boom" } } });
+batch = drain();
+check("turn/end error 产生失败提醒", batch[0]?.kind === "failed" && batch[0]?.detail === "boom", JSON.stringify(batch[0]));
+
+emitSession("turn/end", { reason: { kind: "aborted" } });
+check("turn/end aborted 不提醒", drain().length === 0);
+
+emitSession("tool/result", {
+	message: {
+		role: "tool",
+		source: { kind: "tool", callId: "call-bare" },
+		isError: true,
+		content: [{ type: "text", text: "Error: permission denied" }]
+	}
+});
+batch = drain();
+check("tool/result 的 message.isError 触发失败提醒", batch[0]?.kind === "failed", JSON.stringify(batch[0]));
+check("工具失败明细取结果正文", batch[0]?.detail === "工具调用失败：permission denied", JSON.stringify(batch[0]?.detail));
+
+emitSession("tool/result", {
+	message: {
+		role: "tool",
+		source: { kind: "tool", callId: "call-bare" },
+		isError: true,
+		content: [{ type: "text", text: "Error: permission denied" }]
+	}
+});
+check("同一个 tool callId 只提醒一次", drain().length === 0);
+
+emitSession("tool/result", {
+	message: {
+		role: "tool",
+		source: { kind: "tool", callId: "call-ok" },
+		isError: false,
+		content: [{ type: "text", text: "ok" }]
+	}
+});
+check("成功的 tool/result 不提醒", drain().length === 0);
+
+const approval = handlers.get("approval/request")?.[0];
+check("approval/request 监听器已注册", typeof approval === "function");
+let nextCalls = 0;
+const outcome = approval?.({
+	agent: { id: "wired-session", session: wiredSession },
+	toolName: "pwsh",
+	reason: "run build",
+	displayReason: "Run the build"
+}, () => {
+	nextCalls += 1;
+	return "allowed-once";
+});
+check("审批放行：next() 被调用且返回值透传", nextCalls === 1 && outcome === "allowed-once", `next=${nextCalls}, outcome=${String(outcome)}`);
+batch = drain();
+check("审批明细优先用 displayReason", batch[0]?.kind === "needs_choice" && batch[0]?.detail === "Run the build", JSON.stringify(batch[0]?.detail));
+
+approval?.({
+	agent: { id: "wired-session", session: wiredSession },
+	toolName: "pwsh",
+	reason: "run build"
+}, () => "allowed-once");
+batch = drain();
+check("没有 displayReason 时退回 reason", batch[0]?.detail === "run build", JSON.stringify(batch[0]?.detail));
+
+approval?.({
+	agent: { id: "wired-session", session: wiredSession },
+	toolName: "pwsh"
+}, () => "allowed-once");
+batch = drain();
+check("只有 toolName 时也不丢上下文", batch[0]?.detail === "pwsh", JSON.stringify(batch[0]?.detail));
+
+const askRequest = {
+	agent: { id: "wired-session", session: wiredSession },
+	questions: [{ id: "q1", header: "部署确认", question: "现在部署吗？" }]
+};
+const answer = await questions.ask(askRequest);
+check("userQuestions.ask 原样转发并返回原结果", answer?.answers?.[0]?.id === "q1", JSON.stringify(answer));
+batch = drain();
+check("提问提醒使用问题标题", batch[0]?.kind === "needs_choice" && batch[0]?.detail === "部署确认", JSON.stringify(batch[0]?.detail));
+
+for (const dispose of disposers.reverse()) dispose();
+check("dispose 后还原 userQuestions.ask", questions.ask === originalAsk);
+emitSession("turn/end", { reason: { kind: "completed" } });
+check("dispose 后不再产生提醒", drain().length === 0);
+
+const rejectingQuestions = { ask: async () => { throw new Error("ASK_ABORTED"); } };
+const rejecting = makePluginContext({ questions: rejectingQuestions });
+createPlugin(rejecting.ctx, { ...defaults, mergeWindowMs: 0 }, { runner: wiredRunner });
+let rejectionPropagated = false;
+try {
+	await rejectingQuestions.ask({ agent: { id: "reject-session", session: wiredSession }, questions: [{ id: "q2", question: "继续吗？" }] });
+} catch (error) {
+	rejectionPropagated = error instanceof Error && error.message === "ASK_ABORTED";
+}
+check("userQuestions.ask 的 rejection 不被吞掉", rejectionPropagated);
+for (const dispose of rejecting.disposers.reverse()) dispose();
 
 /** 4. PopupRunner 真起 helper ---- */
 const statuses = [];
