@@ -10,10 +10,13 @@
  *   3. AlertCenter 合并计数 / 严重度排序 / dispose
  *   4. PopupRunner 真起 helper：收到 {"type":"shown"}，坐标贴右下角，退出后无残留进程
  *   5. 三种状态各渲染一张卡片快照（PNG 尺寸与非空校验）
+ *   6. 源码静态约束（纯 ASCII、字号阶梯、单卡槽位、全屏抑制、调试开关）
+ *   7. 单卡互斥真跑一遍 A/B 两张卡，顺带验证 payload 落盘调试开关
  */
 
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -78,6 +81,8 @@ checkThrows("muteRanges 格式非法抛错", () => normalizeConfig({ muteRanges:
 checkThrows("muteRanges 小时越界抛错", () => normalizeConfig({ muteRanges: ["25:00-08:00"] }));
 checkThrows("muteRanges 分钟越界抛错", () => normalizeConfig({ muteRanges: ["22:60-08:00"] }));
 checkThrows("kinds 非对象抛错", () => normalizeConfig({ kinds: ["completed"] }));
+check("默认全屏时不打扰", defaults.suppressWhenFullscreen === true, String(defaults.suppressWhenFullscreen));
+checkThrows("suppressWhenFullscreen 非布尔抛错", () => normalizeConfig({ suppressWhenFullscreen: "yes" }));
 
 /** 2. 静音时间段 ---- */
 const at = (h, m) => new Date(2026, 0, 1, h, m);
@@ -114,18 +119,18 @@ probe.show([{
 	detail: "vite build 失败：Could not resolve entry\n    at async PluginContainer.resolveId (file.js:1284:15)"
 }]);
 check("单条卡片不再列清单", captured[0]?.items.length === 0, `items=${captured[0]?.items.length}`);
-check("失败主角行是任务名（最大的字）", captured[0]?.headline === "构建前端", JSON.stringify(captured[0]?.headline));
+check("失败卡片抬头是任务名（项目名另起一行且更大）", captured[0]?.headline === "构建前端", JSON.stringify(captured[0]?.headline));
 check("失败第二行带淡红底", captured[0]?.headlineTint === "#24E74C3C", JSON.stringify(captured[0]?.headlineTint));
 check("失败第二行是精简后的原因", captured[0]?.verdictKind === "失败" && captured[0]?.verdictText === "vite build 失败：Could not resolve entry", JSON.stringify([captured[0]?.verdictKind, captured[0]?.verdictText]));
 check("点击复制用的摘要不为空", typeof captured[0]?.summary === "string" && captured[0].summary.includes("构建前端"), JSON.stringify(captured[0]?.summary));
 
 probe.show([{ kind: "completed", sessionId: "p2", title: "写周报", detail: "回合已完成", count: 1, at: "21:21", project: "dsh-nudge" }]);
-check("完成主角行是任务名", captured[1]?.headline === "写周报", JSON.stringify(captured[1]?.headline));
+check("完成卡片抬头是任务名", captured[1]?.headline === "写周报", JSON.stringify(captured[1]?.headline));
 check("完成不加底色", captured[1]?.headlineTint === "", JSON.stringify(captured[1]?.headlineTint));
 check("完成第二行只写完成、不带冗余原因", captured[1]?.verdictKind === "完成" && captured[1]?.verdictText === "", JSON.stringify([captured[1]?.verdictKind, captured[1]?.verdictText]));
 
 probe.show([{ kind: "needs_choice", sessionId: "p3", title: "部署", detail: "等待你批准：npm i", count: 1, at: "21:22" }]);
-check("待选择主角行是任务名、第二行才是待决定的事", captured[2]?.headline === "部署" && captured[2]?.verdictKind === "待你选择" && captured[2]?.verdictText === "等待你批准：npm i", JSON.stringify([captured[2]?.headline, captured[2]?.verdictKind, captured[2]?.verdictText]));
+check("待选择卡片抬头是任务名、待决定的事在下一行", captured[2]?.headline === "部署" && captured[2]?.verdictKind === "待你选择" && captured[2]?.verdictText === "等待你批准：npm i", JSON.stringify([captured[2]?.headline, captured[2]?.verdictKind, captured[2]?.verdictText]));
 
 probe.show([
 	{ kind: "needs_choice", sessionId: "p4", title: "部署", detail: "等待批准", count: 1, at: "21:23", project: "dsh-nudge" },
@@ -144,9 +149,12 @@ probe.show([{ kind: "failed", sessionId: "p6", title: "把弹窗脚本里所有�
 const clipped = captured[4]?.headline ?? "";
 check("超长任务名截到 42 字且带省略号", [...clipped].length === 42 && clipped.endsWith("…"), `${[...clipped].length}字 ${JSON.stringify(clipped)}`);
 
-// 需要你选的卡片要停更久（最少 20 秒）
-check("待选择卡片最少停 20 秒", probe.stayFor({ kind: "needs_choice", items: [] }) >= 20, String(probe.stayFor({ kind: "needs_choice", items: [] })));
-check("完成卡片仍按基础时长", probe.stayFor({ kind: "completed", items: [] }) < 20, String(probe.stayFor({ kind: "completed", items: [] })));
+// 停留时长：默认 15 秒，待你选择乘三且下限 30 秒。断言写成具体值，改动默认值时会红，
+// 而不是靠「< 20」这种松阈值蒙过去。
+check("默认停留 15 秒", DEFAULTS.staySeconds === 15, String(DEFAULTS.staySeconds));
+check("完成卡片按基础时长", probe.stayFor({ kind: "completed", items: [] }) === 15, String(probe.stayFor({ kind: "completed", items: [] })));
+check("待选择卡片最少停 30 秒", probe.stayFor({ kind: "needs_choice", items: [] }) === 45, String(probe.stayFor({ kind: "needs_choice", items: [] })));
+check("条目越多停越久", probe.stayFor({ kind: "completed", items: [{}, {}, {}] }) === 19, String(probe.stayFor({ kind: "completed", items: [{}, {}, {}] })));
 probe.dispose();
 
 /** 3.6 createPlugin 事件接线 ---- */
@@ -463,6 +471,93 @@ for (const width of [300, 520]) {
 	const actual = isPng ? bytes.readUInt32BE(16) : 0;
 	check(`快照宽度 ${width} 自适应`, result.code === 0 && actual === width + 52, `期望 ${width + 52}, 实际 ${actual}`);
 }
+
+/**
+ * 6. 源码静态约束 ----
+ * 版式与协议里最容易悄悄回退的东西，用源码断言钉住：脚本必须保持纯 ASCII、
+ * 项目名前面不能再出现图标字形、字号阶梯必须是「项目 > 任务 > 原因」，
+ * 单卡槽位与剪贴板回报也不能被顺手删掉。这些不需要启动窗口，几毫秒跑完。
+ */
+const popupSource = readFileSync(popupScript, "utf8");
+const popupBytes = readFileSync(popupScript);
+check("popup.ps1 保持纯 ASCII", popupBytes.every((byte) => byte < 128),
+	`非 ASCII 字节 ${popupBytes.filter((byte) => byte > 127).length} 个`);
+check("popup.ps1 不再有图标字形", !popupSource.includes("0xE8B7") && !/[\u{1F300}-\u{1FAFF}]/u.test(popupSource),
+	popupSource.includes("0xE8B7") ? "still 0xE8B7" : "clean");
+check("项目名走 15.5，任务名走 12.5",
+	popupSource.includes("$contextText -Size 15.5") && popupSource.includes("$headlineText -Size 12.5")
+		&& popupSource.includes("$rowProject -Size 15"),
+	"context/headline/row");
+check("清单行的项目名排在任务名前面",
+	popupSource.indexOf("$rowProject -Size 15") < popupSource.indexOf("$title = New-Text"),
+	"order");
+check("单卡槽位与替换事件都在", popupSource.includes("Local\\dsh-nudge-card") && popupSource.includes("Local\\dsh-nudge-replace"),
+	"Mutex + Event");
+check("点击后回报剪贴板是否写成", popupSource.includes("clipboard = [bool]$script:clipboardOk"), "closed.clipboard");
+check("payload 带剪贴板抬头", captured[0]?.clipboardHeader === "DeepSeek Harness · 会话提醒", JSON.stringify(captured[0]?.clipboardHeader));
+
+const indexSource = readFileSync(join(root, "lib", "index.js"), "utf8");
+check("全屏抑制：shell 查询与前景矩形两道判断都在",
+	popupSource.includes("SHQueryUserNotificationState")
+		&& popupSource.includes("[switch]$SuppressWhenFullscreen")
+		&& popupSource.includes("$script:QuietNotificationStates")
+		&& popupSource.includes("function Test-ForegroundFullscreen"),
+	"fullscreen guard");
+check("全屏抑制开关由宿主按配置传给 helper",
+	indexSource.includes('if (this.config.suppressWhenFullscreen) args.push("-SuppressWhenFullscreen")'),
+	"spawn args");
+check("payload 落盘调试开关是环境变量控制的",
+	indexSource.includes("DSH_NUDGE_DEBUG_PAYLOAD") && indexSource.includes("DSH_NUDGE_DEBUG_FILE"),
+	"debug dump");
+
+/**
+ * 7. 单卡互斥与 payload 落盘 ----
+ * 同一时刻只留一张卡：A 先占位，B 上来时 A 必须收到 replaced 并退场。
+ * 同一段流程顺手验证调试开关：设了 DSH_NUDGE_DEBUG_PAYLOAD 就该把每次
+ * payload 追加成一行 JSON，事后能核对「卡片上到底写了什么」。
+ */
+const dumpFile = join(tmpdir(), `dsh-nudge-selftest-${process.pid}.jsonl`);
+rmSync(dumpFile, { force: true });
+process.env.DSH_NUDGE_DEBUG_PAYLOAD = "1";
+process.env.DSH_NUDGE_DEBUG_FILE = dumpFile;
+const slotStatusesA = [];
+const slotStatusesB = [];
+const runnerA = new PopupRunner({ ...defaults, staySeconds: 12 }, () => {}, { onStatus: (status) => slotStatusesA.push(status) });
+const runnerB = new PopupRunner({ ...defaults, staySeconds: 2 }, () => {}, { onStatus: (status) => slotStatusesB.push(status) });
+runnerA.show([{ kind: "completed", sessionId: "selftest-slot-a", title: "抢卡 A", detail: "先来的那张", at: "10:00", count: 1 }]);
+const aShown = await waitFor(() => slotStatusesA.some((status) => status.type === "shown"), 15000);
+const aShownStatus = slotStatusesA.find((status) => status.type === "shown");
+check("单卡：先来的拿到槽位", aShown && aShownStatus?.slot === "owner", JSON.stringify(aShownStatus ?? null));
+const takeoverStart = Date.now();
+runnerB.show([{ kind: "completed", sessionId: "selftest-slot-b", title: "抢卡 B", detail: "后来的顶掉上一张", at: "10:01", count: 1 }]);
+const bShown = await waitFor(() => slotStatusesB.some((status) => status.type === "shown"), 15000);
+const bShownStatus = slotStatusesB.find((status) => status.type === "shown");
+check("单卡：后来的标记为 replaced", bShown && bShownStatus?.slot === "replaced", JSON.stringify(bShownStatus ?? null));
+const aClosed = await waitFor(() => slotStatusesA.some((status) => status.type === "closed"), 10000);
+const aClosedStatus = slotStatusesA.find((status) => status.type === "closed");
+check("单卡：上一张收到 replaced 后自己退场", aClosed && aClosedStatus?.reason === "replaced", JSON.stringify(aClosedStatus ?? null));
+check("单卡：顶替在 3 秒内完成", Date.now() - takeoverStart < 3000, `${Date.now() - takeoverStart}ms`);
+const bClosed = await waitFor(() => slotStatusesB.some((status) => status.type === "closed"), 15000);
+check("单卡：新卡按自己的停留时间退场",
+	Boolean(bClosed) && slotStatusesB.find((status) => status.type === "closed")?.reason === "timeout",
+	JSON.stringify(slotStatusesB.find((status) => status.type === "closed") ?? null));
+runnerA.dispose();
+runnerB.dispose();
+delete process.env.DSH_NUDGE_DEBUG_PAYLOAD;
+delete process.env.DSH_NUDGE_DEBUG_FILE;
+const dumpLines = existsSync(dumpFile) ? readFileSync(dumpFile, "utf8").split("\n").filter((line) => line.trim() !== "") : [];
+check("调试开关把每次 payload 落盘", dumpLines.length === 2, `lines=${dumpLines.length}`);
+const dumpTitles = dumpLines.map((line) => {
+	try {
+		const payload = JSON.parse(line)?.payload ?? {};
+		// 单条卡片的标题在 headline 上，多条才在 items[].title 上。
+		return payload.headline || payload.items?.[0]?.title || "";
+	} catch {
+		return "";
+	}
+});
+check("落盘的正是这两张卡", dumpTitles.every((title) => /^抢卡/u.test(title)), JSON.stringify(dumpTitles));
+rmSync(dumpFile, { force: true });
 
 /**
  * 把子进程输出压成一行证据。

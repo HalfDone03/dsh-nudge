@@ -21,19 +21,19 @@ $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\nod
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (70 checks)`，退出码 0。
+- selftest 输出 `ALL PASS (91 checks)`，退出码 0。
 
 证据（实测）：
 
 ```
-PASS  helper 回报 shown  --  [{"left":2132,"width":412,"top":1203,"type":"shown","count":2,"height":173}]
-PASS  卡片在屏幕右下半区  --  left=2132, top=1203, 412x173
+PASS  helper 回报 shown  --  [{"width":412,"height":164,"type":"shown","slot":"owner","scale":1,"left":2132,"dpi":"per-monitor-v2","owner":8592,"count":2,"marginPx":16,"ownerSrc":"ancestor","top":1212}]
+PASS  卡片在屏幕右下半区  --  left=2132, top=1212, 412x164
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
-ALL PASS (70 checks)
+ALL PASS (91 checks)
 ```
 
-其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 173 高 →
-`2560-412-16 = 2132`、`1392-173-16 = 1203`，正好贴在工作区右下角。
+其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 164 高 →
+`2560-412-16 = 2132`、`1392-164-16 = 1212`，正好贴在工作区右下角。
 
 ## 2. 三种状态的无头渲染（不需要屏幕）
 
@@ -41,7 +41,7 @@ ALL PASS (70 checks)
 & $node .\scripts\selftest.mjs   # 已经包含这一步，产物在 screenshots\*.png
 ```
 
-期望：`completed.png` 436×177、`needs_choice.png` 436×250、`failed.png` 436×175（436 = 卡片 384 宽 + 两侧 14px 阴影留白，再各加 12px 底色留白），均 >4KB。
+期望：`completed.png` 436×174、`needs_choice.png` 436×291、`failed.png` 436×152（436 = 卡片 412 宽 + 两侧各 12px 底色留白；底边同样 12px），均 >4KB。
 
 ## 2.5 窗口可拖动 / 可缩放
 
@@ -52,17 +52,89 @@ ALL PASS (70 checks)
 
 ## 2.6 多条提醒的可读性
 
-- 阅读顺序按「先是谁、再怎么样、最后在哪」排：**任务名最大（单条 15.5px / 多条 13px SemiBold）**，第二行是成败与原因（11.5px，`失败：…` / `待你选择：…` / `完成`），第三行才是项目（11px，`#8AFFFFFF`）。之前把错误摘要当主角行，等于先告诉你"错在哪"却不说是哪个任务，已改。
+- 阅读顺序按「先在哪、再是谁、最后怎么样」排：**项目文件夹名最大（单条 15.5px / 多条 15px SemiBold，`#FFFFFFFF`）**，第二行是任务名（12.5px，`#F0FFFFFF`），第三行才是成败与原因（10.5px，`失败：…` / `待你选择：…` / `完成`）。更早的版本把任务名放最大、项目压到最后一行，等于先告诉你"干了什么"却没说是哪摊活；现在按「项目 > 任务 > 问题」重排，单条与清单两条路径一致。
 - 单条提醒的状态行放在淡色底板上（失败 `#24E74C3C`、待批准 `#24F5A623`），让"为什么"读起来像状态而不是正文；失败/待批准时 kind 词用各自 accent 色，冒号只在后面真跟着原因时才加。
 - 不加滚动条：卡片按内容长高；窗口 `MinHeight` 每次缩放都按新宽度重算，把窗口拖矮时不会裁掉内容。
 - 明细最多折叠到 6 行（`MaxHeight = 6 × LineHeight`，切在行边界上），窄卡片不会被超长报错撑爆。
 - 卡片外框跟随最严重的 kind 染色：failed `#4DE74C3C`、needs_choice `#45F5A623`、其余 `#2BFFFFFF`，扫一眼就知道出事了。
 - 不打扰：卡片是 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` 窗口，永不被激活、不进 Alt+Tab；纯点击不进入系统拖动循环（位移 >4px 才算拖动）；弹出后 320ms 内的点击被忽略；移进卡片会重置停留计时。
 - 定位：`MonitorFromWindow`（DSH 主窗口）→ `MonitorFromPoint`（光标）→ `SystemParameters.WorkArea` 三级退化，取 `rcWork` 右下角内缩 `margin`；实测本机 2560×1440、任务栏 48px、卡片 412×173 → `left=2132`、`top=1203`（=1392−173−16），与旧主屏逻辑在同一屏上结果一致。
+- DPI 量纲：`rcWork` 是物理像素而 WPF 的 `Left/Top` 是 DIP，所以 helper 先申请逐显示器 DPI 感知（`SetProcessDpiAwarenessContext(-4)` → `SetProcessDpiAwareness(2)` → `SetProcessDPIAware()` 三级降级），用目标屏 `GetDpiForMonitor` 缩放边距并把工作区折算成 DIP 做初定位，`Loaded` 后再按 `GetWindowRect` + `SetWindowPos` 用物理像素校正一次。100% 单屏下校正量恒为 0，实测坐标仍是 2132/1203。
+- 聚焦哪个实例：helper 的直接父进程是 Host，与 Electron 主进程同名但**没有窗口**，所以不能用
+  「按名字取第一个有窗进程」（同时开两个 DSH 会聚焦错的实例）。改为 Toolhelp32 快照一次性拿
+  pid→父 pid 表回溯祖先链，取最外层的同名有窗进程：实测链 `powershell(16416) → Host(13992)
+  → Host(15648) → DeepSeek Harness(8592, hwnd 4851036) → explorer(7912)`，命中 8592；`shown`
+  状态行回报 `owner=8592 / ownerSrc=ancestor`。快照方案把祖先查询从 530ms（逐层 CIM）压到
+  1ms 级，helper 从 spawn 到 shown 仍是 1307ms（改前 1423ms）。找不到祖先时回退旧行为并记
+  `ownerSrc=fallback`（实测 `-DsProcess msedge` → `owner=7396`，与 msedge 主窗口一致）。
 - 右键只关闭：不调用 `Focus-Ds`、不写剪贴板，也不激活窗口（`WS_EX_NOACTIVATE`）。
 - 标题上限：任务名按 `TITLE_LIMIT = 42` 截断（带 `…`），标题区 `MaxHeight = 63`（三行）。实测 42 字标题在 384 宽排两行、在最小 260 宽排三行，文字最右 281 < 内沿 285，三行都能完整显示。
-- 停留时长：`stayFor()` 里条目越多越久（+2 秒/条），「需要你选择」再乘三且不少于 20 秒（实测 24 秒）；其余仍是 8 秒起。
-- 快照校验：`screenshots/multi.png` 436×337（4 条 / 3 个项目）、`screenshots/single.png` 436×234（失败单条）、`screenshots/single-choice.png` 436×234（待批准单条）、`screenshots/single-done.png` 436×205（完成单条）。像素实测的纵向文字带：头部 12px → 任务名 16px → 状态 12px → 原因 9-11px → 项目 10-11px，最大字号确实落在任务名上。
+- 停留时长：默认 `staySeconds = 15`（原来的 8 秒实测"还没看完就没了"），`stayFor()` 里条目越多越久（+2 秒/条），「需要你选择」再乘三且不少于 30 秒。实测：完成单条 15 秒、完成 3 条 19 秒、失败 2 条 17 秒、待选择单条 45 秒、待选择 4 条 63 秒。鼠标移进卡片会重置计时，右键随时关掉。
+- 快照校验：`screenshots/multi.png` 436×385（4 条 / 3 个项目）、`screenshots/single.png` 436×230（失败单条）、`screenshots/single-choice.png` 436×216（待批准单条）、`screenshots/single-done.png` 436×202（完成单条）。字号层级（`popup.ps1` 常量）：单条 = 项目 15.5 SemiBold → 任务名 12.5 → 原因 10.5；清单每条 = 项目 15 SemiBold → 任务名 12.5 → 明细 10.5。项目名前面**没有图标字形**：原来那处是 Segoe MDL2 Assets 的 `0xE8B7` 文件夹字，10.5-11px 下看起来就是个方块，已整段删除，省下的 16px 归给名字的截断宽度。
+
+## 2.7 单卡互斥与关窗回报（不需要屏幕）
+
+同一时刻只允许一张卡：每个 helper 都算同一个右下角，两批提醒同时到就会叠在一起，各自的计时和
+点击目标互不知情。
+
+- `shown` 状态行带 `slot`：`owner`（拿到 `Local\dsh-nudge-card` 互斥量）、`replaced`（顶掉了在位的那张）、
+  `parallel`（命名对象不可用，退回旧的「每批一张卡」行为，不会因此不弹）。
+- 后来的 helper 先 Set `Local\dsh-nudge-replace` 事件，在位那张每 200ms 轮询一次、在 UI 线程上关窗，
+  互斥量随之让出。
+
+实测（现在是 `selftest.mjs` 第 7 组的常驻用例，不再用临时探针：A 停 12 秒、B 停 2 秒）：
+
+```
+A 已弹出: {"width":412,"height":178,"type":"shown","slot":"owner",...}
+A 之后收到: {"type":"closed","reason":"replaced"}
+B 收到: {"width":412,"height":178,"type":"shown","slot":"replaced",...}
+B 之后收到: {"type":"closed","reason":"timeout"}
+```
+
+- 关窗原因固定五种：`clicked`、`dismissed`（右键）、`timeout`（到点）、`replaced`（被新卡顶掉）、
+  `watchdog`（绝对寿命兜底）。
+- `clicked` 那条会带 `clipboard` 布尔值：`Set-Clipboard` 抛异常（剪贴板被别的程序占着）时是 `false`，
+  宿主日志里能看见，不再假装复制成功。
+- 非 Windows 平台 `createPlugin` 直接早退（`process.platform !== "win32"`），不注册任何监听——
+  `package.json` 的 `os` 只在安装期生效，开发态跨平台跑会每个回合 spawn 失败刷警告。
+
+## 2.8 全屏时不打扰（不需要屏幕）
+
+游戏、放映、演示时照样弹卡会挡住画面；更麻烦的是，独占全屏的进程看到任何置顶窗口都可能自己最小化或闪一下。
+所以 helper 在弹卡前做两道**只读**判断（`suppressWhenFullscreen`，默认开）：
+
+1. `SHQueryUserNotificationState`（shell32）：返回 1（锁屏/屏保）、2（全屏应用忙）、3（D3D 全屏）、
+   4（放映模式）、7（沉浸式全屏应用）时算「现在不适合打扰」；5（接受通知）与 6（新账号第一小时）不动。
+2. 前台窗口矩形是否正好盖满它所在显示器的**物理**矩形（`rcMonitor`，容差 2px）。这条用来抓
+   「无边框全屏」——系统查询在窗口化全屏下不会报全屏，而普通最大化窗口因为露出任务栏不会被误判。
+
+`$SuppressWhenFullscreen`：命中任一条就整批**丢弃**（不排队，卡片模板已经建好但不会 Show），
+状态行写 `{"type":"suppressed","reason":"fullscreen","state":N}`，进程立刻退出。
+
+实测证据（2560×1440、任务栏 48px 的普通桌面）：
+
+```
+QUNS state = 5 (hr=0)                       # 接受通知：不该抑制
+foreground rect = -8,-8,2568,1400           # 我的终端（最大化，带隐形边框）
+monitor bounds  = 0,0,2560,1440
+foreground covers monitor = False           # 底部差 40px = 任务栏，正确判为「不是全屏」
+```
+
+抑制分支本身（把实时状态 5 临时列进勿扰集合的脚本副本，跑完即删）：
+
+```
+{"reason":"fullscreen","type":"suppressed","state":5}   exit=0
+```
+
+未打补丁的原脚本在普通桌面照常弹出：
+
+```
+{"width":412,"height":150,"type":"shown","slot":"owner",...}
+{"type":"closed","reason":"timeout"}
+```
+
+两道检查都只是读系统状态与窗口矩形：不装钩子、不抓输入、不接触游戏窗口，鼠标键盘与游戏完全不受影响。
+`selftest.mjs` 第 6 组用源码断言钉住这两道判断与宿主传参，防止被顺手删掉。
 
 ## 3. 卡片图内容自证（纯像素，不需要屏幕）
 
@@ -90,9 +162,9 @@ foreach ($f in 'completed','needs_choice','failed') {
 期望（实测）：
 
 ```
-completed:    436x177 distinct=140 dark=19008 accent=135 text=169
-needs_choice: 436x250 distinct=269 dark=25831 accent=263 text=405
-failed:       436x175 distinct=171 dark=17774 accent=125 text=610
+completed:    436x174 distinct=152 dark=18532 accent=117 text=254
+needs_choice: 436x291 distinct=252 dark=30041 accent=286 text=523
+failed:       436x152 distinct=157 dark=15540 accent=103 text=543
 ```
 
 判定标准：
@@ -119,19 +191,30 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1       
 
 以上四点在临时 profile 上已实测通过（`-ProfileDir <临时目录>`，未触碰真实 profile）。
 
+真机安装记录（2026-10-25，真实 profile `~\.dsh\profiles\desktop`）：DSH **运行中**直接跑 `install.ps1`
+也成功——pnpm 只增量加了这一条依赖，没有重写既有包（`dshmarket` / `billion-context` /
+`cc-safety-net` / `dsh-context` 都还在，`cordis.patch.yml` 修改时间仍是安装前），幂等重跑打印
+`already installed`。注意落地形态是**目录拷贝**而非链接：本机 profile 的 `pnpm-workspace.yaml`
+设了 `nodeLinker: hoisted`，`file:` 依赖会被复制进 `node_modules`，所以**改完源码要重跑
+`install.ps1` 再重启 DSH 才生效**。判别方法：在源码 `lib\` 下建个临时文件，若
+`node_modules\dsh-nudge\lib\` 里不出现，即证明是拷贝。
+
 重启 DSH 后，用任意会话触发三种情况：
 
 | 触发方式 | 期望 |
 | --- | --- |
-| 让一个回合正常跑完 | 右下角弹「任务完成」绿卡，8 秒后自动消失 |
+| 让一个回合正常跑完 | 右下角弹「任务完成」绿卡，15 秒后自动消失 |
 | 让 Agent 调 `ask_user_question`，或触发一次需要批准的操作 | 弹「需要你选择」琥珀卡，等你处理 |
 | 让一个回合报错（例如让工具失败） | 弹「执行失败」红卡 |
-| 点击卡片 | DSH 窗口被切到前台，剪贴板里是这批提醒的标题+明细 |
+| 点击卡片 | 提醒来源的那个 DSH 实例被切到前台（按祖先链定位，不是「第一个同名进程」），剪贴板里是这批提醒的标题+明细 |
 | 卡片显示期间关掉 DSH | helper 进程随之退出，不留孤儿窗口（`Get-Process powershell` 无新增常驻） |
 
 ## 5. 已知边界
 
-- 只验证过**单显示器 2560×1440 @ 100%**；多显示器与高 DPI 走 `SystemParameters.WorkArea`
-  与 `SetProcessDPIAware`，逻辑正确但未在真机多屏上跑过。
+- 只验证过**单显示器 2560×1440 @ 100%**；多显示器与高 DPI 已改为逐显示器 DPI 感知
+  （`SetProcessDpiAwarenessContext(-4)` → `SetProcessDpiAwareness(2)` → `SetProcessDPIAware()`
+  三级降级）+ 物理像素校正，逻辑上能对齐，但**仍未在真机多屏 / 非 100% 缩放上跑过**。
 - 点击只能聚焦 DSH 窗口 + 复制线索：Web GUI 是单页应用，没有按会话直达的 URL。
+- 聚焦按祖先链定位已实测（`owner=8592/ownerSrc=ancestor`），但**没有在真开两个 DSH 的情况下
+  点过卡片**——再点一次会抢当前前台焦点，所以只验证了句柄来源，没验证「切过去」的可见效果。
 - 卡片是「提醒」不是「操作面板」：批准/回答仍需回到 DSH 里做。

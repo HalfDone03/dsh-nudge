@@ -14,8 +14,9 @@
       name: 'dsh-nudge'
       config:
         enabled: true
-        staySeconds: 8
+        staySeconds: 15
         showWhenFocused: true
+        suppressWhenFullscreen: true
         margin: 16
         mergeWindowMs: 1200
         maxItems: 8

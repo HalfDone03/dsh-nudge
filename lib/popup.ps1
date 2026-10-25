@@ -4,7 +4,8 @@
 #   1. one-shot (default): renders ONE card, writes status to stdout, then exits
 #      on timeout or click. Payload is passed on the command line:
 #        -PayloadB64 <base64 UTF-8 JSON> | -PayloadFile <path>
-#      plus -StaySeconds, -Margin, and optional -SuppressWhenForeground.
+#      plus -StaySeconds, -Margin, and optional -SuppressWhenForeground /
+#      -SuppressWhenFullscreen.
 #      The process is deliberately short-lived: Windows PowerShell 5.1's
 #      [Console]::In over a redirected pipe can stall for seconds, so a
 #      daemon/stdin protocol is not used.
@@ -13,16 +14,23 @@
 #      automated tests and headless runs.
 #
 # stdout protocol (one JSON per line):
-#   {"type":"shown","count":N} | {"type":"suppressed"} | {"type":"clicked"}
-#   {"type":"error","message":"..."} | {"type":"snapshot","path":"..."}
+#   {"type":"shown","count":N,"slot":"owner|replaced|parallel"}
+#   {"type":"closed","reason":"clicked|dismissed|timeout|replaced|watchdog","clipboard":bool}
+#   {"type":"suppressed","reason":"foreground|fullscreen","state":N}
+#   {"type":"error","message":"..."}
+#   {"type":"snapshot","path":"..."}
+#
+# Only one card may be up at a time: a per-session named mutex elects the owner and
+# a newer helper asks the resident card to step aside (see Initialize-CardSlot).
 #
 # This script stays ASCII-only on purpose: Windows PowerShell 5.1 reads non-BOM
 # scripts as ANSI, so any literal CJK here would be mojibake.
 
 param(
-    [int]$StaySeconds = 8,
+    [int]$StaySeconds = 15,
     [int]$Margin = 16,
     [switch]$SuppressWhenForeground,
+    [switch]$SuppressWhenFullscreen,
     [string]$DsProcess = 'DeepSeek Harness',
     [string]$Snapshot = '',
     [string]$PayloadFile = '',
@@ -72,9 +80,101 @@ public static int[] WorkAreaOfCursor() {
     if (!GetCursorPos(out pt)) return null;
     return WorkAreaOf(MonitorFromPoint(pt, 2));
 }
+// Physical monitor rect (rcMonitor), unlike WorkAreaOf which excludes the taskbar.
+public static int[] MonitorBoundsOf(IntPtr monitor) {
+    if (monitor == IntPtr.Zero) return null;
+    MONITORINFO info = new MONITORINFO();
+    info.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+    if (!GetMonitorInfo(monitor, ref info)) return null;
+    return new int[] { info.rcMonitor.Left, info.rcMonitor.Top, info.rcMonitor.Right, info.rcMonitor.Bottom };
+}
+// Read-only shell query: is this a bad moment to interrupt (fullscreen app, slide
+// show, locked screen)? It only returns a state number; nothing is hooked or grabbed.
+[DllImport("shell32.dll")] public static extern int SHQueryUserNotificationState(out int state);
+[DllImport("user32.dll", SetLastError = true)] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+[DllImport("shcore.dll")] public static extern int SetProcessDpiAwareness(int value);
+[DllImport("shcore.dll")] public static extern int GetDpiForMonitor(IntPtr monitor, int dpiType, out uint dpiX, out uint dpiY);
+public static IntPtr MonitorOfWindow(IntPtr hWnd) {
+    if (hWnd == IntPtr.Zero) return IntPtr.Zero;
+    return MonitorFromWindow(hWnd, 2);
+}
+public static IntPtr MonitorOfCursor() {
+    POINT pt;
+    if (!GetCursorPos(out pt)) return IntPtr.Zero;
+    return MonitorFromPoint(pt, 2);
+}
+// Effective DPI of one monitor: 96 on failure, so callers can always divide.
+public static int DpiOf(IntPtr monitor) {
+    if (monitor == IntPtr.Zero) return 96;
+    uint dx;
+    uint dy;
+    if (GetDpiForMonitor(monitor, 0, out dx, out dy) == 0 && dx > 0) return (int)dx;
+    return 96;
+}
+[DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
+[DllImport("kernel32.dll")] public static extern bool Process32First(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+[DllImport("kernel32.dll")] public static extern bool Process32Next(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+[DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr hObject);
+[StructLayout(LayoutKind.Sequential)]
+public struct PROCESSENTRY32 {
+    public uint dwSize;
+    public uint cntUsage;
+    public uint th32ProcessID;
+    public IntPtr th32DefaultHeapID;
+    public uint th32ModuleID;
+    public uint cntThreads;
+    public uint th32ParentProcessID;
+    public int pcPriClassBase;
+    public uint dwFlags;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szExeFile;
+}
+// Ancestor pid chain, nearest first, read from one process snapshot (~1 ms).
+// A single CIM query per level costs ~500 ms, which is too much on the click path.
+public static int[] AncestorChain(uint startPid, int maxDepth) {
+    var parentOf = new System.Collections.Generic.Dictionary<uint, uint>();
+    IntPtr snap = CreateToolhelp32Snapshot(0x00000002, 0);
+    if (snap == IntPtr.Zero || snap == new IntPtr(-1)) return new int[0];
+    try {
+        PROCESSENTRY32 entry = new PROCESSENTRY32();
+        entry.dwSize = (uint)Marshal.SizeOf(typeof(PROCESSENTRY32));
+        if (Process32First(snap, ref entry)) {
+            do {
+                parentOf[entry.th32ProcessID] = entry.th32ParentProcessID;
+                entry.dwSize = (uint)Marshal.SizeOf(typeof(PROCESSENTRY32));
+            } while (Process32Next(snap, ref entry));
+        }
+    } finally {
+        CloseHandle(snap);
+    }
+    var chain = new System.Collections.Generic.List<int>();
+    uint cursor = startPid;
+    for (int i = 0; i < maxDepth; i++) {
+        uint parent;
+        if (!parentOf.TryGetValue(cursor, out parent)) break;
+        if (parent == 0 || parent == cursor) break;
+        chain.Add((int)parent);
+        cursor = parent;
+    }
+    return chain.ToArray();
+}
 '@
 
-try { [void][Native.Win]::SetProcessDPIAware() } catch { }
+function Enable-DpiAwareness {
+    # Monitor work areas come back in physical pixels, but WPF positions windows in
+    # device-independent units: on a 150% secondary monitor the two disagree and the
+    # card lands off the corner (or off the screen). Per-monitor-v2 makes both sides
+    # agree per monitor. Older Windows falls back one step at a time.
+    # NOTE: if the host manifest already pinned the awareness level, every call below
+    # fails and the mode stays 'system' -- that is the pre-0.2.2 behaviour, still fine
+    # on a single 100% screen because scale is then 1.0 anyway.
+    try { if ([Native.Win]::SetProcessDpiAwarenessContext([IntPtr](-4))) { return 'per-monitor-v2' } } catch { }
+    try { if ([Native.Win]::SetProcessDpiAwareness(2) -eq 0) { return 'per-monitor' } } catch { }
+    try { [void][Native.Win]::SetProcessDPIAware(); return 'system' } catch { }
+    return 'none'
+}
+
+$script:DpiMode = Enable-DpiAwareness
+$script:DpiPerMonitor = ($script:DpiMode -eq 'per-monitor-v2' -or $script:DpiMode -eq 'per-monitor')
 
 $script:DsExeName = if ([string]::IsNullOrWhiteSpace($DsProcess)) { 'DeepSeek Harness' } else { $DsProcess }
 
@@ -266,61 +366,46 @@ function New-ItemRow {
 
     $suffix = ''
     if ([int]$Item.count -gt 1) { $suffix = "  x$([int]$Item.count)" }
-    $title = New-Text -Text ("$($Item.title)$suffix") -Size 13 -Color '#F2FFFFFF' -Weight 'SemiBold'
+    # Reading ladder, largest type first: the project folder says "where", the
+    # task name says "what ran", and the detail underneath is the reported
+    # problem. A glance at the card has to answer "where" first, so the project
+    # owns the biggest line of the row. No leading glyph here either: the name
+    # leads on size alone, and the 16px the icon took is now text width.
+    $rowProject = [string]$Item.rowProject
+    if (-not [string]::IsNullOrWhiteSpace($rowProject)) {
+        $projectLabel = New-Text -Text $rowProject -Size 15 -Color $script:TextPrimary -Weight 'SemiBold'
+        $projectLabel.TextTrimming = 'CharacterEllipsis'
+        $projectLabel.TextWrapping = 'NoWrap'
+        $projectLabel.HorizontalAlignment = 'Left'
+        [void]$stack.Children.Add($projectLabel)
+    }
+
+    $title = New-Text -Text ("$($Item.title)$suffix") -Size 12.5 -Color $script:TextBody
     $title.TextTrimming = 'CharacterEllipsis'
     $title.TextWrapping = 'NoWrap'
     $title.HorizontalAlignment = 'Left'
+    if (-not [string]::IsNullOrWhiteSpace($rowProject)) {
+        $title.Margin = New-Object System.Windows.Thickness 0,2,0,0
+    }
     [void]$stack.Children.Add($title)
 
-    # Which project this row belongs to, spelled out under the task name, so a
-    # glance tells you both "what" and "where". A grid, not a horizontal stack:
-    # a stack measures children with infinite width, which silently disables
-    # wrapping and pushes long detail past the card edge.
+    # The reported problem is the smallest rung of the ladder on purpose: you
+    # read it only after the project and the task told you whether you care.
+    # The wrapping TextBlock needs a constrained width, which the vertical stack
+    # already passes down (infinite height, finite width).
     $metaText = [string]$Item.detail
-    $rowProject = [string]$Item.rowProject
-    if (-not [string]::IsNullOrWhiteSpace($rowProject) -or -not [string]::IsNullOrWhiteSpace($metaText)) {
-        $meta = New-Object System.Windows.Controls.Grid
-        $meta.Margin = New-Object System.Windows.Thickness 0,3,0,0
-        $colMetaLeft = New-Object System.Windows.Controls.ColumnDefinition
-        $colMetaLeft.Width = [System.Windows.GridLength]::Auto
-        $colMetaRight = New-Object System.Windows.Controls.ColumnDefinition
-        $colMetaRight.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
-        [void]$meta.ColumnDefinitions.Add($colMetaLeft)
-        [void]$meta.ColumnDefinitions.Add($colMetaRight)
-        if (-not [string]::IsNullOrWhiteSpace($rowProject)) {
-            $left = New-Object System.Windows.Controls.StackPanel
-            $left.Orientation = 'Horizontal'
-            $left.VerticalAlignment = 'Top'
-            $folder = New-Text -Text ([string][char]0xE8B7) -Size 9.5 -Color $script:TextMuted
-            $folder.FontFamily = New-Object System.Windows.Media.FontFamily $script:IconFont
-            $folder.Margin = New-Object System.Windows.Thickness 0,0,4,0
-            [void]$left.Children.Add($folder)
-            $projectLabel = New-Text -Text $rowProject -Size 10.5 -Color $script:TextBody
-            $projectLabel.TextTrimming = 'CharacterEllipsis'
-            $projectLabel.TextWrapping = 'NoWrap'
-            $projectLabel.MaxWidth = 132
-            [void]$left.Children.Add($projectLabel)
-            if (-not [string]::IsNullOrWhiteSpace($metaText)) {
-                $sep = New-Text -Text (' ' + [string][char]0x00B7 + ' ') -Size 10.5 -Color $script:TextGhost
-                [void]$left.Children.Add($sep)
-            }
-            [System.Windows.Controls.Grid]::SetColumn($left, 0)
-            [void]$meta.Children.Add($left)
-        }
-        if (-not [string]::IsNullOrWhiteSpace($metaText)) {
-            $detail = New-Text -Text $metaText -Size 10.5 -Color $script:TextMuted
-            $detail.TextWrapping = 'Wrap'
-            $detail.LineHeight = 15
-            $detail.LineStackingStrategy = 'BlockLineHeight'
-            # Fold at six lines: a very long error on a narrow card would
-            # otherwise make the card taller than the screen. 90 = 6 * LineHeight,
-            # so the cut lands on a line boundary instead of slicing a glyph.
-            $detail.MaxHeight = 90
-            $detail.VerticalAlignment = 'Top'
-            [System.Windows.Controls.Grid]::SetColumn($detail, 1)
-            [void]$meta.Children.Add($detail)
-        }
-        [void]$stack.Children.Add($meta)
+    if (-not [string]::IsNullOrWhiteSpace($metaText)) {
+        $detail = New-Text -Text $metaText -Size 10.5 -Color $script:TextMuted
+        $detail.TextWrapping = 'Wrap'
+        $detail.LineHeight = 15
+        $detail.LineStackingStrategy = 'BlockLineHeight'
+        # Fold at six lines: a very long error on a narrow card would
+        # otherwise make the card taller than the screen. 90 = 6 * LineHeight,
+        # so the cut lands on a line boundary instead of slicing a glyph.
+        $detail.MaxHeight = 90
+        $detail.VerticalAlignment = 'Top'
+        $detail.Margin = New-Object System.Windows.Thickness 0,3,0,0
+        [void]$stack.Children.Add($detail)
     }
     [void]$row.Children.Add($stack)
 
@@ -457,23 +542,37 @@ function New-Card {
     }
     [void]$body.Children.Add($header)
 
-    # Reading order, top to bottom: WHICH task (biggest), then whether it worked and
-    # why, then which project. The task name is the one thing that has to be legible
-    # from across the desk, so it gets the largest type on the card.
+    # Reading order, top to bottom: WHERE (the project folder, biggest), then WHICH
+    # task, then why it stopped. You triage a reminder by project first: the folder
+    # name is what tells you from across the desk whether this one is even yours.
+    # No leading glyph: at 15.5px the name is already the loudest thing on the card,
+    # and an icon-font square in front of it just read as a box and stole width.
+    $contextText = [string]$Payload.context
+    if ($items.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($contextText)) {
+        $contextLabel = New-Text -Text $contextText -Size 15.5 -Color $script:TextPrimary -Weight 'SemiBold'
+        $contextLabel.TextTrimming = 'CharacterEllipsis'
+        $contextLabel.TextWrapping = 'NoWrap'
+        $contextLabel.HorizontalAlignment = 'Left'
+        $contextLabel.Margin = New-Object System.Windows.Thickness 0,7,0,0
+        [void]$body.Children.Add($contextLabel)
+    }
+
+    # One rung down: which task inside that project.
     $headlineText = [string]$Payload.headline
     if (-not [string]::IsNullOrWhiteSpace($headlineText)) {
-        $headlineBlock = New-Text -Text $headlineText -Size 15.5 -Color '#FAFFFFFF' -Weight 'SemiBold'
+        $headlineBlock = New-Text -Text $headlineText -Size 12.5 -Color $script:TextBody
         $headlineBlock.TextWrapping = 'Wrap'
         $headlineBlock.TextTrimming = 'CharacterEllipsis'
-        $headlineBlock.LineHeight = 21
+        $headlineBlock.LineHeight = 18
         $headlineBlock.LineStackingStrategy = 'BlockLineHeight'
-        $headlineBlock.MaxHeight = 63
+        $headlineBlock.MaxHeight = 54
         $headlineBlock.HorizontalAlignment = 'Left'
-        $headlineBlock.Margin = New-Object System.Windows.Thickness 0,7,0,0
+        $headlineBlock.Margin = New-Object System.Windows.Thickness 0,2,0,0
         [void]$body.Children.Add($headlineBlock)
     }
 
-    # Second line: what happened, in one short sentence.
+    # Third line, the smallest rung: what was reported. It is read only after the
+    # project and the task told you whether you care.
     $verdictKind = [string]$Payload.verdictKind
     $verdictText = [string]$Payload.verdictText
     if (-not [string]::IsNullOrWhiteSpace($verdictKind) -or -not [string]::IsNullOrWhiteSpace($verdictText)) {
@@ -489,18 +588,18 @@ function New-Card {
             # word alone reads fine, with a colon and nothing after it it does not.
             $verdictLabelText = $verdictKind
             if (-not [string]::IsNullOrWhiteSpace($verdictText)) { $verdictLabelText = $verdictKind + [string][char]0xFF1A }
-            $verdictLabel = New-Text -Text $verdictLabelText -Size 11.5 -Color (Get-KindAccent ([string]$Payload.kind)) -Weight 'SemiBold'
+            $verdictLabel = New-Text -Text $verdictLabelText -Size 10.5 -Color (Get-KindAccent ([string]$Payload.kind)) -Weight 'SemiBold'
             $verdictLabel.VerticalAlignment = 'Top'
             [System.Windows.Controls.Grid]::SetColumn($verdictLabel, 0)
             [void]$verdictRow.Children.Add($verdictLabel)
         }
         if (-not [string]::IsNullOrWhiteSpace($verdictText)) {
-            $verdictBody = New-Text -Text $verdictText -Size 11.5 -Color '#DCFFFFFF'
+            $verdictBody = New-Text -Text $verdictText -Size 10.5 -Color '#DCFFFFFF'
             $verdictBody.TextWrapping = 'Wrap'
             $verdictBody.TextTrimming = 'CharacterEllipsis'
-            $verdictBody.LineHeight = 16
+            $verdictBody.LineHeight = 15
             $verdictBody.LineStackingStrategy = 'BlockLineHeight'
-            $verdictBody.MaxHeight = 48
+            $verdictBody.MaxHeight = 45
             $verdictBody.VerticalAlignment = 'Top'
             [System.Windows.Controls.Grid]::SetColumn($verdictBody, 1)
             [void]$verdictRow.Children.Add($verdictBody)
@@ -523,22 +622,9 @@ function New-Card {
         }
     }
 
-    # Which project / session this batch came from, one muted line under the header.
-    $contextText = [string]$Payload.context
-    if (-not [string]::IsNullOrWhiteSpace($contextText)) {
-        $contextLine = New-Object System.Windows.Controls.StackPanel
-        $contextLine.Orientation = 'Horizontal'
-        $contextLine.Margin = New-Object System.Windows.Thickness 0,6,0,0
-        $folderIcon = New-Text -Text ([string][char]0xE8B7) -Size 10 -Color $script:TextFaint
-        $folderIcon.FontFamily = New-Object System.Windows.Media.FontFamily $script:IconFont
-        $folderIcon.Margin = New-Object System.Windows.Thickness 0,0,5,1
-        [void]$contextLine.Children.Add($folderIcon)
-        $contextLabel = New-Text -Text $contextText -Size 11 -Color $script:TextMuted
-        $contextLabel.TextTrimming = 'CharacterEllipsis'
-        $contextLabel.TextWrapping = 'NoWrap'
-        [void]$contextLine.Children.Add($contextLabel)
-        [void]$body.Children.Add($contextLine)
-    }
+    # Which project / session this batch came from. A single-alert card already
+    # showed the project as its headline line above; a batch lists one project per
+    # row, so the shared line would only repeat it.
 
     if ($items.Count -gt 0) {
         $divider = New-Object System.Windows.Controls.Border
@@ -572,6 +658,44 @@ function New-Card {
     return $card
 }
 
+# Which harness window does this card belong to? The Host that spawned us is itself an
+# app-named process that owns no window, and a user can run two instances side by side:
+# walking the real ancestor chain and keeping the outermost windowed match is the only
+# answer that brings forward the window this reminder actually came from.
+function Resolve-OwnerWindow {
+    if ($script:ownerResolved) { return $script:ownerWindow }
+    $script:ownerResolved = $true
+    $script:ownerWindow = [IntPtr]::Zero
+    $script:ownerPid = 0
+    $script:ownerSource = 'none'
+    try {
+        foreach ($ancestorPid in [Native.Win]::AncestorChain([uint32]$PID, 12)) {
+            $proc = Get-Process -Id $ancestorPid -ErrorAction SilentlyContinue
+            if ($null -eq $proc) { continue }
+            if ($proc.ProcessName -ne $script:DsExeName) { continue }
+            if ($proc.MainWindowHandle -eq 0) { continue }
+            # Outermost match wins: the window lives in the app's root process, not in
+            # the per-session Host that is our direct parent.
+            $script:ownerWindow = $proc.MainWindowHandle
+            $script:ownerPid = $proc.Id
+            $script:ownerSource = 'ancestor'
+        }
+    } catch { }
+    if ($script:ownerWindow -eq [IntPtr]::Zero) {
+        # Standalone runs (self test, manual probe) have no harness ancestor.
+        try {
+            $fallback = Get-Process -Name $script:DsExeName -ErrorAction SilentlyContinue |
+                Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+            if ($null -ne $fallback) {
+                $script:ownerWindow = $fallback.MainWindowHandle
+                $script:ownerPid = $fallback.Id
+                $script:ownerSource = 'fallback'
+            }
+        } catch { }
+    }
+    return $script:ownerWindow
+}
+
 function Test-ForegroundIsDs {
     try {
         $hwnd = [Native.Win]::GetForegroundWindow()
@@ -579,8 +703,52 @@ function Test-ForegroundIsDs {
         $procId = 0
         [void][Native.Win]::GetWindowThreadProcessId($hwnd, [ref]$procId)
         if ($procId -eq 0) { return $false }
-        $proc = Get-Process -Id $procId -ErrorAction Stop
-        return ($proc.ProcessName -eq $script:DsExeName)
+        # Cheap name check first: only the harness case is worth an owner lookup.
+        $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
+        if ($null -eq $proc) { return $false }
+        if ($proc.ProcessName -ne $script:DsExeName) { return $false }
+        $owner = Resolve-OwnerWindow
+        if ($owner -eq [IntPtr]::Zero) { return $true }
+        if ($hwnd -eq $owner) { return $true }
+        $ownerPid = 0
+        [void][Native.Win]::GetWindowThreadProcessId($owner, [ref]$ownerPid)
+        if ($ownerPid -gt 0) { return ($procId -eq $ownerPid) }
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+# QUNS_* states that mean "do not interrupt now": 1 = locked / screen saver,
+# 2 = fullscreen app busy, 3 = Direct3D fullscreen, 4 = presentation mode,
+# 7 = immersive fullscreen app (Windows 8+). 5 (accepts notifications) and
+# 6 (first hour of a new account) are deliberately left alone.
+$script:QuietNotificationStates = @(1, 2, 3, 4, 7)
+
+function Get-NotificationState {
+    try {
+        $state = 0
+        if ([Native.Win]::SHQueryUserNotificationState([ref]$state) -eq 0) { return [int]$state }
+    } catch { }
+    return 0
+}
+
+# Borderless fullscreen (a game in windowed-fullscreen mode, a video player, F11 in a
+# browser) is not reported by the shell query, so also compare the foreground window
+# rect with its physical monitor rect. A merely maximized window leaves the taskbar
+# outside the window rect, so it does not count as fullscreen. Both checks are
+# read-only: nothing is hooked, injected, captured or grabbed from the game.
+function Test-ForegroundFullscreen {
+    try {
+        $hwnd = [Native.Win]::GetForegroundWindow()
+        if ($hwnd -eq [IntPtr]::Zero) { return $false }
+        $rect = New-Object 'Native.Win+RECT'
+        if (-not [Native.Win]::GetWindowRect($hwnd, [ref]$rect)) { return $false }
+        $area = [Native.Win]::MonitorBoundsOf([Native.Win]::MonitorFromWindow($hwnd, 2))
+        if ($null -eq $area) { return $false }
+        # 2px tolerance for DPI rounding.
+        return (($rect.Left -le $area[0] + 2) -and ($rect.Top -le $area[1] + 2) -and
+            ($rect.Right -ge $area[2] - 2) -and ($rect.Bottom -ge $area[3] - 2))
     } catch {
         return $false
     }
@@ -588,12 +756,10 @@ function Test-ForegroundIsDs {
 
 function Focus-Ds {
     try {
-        $proc = Get-Process -ErrorAction SilentlyContinue | Where-Object {
-            $_.ProcessName -eq $script:DsExeName -and $_.MainWindowHandle -ne 0
-        } | Select-Object -First 1
-        if ($null -eq $proc) { return $false }
-        [void][Native.Win]::ShowWindow($proc.MainWindowHandle, 9)
-        [void][Native.Win]::SetForegroundWindow($proc.MainWindowHandle)
+        $hwnd = Resolve-OwnerWindow
+        if ($hwnd -eq [IntPtr]::Zero) { return $false }
+        [void][Native.Win]::ShowWindow($hwnd, 9)
+        [void][Native.Win]::SetForegroundWindow($hwnd)
         return $true
     } catch {
         return $false
@@ -617,6 +783,44 @@ function Show-CardWindow {
         $topmost = New-Object IntPtr -ArgumentList (-1)
         [void][Native.Win]::SetWindowPos($hwnd, $topmost, 0, 0, 0, 0, 0x0001 -bor 0x0002 -bor 0x0010 -bor 0x0040)
     } catch { }
+}
+
+# ---------------- single-card slot ----------------
+# Only one card may be on screen at a time. Every DSH instance starts its own helper,
+# and every helper computes the same bottom-right corner, so a second card would land
+# straight on top of the first with its own timer and its own click target. A
+# per-session named mutex elects the owner, and a later helper signs the resident card
+# off through a named event and takes the slot: the newest reminder always wins
+# instead of stacking. If named objects are unavailable this degrades to the old
+# behaviour (one card per helper) rather than refusing to show anything.
+function Initialize-CardSlot {
+    $slot = @{ owned = $false; took = $false }
+    try {
+        $script:slotMutex = New-Object -TypeName System.Threading.Mutex -ArgumentList $false, 'Local\dsh-nudge-card'
+        $script:slotEvent = New-Object -TypeName System.Threading.EventWaitHandle -ArgumentList $false, ([System.Threading.EventResetMode]::AutoReset), 'Local\dsh-nudge-replace'
+    } catch {
+        $slot.owned = $true
+        return $slot
+    }
+    $acquired = $false
+    try { $acquired = [bool]$script:slotMutex.WaitOne(0) }
+    catch [System.Threading.AbandonedMutexException] { $acquired = $true }
+    if ($acquired) {
+        $slot.owned = $true
+        return $slot
+    }
+    try { [void]$script:slotEvent.Set() } catch { }
+    try { $acquired = [bool]$script:slotMutex.WaitOne(1200) }
+    catch [System.Threading.AbandonedMutexException] { $acquired = $true }
+    $slot.owned = $acquired
+    $slot.took = $acquired
+    return $slot
+}
+
+# Polled by the resident card: a newer helper signals this to ask it to step aside.
+function Test-CardSlotTakenOver {
+    if ($null -eq $script:slotEvent) { return $false }
+    try { return [bool]$script:slotEvent.WaitOne(0) } catch { return $false }
 }
 
 # ---------------- snapshot mode ----------------
@@ -658,9 +862,26 @@ if (-not [string]::IsNullOrWhiteSpace($Snapshot)) {
 $payload = Resolve-Payload -B64 $PayloadB64 -File $PayloadFile
 if ($null -ne $payload) {
     if ($SuppressWhenForeground -and (Test-ForegroundIsDs)) {
-        Write-Status @{ type = 'suppressed' }
+        Write-Status @{ type = 'suppressed'; reason = 'foreground'; state = 0 }
         exit 0
     }
+
+    # Do not interrupt a game, a movie or a slide show: the card would sit on top of
+    # it, and showing any topmost window over an exclusive-fullscreen app can make it
+    # minimize or flicker. The batch is dropped (not queued) and reported as such.
+    if ($SuppressWhenFullscreen) {
+        $notificationState = Get-NotificationState
+        if (($script:QuietNotificationStates -contains $notificationState) -or (Test-ForegroundFullscreen)) {
+            Write-Status @{ type = 'suppressed'; reason = 'fullscreen'; state = $notificationState }
+            exit 0
+        }
+    }
+
+    # Elect the single card for this user session before building anything: if a
+    # resident card is up, it has been asked to leave and the slot is ours now.
+    $script:slotState = Initialize-CardSlot
+    $script:closeReason = ''
+    $script:clipboardOk = $false
 
     # Single-item cards carry no rows, so the host sends a flat summary too.
     $script:lastSummary = [string]$payload.summary
@@ -672,6 +893,12 @@ if ($null -ne $payload) {
         }
         $script:lastSummary = ($summaryParts -join ' | ')
     }
+
+    # The clipboard header is supplied by the host: this script stays ASCII-only, so
+    # any human-facing Chinese has to arrive in the payload. Fall back to a neutral
+    # English line when an older host does not send one.
+    $script:clipboardHeader = [string]$payload.clipboardHeader
+    if ([string]::IsNullOrWhiteSpace($script:clipboardHeader)) { $script:clipboardHeader = 'DeepSeek Harness session alert' }
 
     $card = New-Card $payload
     $size = Measure-Card $card
@@ -704,18 +931,40 @@ if ($null -ne $payload) {
     # holds the harness window, else the one under the cursor, else the primary.
     # SystemParameters.WorkArea only ever knows the primary monitor.
     $area = $null
+    $monitor = [IntPtr]::Zero
     try {
         $dsProc = Get-Process -Name $script:DsExeName -ErrorAction SilentlyContinue |
             Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
-        if ($null -ne $dsProc) { $area = [Native.Win]::WorkAreaOfWindow($dsProc.MainWindowHandle) }
+        if ($null -ne $dsProc) {
+            $monitor = [Native.Win]::MonitorOfWindow($dsProc.MainWindowHandle)
+            $area = [Native.Win]::WorkAreaOf($monitor)
+        }
     } catch { }
-    if ($null -eq $area) { try { $area = [Native.Win]::WorkAreaOfCursor() } catch { } }
     if ($null -eq $area) {
+        try {
+            $monitor = [Native.Win]::MonitorOfCursor()
+            $area = [Native.Win]::WorkAreaOf($monitor)
+        } catch { }
+    }
+    if ($null -eq $area) {
+        $monitor = [IntPtr]::Zero
         $work = [System.Windows.SystemParameters]::WorkArea
         $area = @([int]$work.Left, [int]$work.Top, [int]$work.Right, [int]$work.Bottom)
     }
-    $window.Left = $area[2] - $window.Width - $Margin
-    $window.Top = $area[3] - $window.Height - $Margin
+    # Keep the chosen monitor's work area for the post-layout correction below.
+    $script:targetArea = $area
+    # Margin is a device-independent unit. On a scaled monitor it must grow with the
+    # DPI, otherwise a 16px margin turns into ~11 real pixels at 150%.
+    $scale = 1.0
+    if ($script:DpiPerMonitor) {
+        $dpi = [Native.Win]::DpiOf($monitor)
+        if ($dpi -gt 0) { $scale = $dpi / 96.0 }
+    }
+    $script:marginPx = [int][Math]::Round($Margin * $scale)
+    $script:scale = $scale
+    # Convert the physical work area into the DIP space WPF positions windows in.
+    $window.Left = ($area[2] / $scale) - $window.Width - $Margin
+    $window.Top = ($area[3] / $scale) - $window.Height - $Margin
 
     $script:shownAt = [DateTime]::UtcNow
     $slide = New-Object System.Windows.Media.TranslateTransform 0, 10
@@ -819,7 +1068,7 @@ if ($null -ne $payload) {
         })
 
     # Right click just gets rid of the card: no focus change, no clipboard write.
-    $window.Add_MouseRightButtonUp({ try { $window.Close() } catch { } })
+    $window.Add_MouseRightButtonUp({ $script:closeReason = 'dismissed'; try { $window.Close() } catch { } })
 
     # A press that never travels is a click and keeps the original behaviour
     # (focus the harness, copy the batch, close).
@@ -829,12 +1078,17 @@ if ($null -ne $payload) {
                 if ($script:dragging) { $script:dragging = $false; $script:pressActive = $false; return }
                 if (-not $script:pressActive) { return }
                 $script:pressActive = $false
+                $script:closeReason = 'clicked'
                 try { [void](Focus-Ds) } catch { }
+                # The clipboard can be held hostage by another process; a silent
+                # failure would leave the user believing the batch was copied. Record
+                # the outcome so the status line can report it instead.
                 try {
                     if (-not [string]::IsNullOrWhiteSpace($script:lastSummary)) {
-                        Set-Clipboard -Value ('DeepSeekRuntime session alert' + [Environment]::NewLine + $script:lastSummary)
+                        Set-Clipboard -Value ($script:clipboardHeader + [Environment]::NewLine + $script:lastSummary)
+                        $script:clipboardOk = $true
                     }
-                } catch { }
+                } catch { $script:clipboardOk = $false }
                 try { $window.Close() } catch { }
             } catch { }
         })
@@ -850,6 +1104,7 @@ if ($null -ne $payload) {
                 return
             }
             $timer.Stop()
+            $script:closeReason = 'timeout'
             try { $window.Close() } catch { }
         })
 
@@ -859,10 +1114,23 @@ if ($null -ne $payload) {
     $script:watchdog.Interval = [TimeSpan]::FromSeconds(5)
     $script:watchdog.Add_Tick({
             $script:watchdog.Stop()
-            if ([DateTime]::UtcNow -ge $script:hardDeadline) { try { $window.Close() } catch { } }
+            if ([DateTime]::UtcNow -ge $script:hardDeadline) { $script:closeReason = 'watchdog'; try { $window.Close() } catch { } }
             else { $script:watchdog.Start() }
         })
     $script:watchdog.Start()
+
+    # A newer helper asks this card to step aside through the slot event. Poll it on
+    # the UI thread so the close happens on the same thread as every other close.
+    $script:replacePoll = New-Object System.Windows.Threading.DispatcherTimer
+    $script:replacePoll.Interval = [TimeSpan]::FromMilliseconds(200)
+    $script:replacePoll.Add_Tick({
+            if (Test-CardSlotTakenOver) {
+                $script:replacePoll.Stop()
+                $script:closeReason = 'replaced'
+                try { $window.Close() } catch { }
+            }
+        })
+    try { $script:replacePoll.Start() } catch { }
 
     $app = New-Object System.Windows.Application
     $app.ShutdownMode = 'OnExplicitShutdown'
@@ -887,6 +1155,20 @@ if ($null -ne $payload) {
 
     $window.Add_Loaded({
             Show-CardWindow -Window $window
+            # Final placement in physical pixels. WPF positioned the window through
+            # DIPs, which can disagree with the monitor's work area once scaling is in
+            # play; re-pin it to the chosen area's bottom-right corner and let the
+            # system do the arithmetic. On a 100% single screen this is a no-op.
+            try {
+                $handle = (New-Object System.Windows.Interop.WindowInteropHelper $window).Handle
+                $rect = New-Object 'Native.Win+RECT'
+                if ([Native.Win]::GetWindowRect($handle, [ref]$rect)) {
+                    $targetLeft = $script:targetArea[2] - ($rect.Right - $rect.Left) - $script:marginPx
+                    $targetTop = $script:targetArea[3] - ($rect.Bottom - $rect.Top) - $script:marginPx
+                    $topmost = New-Object IntPtr -ArgumentList (-1)
+                    [void][Native.Win]::SetWindowPos($handle, $topmost, $targetLeft, $targetTop, 0, 0, (0x0001 -bor 0x0010 -bor 0x0040))
+                }
+            } catch { }
             $script:cardReady = $true
             try {
                 $fade = New-Object System.Windows.Media.Animation.DoubleAnimation 0, 1, ([System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(180)))
@@ -898,9 +1180,23 @@ if ($null -ne $payload) {
                 $slide.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $move)
             } catch { }
             $timer.Start()
-            Write-Status @{ type = 'shown'; count = [int]$payload.count; left = [int]$window.Left; top = [int]$window.Top; width = [int]$window.Width; height = [int]$window.Height }
+            # Resolve the owner once here so a click never pays the lookup cost, and so
+            # the status line can prove which process the card would focus.
+            [void](Resolve-OwnerWindow)
+            Write-Status @{ type = 'shown'; count = [int]$payload.count; left = [int]$window.Left; top = [int]$window.Top; width = [int]$window.Width; height = [int]$window.Height; dpi = $script:DpiMode; scale = [double]$script:scale; marginPx = [int]$script:marginPx; owner = [int]$script:ownerPid; ownerSrc = $script:ownerSource; slot = $(if ($script:slotState.took) { 'replaced' } elseif ($script:slotState.owned) { 'owner' } else { 'parallel' }) }
         })
-    $window.Add_Closed({ try { $app.Shutdown() } catch { } })
+    $window.Add_Closed({
+            try { $script:replacePoll.Stop() } catch { }
+            # One line on the way out tells the host how the card ended and whether the
+            # batch actually reached the clipboard, which used to fail silently.
+            $reason = if ($script:closeReason -ne '') { $script:closeReason } else { 'closed' }
+            if ($reason -eq 'clicked') {
+                Write-Status @{ type = 'closed'; reason = $reason; clipboard = [bool]$script:clipboardOk }
+            } else {
+                Write-Status @{ type = 'closed'; reason = $reason }
+            }
+            try { $app.Shutdown() } catch { }
+        })
 
     try {
         [void]$window.Show()

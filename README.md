@@ -106,10 +106,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 ```yaml
 - id: nudge
   config:
-    staySeconds: 8         # 卡片停留秒数，1..600，默认 8；待选择的卡片另按三倍算
+    staySeconds: 15        # 卡片停留秒数，1..600，默认 15；待选择的卡片另按三倍算（不少于 30 秒）
     margin: 16             # 距屏幕工作区右下角的边距，默认 16
     maxItems: 8            # 一张卡片最多列几条（1..20），超出显示「还有 N 条未展开」
     showWhenFocused: true  # DSH 在前台时也弹；设 false 则前台时不打扰
+    suppressWhenFullscreen: true  # 前台是全屏应用（游戏/放映/演示）时整批不弹，默认开
     mergeWindowMs: 1200    # 合并窗口（毫秒），同一窗口内的多条事件合成一张卡
     alertOnToolError: true # 单个工具调用失败也算「失败」提醒
     muteRanges: ['22:00-08:00']  # 静音时段，支持跨零点
@@ -123,7 +124,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 
 ## 视觉与排版
 
-两条路径：只有一条提醒时走“单条”，两条以上走“清单”。**两种排版都是任务名最大**，其次才是成败与原因，最后才是项目。
+两条路径：只有一条提醒时走“单条”，两条以上走“清单”。**两种排版都是项目名最大**——先看清是哪摊活，再看是哪个任务，最后才是报了什么。
 
 单条（失败示例）：
 
@@ -131,17 +132,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 ────────────────────────────────────────────
 ▌ ✖ 执行失败 · 20:09
 
+ dsh-nudge
  修构建脚本
- ▍失败：vite build 找不到入口模块
- 📁 dsh-nudge
- 点击卡片回到 DeepSeekRuntime
+ 失败：vite build 找不到入口模块
+ 点击卡片回到 DeepSeek Harness
 ────────────────────────────────────────────
 ```
 
 - `▌` 左侧 3px 强调色竖条，颜色跟随类型（完成 `#2ECC71` / 待选择 `#F5A623` / 失败 `#E74C3C`）；整张卡的外框也跟着泛色。
-- `修构建脚本`：任务名，15.5 半粗，**全卡最大的字**，最多三行（超过 42 字按整字截断并补 `…`）。
-- `▍失败：…`：第二行，状态词 + 一句话原因，11.5；失败和待选择带同色淡底板，完成只写「完成」。
-- `📁 dsh-nudge`：第三行，项目名，11 淡白——有它就知道是哪摊活，但不抢戏。
+- `dsh-nudge`：项目文件夹名，15.5 半粗，**全卡最大的字**，一行截断——扫一眼就知道是哪摊活。名字前面不放图标：那个位置原来是 Segoe MDL2 Assets 的文件夹字形，小字号下就是个方块，删掉还把 16px 还给了截断宽度。
+- `修构建脚本`：任务名，12.5，第二行，最多三行（超过 54px 按整字截断并补 `…`）。
+- `失败：…`：第三行，状态词 + 一句话原因，10.5；失败和待选择带同色淡底板，完成只写「完成」。
 
 多条（4 条、3 个项目）：
 
@@ -149,21 +150,22 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 ────────────────────────────────────────────
 ▌ ✖ 执行失败 ④ · 20:09
  ──────────────────────────────────────────
- ● 修构建脚本 · 失败 · 20:09
-   📁 dsh-nudge · vite build 退出码 1
- ● 跑完 26 个单测 · 完成 · 20:02
-   📁 web-console
+ ● dsh-nudge · 失败 · 20:09
+   修构建脚本
+   vite build 退出码 1
+ ● web-console · 完成 · 20:02
+   跑完 26 个单测
 ────────────────────────────────────────────
 ```
 
-- 每条第一行是任务名（13 半粗），右侧竖排「状态 + 时间」；第二行是「📁 项目 · 明细」（10.5）。
-- 成功的条目第二行只留项目名——右侧已经写了「完成」，再重复一遍「回合已完成」是废话。
+- 每条三行：项目（15 半粗，最大）→ 任务名（12.5）→ 明细（10.5）；右侧竖排「状态 + 时间」。
+- 明细为空的条目只排两行（项目 + 任务名）——右侧已经写了「完成」，再补一句「回合已完成」是废话。
 - 超出 `maxItems` 时底部出现「还有 N 条未展开」（文案由 JS 下发，脚本保持纯 ASCII）。
 
 - 字体用 `Microsoft YaHei UI → Segoe UI → Arial` 回退链，中文不再掉进 Segoe UI。
 - 高度由内容测量决定（`Measure` + `DesiredSize`），长明细换行不会撑破卡片，也不会留白。
 - 出现时 180ms 淡入 + 10px 上滑；鼠标移进卡片边框提亮，同时重置停留计时。
-- 停留时长：条目越多越久（`staySeconds + 2 × (条数-1)`）；「需要你选择」再乘三且不少于 20 秒。
+- 停留时长：条目越多越久（`staySeconds + 2 × (条数-1)`，默认 15 秒起）；「需要你选择」再乘三且不少于 30 秒。
 - 卡片内顺序：先按严重度（失败 > 选择 > 完成），同级别按时间倒序。
 - `popup.ps1` 保持纯 ASCII，所有中文文案（标题/展开提示/底部提示）由 `index.js` 下发的 payload 提供。
 
@@ -171,13 +173,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 
 - **可拖动、可缩放**：按住卡片拖动即可换位置；把鼠标移到四边或四角（光标会变成缩放箭头）拖动即可改大小，最小 260×118。卡片是透明的无边框窗口，所以缩放走的是 `ReleaseCapture` + `WM_NCLBUTTONDOWN`，交给系统原生缩放循环处理。
 - **内容自适应**：卡片宽度不再写死，文字、清单、项目标签都按当前可用宽度重新换行排版；拖大不会留白，拖小自动折行。
-- **一眼看清是哪个任务**：字最大的永远是任务名，其次才是一句话的成败原因（`失败：…` / `待你选择：…` / `完成`），最后才是项目名。多条提醒逐条两行排版，右侧竖排「完成 / 待你选择 / 失败 + 时间」。不加滚动条，卡片按内容长高，窗口最小高度也跟随内容。
+- **一眼看清是哪摊活**：字最大的永远是项目文件夹名，其次是任务名，最后才是一句话的成败原因（`失败：…` / `待你选择：…` / `完成`）。多条提醒逐条三行排版，右侧竖排「完成 / 待你选择 / 失败 + 时间」。不加滚动条，卡片按内容长高，窗口最小高度也跟随内容。
 - **不打扰**：卡片不抢焦点、不抢鼠标——它是 `WS_EX_NOACTIVATE` 窗口，永不会被激活；只在指针真的移动超过 4px 时才开始拖动，纯点击不会进入系统拖动循环；弹出后 320ms 内落下的点击会被忽略。失败时整张卡的外框会泛红，扫一眼就知道出了事。
 - **跟着你走**：卡片出现在 DSH 窗口所在的那块屏幕（取不到就退到光标所在屏，再退到主屏）；右键只关掉卡片，不切焦点、不写剪贴板。
 - **自动消失**：`staySeconds` 秒后淡出（到点关闭，无残留进程）。
 - **点一下**：把 DSH 窗口切到前台，并把提醒内容（标题 + 明细）放进剪贴板。
   DSH 的 Web GUI 是单页应用，没有「按会话 id 直达」的 URL，所以只能聚焦窗口 + 复制线索。
-- **同一时刻只有一张卡**：新的一批提醒会顶掉上一张，避免叠一屏。
+- **同一时刻只有一张卡**：按用户会话挂一个命名互斥量（`Local\dsh-nudge-card`），新的一批提醒通过 `Local\dsh-nudge-replace` 事件请上一张退场（200ms 内响应），再接管右下角——多开几个 DSH 也不会叠一屏。拿不到命名对象时退回旧行为（每批一张卡），不会因此不弹。
+- **全屏时不打断你**：前台是全屏应用（游戏、放映、演示）就整批不弹，`suppressWhenFullscreen` 默认开。判定有两道：先问系统「现在适合打扰吗」（`SHQueryUserNotificationState`），再看前台窗口是否正好盖满物理屏——后者能抓住「无边框全屏」的游戏和 F11 浏览器，而普通最大化的窗口因为露出任务栏不算全屏。两个检查都是**只读查询**：不挂钩子、不抓输入、不碰游戏窗口，鼠标和键盘完全不受影响。被跳过的批次直接丢弃（不排队），状态行走 `{"type":"suppressed","reason":"fullscreen"}`。
 
 ## 发布
 
@@ -194,7 +197,7 @@ npm publish            # 名字带 scope 时用 npm publish --access public
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs      # 70 项全绿
+& $node .\scripts\selftest.mjs      # 91 项全绿
 ```
 
 三条硬要求，少一条装上就是坏的：
@@ -226,9 +229,22 @@ $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\nod
 & $node .\scripts\selftest.mjs
 ```
 
-当前 **70 项全绿**，覆盖：配置校验与默认值、静音时段（含跨零点）、事件合并计数、
+当前 **91 项全绿**，覆盖：配置校验与默认值、静音时段（含跨零点）、事件合并计数、
 严重度排序、三类开关、真起弹窗并收到 `{"type":"shown"}` 与右下角坐标、dispose 后无孤儿进程、
-三种状态各渲染一张 384px 宽快照（尺寸与非空校验）。
+三种状态各渲染一张 436px 宽快照（尺寸与非空校验），以及一组源码静态约束——
+脚本必须纯 ASCII、项目名前不许出现图标字形、字号阶梯必须是「项目 > 任务 > 原因」、
+单卡槽位、剪贴板回报、全屏抑制的两道判断与调试开关不许被删。
+最后一组会**真跑两张卡**：A 占位拿到 `slot:"owner"`，B 上来后 A 收到 `closed/replaced`、
+B 标记 `slot:"replaced"`，验证「同一时刻只有一张卡」，顺带验证 payload 落盘。
+
+想核对「卡片上到底写了什么」（比如怀疑标题取错），把 payload 落盘打开：
+
+```powershell
+$env:DSH_NUDGE_DEBUG_PAYLOAD = "1"
+$env:DSH_NUDGE_DEBUG_FILE = "$env:TEMP\nudge-payloads.jsonl"   # 可省略，默认写到临时目录
+```
+
+之后每次弹卡都会往该文件追加一行 JSON（`{at, payload}`）；写入失败只留一条 debug 日志，不影响弹卡。
 
 快照模式可以单独跑，不需要会话也不需要屏幕：
 
@@ -249,7 +265,7 @@ dsh-nudge/
 ├─ scripts/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
-│  └─ selftest.mjs       70 项自测
+│  └─ selftest.mjs       91 项自测
 ├─ screenshots/          三态卡片图（纯色底，无桌面内容）
 └─ docs/api-notes.md     事件源与弹窗选型的取证笔记（带源码行号）
 ```
@@ -266,4 +282,20 @@ dsh-nudge/
 - **窗口可能被隐藏启动**：宿主用 `windowsHide` 拉起 helper 时，首个 WPF 窗口会带着
   隐藏标志出现，`Show()` 后要 `ShowWindow(SW_SHOWNOACTIVATE)` + `SetWindowPos(HWND_TOPMOST, …NOACTIVATE)` 强制可见。
 - **脚本保持纯 ASCII**：PowerShell 5.1 会把无 BOM 的 UTF-8 脚本按 ANSI 读，
-  中文注释会乱码甚至语法错误；`popup.ps1` 里没有非 ASCII 字符。
+  中文注释会乱码甚至语法错误；`popup.ps1` 里没有非 ASCII 字符。所有中文（含点击后写进
+  剪贴板的抬头）都由 `lib/index.js` 的 payload 下发。
+- **高 DPI 要按显示器算**：`MonitorInfo.rcWork` 是物理像素，而 WPF 的 `Left/Top` 是 DIP，
+  系统级 DPI 感知下这两者在缩放屏上不同量纲，卡片会偏出角落。helper 先申请 per-monitor-v2
+  感知（失败逐级降级到 per-monitor / system），边距按目标屏 DPI 放大，`Loaded` 后再用
+  物理像素 `SetWindowPos` 钉一次；100% 单屏下这次校正是 no-op。
+- **点击要聚焦「这个」实例**：helper 的直接父进程是 Host，和 Electron 主进程同名却没有窗口，
+  所以「按进程名取第一个有窗进程」在同时开两个 DSH 时会切错窗口。改为用 Toolhelp32 快照回溯
+  祖先链，取最外层的同名有窗进程（逐层 spawn CIM 要 530ms，快照是 1ms 级）。
+- **一张卡只能有一个主人**：每个 helper 都算同一个右下角，两批提醒同时到就会叠在一起，各自的
+  计时和点击目标互不知情。`Local\dsh-nudge-card` 互斥量选主，后来者 Set 一下
+  `Local\dsh-nudge-replace` 事件把在位的那张请走（200ms 轮询、UI 线程上关窗），再接管位置。
+- **剪贴板会失败，别装作成功**：`Set-Clipboard` 在别的程序占着剪贴板时会抛异常，旧代码把它包在
+  空 `catch` 里，用户以为复制了其实没有。现在关窗时补一条 `{"type":"closed","reason":"clicked","clipboard":true|false}`
+  状态行，宿主日志里能看见到底写没写成。
+- **非 Windows 直接不注册**：卡片是 powershell + WPF 画的，`package.json` 的 `os` 只在安装期拦，
+  开发态跨平台跑会每个回合 spawn 失败刷警告，所以 `createPlugin` 在非 win32 上早退。
