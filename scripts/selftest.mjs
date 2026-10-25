@@ -4,21 +4,26 @@
  * 用法（node 不在 PATH）：
  *   & "$env:DSH_HOME\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe" scripts\selftest.mjs
  *
+ * 参数：
+ *   --no-live         只跑逻辑、快照与静态约束，不起真实 helper 窗口（CI 用）
+ *   --update-baseline 重新生成 tools/snapshot-baseline.json（改了版式之后手动跑一次）
+ *
  * 覆盖：
  *   1. 配置校验与默认值
  *   2. 静音时间段判定
  *   3. AlertCenter 合并计数 / 严重度排序 / dispose
- *   4. PopupRunner 真起 helper：收到 {"type":"shown"}，坐标贴右下角，退出后无残留进程
- *   5. 三种状态各渲染一张卡片快照（PNG 尺寸与非空校验）
+ *   4. PopupRunner 真起 helper：收到 {"type":"shown"}，坐标贴右下角，退出后无残留进程（--no-live 时跳过）
+ *   5. 三种状态各渲染一张卡片快照，并与 tools/snapshot-baseline.json 的像素统计比对
  *   6. 源码静态约束（纯 ASCII、字号阶梯、单卡槽位、全屏抑制、调试开关）
- *   7. 单卡互斥真跑一遍 A/B 两张卡，顺带验证 payload 落盘调试开关
+ *   7. 单卡互斥真跑一遍 A/B 两张卡，顺带验证 payload 落盘调试开关（--no-live 时跳过）
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { inflateSync } from "node:zlib";
 
 import { AlertCenter, DEFAULTS, PopupRunner, createPlugin, inMuteRange, normalizeConfig } from "../lib/index.js";
 
@@ -26,6 +31,11 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
 const popupScript = join(root, "lib", "popup.ps1");
 const shotDir = join(root, "screenshots");
+const baselineFile = join(root, "tools", "snapshot-baseline.json");
+
+const argv = process.argv.slice(2);
+const noLive = argv.includes("--no-live");
+const updateBaseline = argv.includes("--update-baseline");
 
 let failures = 0;
 const results = [];
@@ -69,6 +79,112 @@ async function waitFor(predicate, timeoutMs) {
 		await new Promise((resolve) => setTimeout(resolve, 80));
 	}
 	return predicate();
+}
+
+/**
+ * 解出 PNG 像素。只处理弹窗脚本写出来的那种：8 位、非交错、RGB 或 RGBA。
+ * @param {Buffer} bytes PNG 字节
+ * @returns {{width: number, height: number, channels: number, pixels: Buffer}} 像素
+ */
+function decodePng(bytes) {
+	const width = bytes.readUInt32BE(16);
+	const height = bytes.readUInt32BE(20);
+	const bitDepth = bytes[24];
+	const colorType = bytes[25];
+	const interlace = bytes[28];
+	if (bitDepth !== 8 || interlace !== 0 || (colorType !== 2 && colorType !== 6)) {
+		throw new Error(`unsupported png: depth=${bitDepth}, colorType=${colorType}, interlace=${interlace}`);
+	}
+	const channels = colorType === 6 ? 4 : 3;
+	const idat = [];
+	let offset = 8;
+	while (offset + 8 <= bytes.length) {
+		const length = bytes.readUInt32BE(offset);
+		const type = bytes.subarray(offset + 4, offset + 8).toString("latin1");
+		if (type === "IDAT") idat.push(bytes.subarray(offset + 8, offset + 8 + length));
+		offset += 12 + length;
+		if (type === "IEND") break;
+	}
+	const raw = inflateSync(Buffer.concat(idat));
+	const stride = width * channels;
+	const pixels = Buffer.alloc(width * height * channels);
+	for (let y = 0; y < height; y++) {
+		const filter = raw[y * (stride + 1)];
+		const line = raw.subarray(y * (stride + 1) + 1, y * (stride + 1) + 1 + stride);
+		const out = pixels.subarray(y * stride, y * stride + stride);
+		const prev = y > 0 ? pixels.subarray((y - 1) * stride, y * stride) : null;
+		for (let x = 0; x < stride; x++) {
+			const value = line[x];
+			const left = x >= channels ? out[x - channels] : 0;
+			const up = prev === null ? 0 : prev[x];
+			const upLeft = prev === null || x < channels ? 0 : prev[x - channels];
+			let recon;
+			switch (filter) {
+				case 0: recon = value; break;
+				case 1: recon = value + left; break;
+				case 2: recon = value + up; break;
+				case 3: recon = value + ((left + up) >> 1); break;
+				case 4: {
+					const estimate = left + up - upLeft;
+					const da = Math.abs(estimate - left);
+					const db = Math.abs(estimate - up);
+					const dc = Math.abs(estimate - upLeft);
+					recon = value + (da <= db && da <= dc ? left : db <= dc ? up : upLeft);
+					break;
+				}
+				default: throw new Error(`bad png filter ${filter}`);
+			}
+			out[x] = recon & 0xff;
+		}
+	}
+	return { width, height, channels, pixels };
+}
+
+/**
+ * 快照像素统计，基线就是拿这几个数比：
+ *   distinct 不同颜色数、dark 亮度<40 的像素、text 亮度>150 的像素、accent 贴状态色的像素。
+ * @param {Buffer} bytes PNG 字节
+ * @param {[number, number, number]} accent 状态色 RGB
+ * @returns {{width: number, height: number, distinct: number, dark: number, text: number, accent: number}} 统计
+ */
+function pngStats(bytes, accent) {
+	const { width, height, channels, pixels } = decodePng(bytes);
+	const colors = new Set();
+	let dark = 0;
+	let text = 0;
+	let accentPixels = 0;
+	for (let index = 0; index < width * height; index++) {
+		const r = pixels[index * channels];
+		const g = pixels[index * channels + 1];
+		const b = pixels[index * channels + 2];
+		colors.add((r << 16) | (g << 8) | b);
+		const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+		if (luma < 40) dark++;
+		if (luma > 150) text++;
+		if (Math.abs(r - accent[0]) <= 24 && Math.abs(g - accent[1]) <= 24 && Math.abs(b - accent[2]) <= 24) accentPixels++;
+	}
+	return { width, height, distinct: colors.size, dark, text, accent: accentPixels };
+}
+
+/**
+ * 把十六进制色转成 RGB 三元组。
+ * @param {string} hex 形如 #2ECC71
+ * @returns {[number, number, number]} RGB
+ */
+function rgbOf(hex) {
+	const value = Number.parseInt(hex.replace("#", ""), 16);
+	return [(value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff];
+}
+
+/**
+ * 统计值是否落在基线容差内：宽高必须一模一样，像素计数允许 ±2%（至少 ±3）。
+ * @param {number} actual 实际
+ * @param {number} expected 基线
+ * @returns {boolean} 是否可接受
+ */
+function withinTolerance(actual, expected) {
+	const slack = Math.max(3, Math.round(expected * 0.02));
+	return Math.abs(actual - expected) <= slack;
 }
 
 /** 1. 配置校验 ---- */
@@ -371,7 +487,10 @@ sortProbe.show([
 check("跨零点按完整时间戳排序", sortedPayload?.items?.[0]?.title === "跨零点后", JSON.stringify(sortedPayload?.items?.map((item) => item.title)));
 sortProbe.dispose();
 
-/** 4. PopupRunner 真起 helper ---- */
+/** 4. PopupRunner 真起 helper（--no-live 时跳过，CI 上没有交互桌面）---- */
+if (noLive) {
+	check("真起 helper 段", true, "--no-live 跳过（快照与静态约束仍然覆盖）");
+} else {
 const statuses = [];
 const runner = new PopupRunner({ ...defaults, staySeconds: 6 }, () => {}, { onStatus: (status) => statuses.push(status) });
 const delivered = runner.show([{ kind: "needs_choice", sessionId: "session-selftest", title: "自测会话", detail: "等待你选择", at: "21:20", count: 2 }]);
@@ -389,6 +508,7 @@ runner.dispose();
 const exited = await waitFor(() => child === null || child.exitCode !== null || child.signalCode !== null, 4000);
 check("dispose 后 helper 退出（无孤儿）", exited,
 	child === null ? "child=null" : `exitCode=${child.exitCode}, signalCode=${child.signalCode}`);
+}
 
 /** 5. 三种状态快照 ---- */
 mkdirSync(shotDir, { recursive: true });
@@ -448,6 +568,7 @@ function renderSnapshot(kind, out, width = 0) {
 	});
 }
 
+const snapshotStats = {};
 for (const kind of Object.keys(payloads)) {
 	const out = join(shotDir, `${kind}.png`);
 	rmSync(out, { force: true });
@@ -459,9 +580,16 @@ for (const kind of Object.keys(payloads)) {
 	const height = isPng ? bytes.readUInt32BE(20) : 0;
 	check(`快照 ${kind} 渲染成功`, result.code === 0 && isPng, `code=${result.code}, ${stdoutPlaceholder(result.out)}`);
 	check(`快照 ${kind} 尺寸合理`, width === 436 && height >= 134, `${width}x${height}, bytes=${bytes.length}`);
+	if (isPng) {
+		const stats = pngStats(bytes, rgbOf(payloads[kind].accent));
+		snapshotStats[kind] = stats;
+		check(`快照 ${kind} 有内容（不是空白图）`, stats.distinct > 20 && stats.text > 50,
+			`${stats.distinct} 色 / 亮像素 ${stats.text} / 状态色 ${stats.accent}`);
+	}
 }
 
 /** 5.5 宽度自适应：窄宽与宽版都要出图，宽度严格跟随 ---- */
+const widthStats = {};
 for (const width of [300, 520]) {
 	const out = join(shotDir, `width-${width}.png`);
 	rmSync(out, { force: true });
@@ -470,6 +598,50 @@ for (const width of [300, 520]) {
 	const isPng = bytes.length > 8 && bytes.subarray(1, 4).toString() === "PNG";
 	const actual = isPng ? bytes.readUInt32BE(16) : 0;
 	check(`快照宽度 ${width} 自适应`, result.code === 0 && actual === width + 52, `期望 ${width + 52}, 实际 ${actual}`);
+	if (isPng) widthStats[String(width)] = pngStats(bytes, rgbOf("#F5A623"));
+}
+
+/**
+ * 5.6 与 tools/snapshot-baseline.json 比对 ----
+ * 版式一改，尺寸和像素统计一定会变；把「上一版长什么样」固化成基线，
+ * 改完忘了同步就红，而不是让 README/VERIFY 里的数字自己漂。
+ * 宽高必须完全一致；像素计数留 ±2%（字体抗锯齿在不同机器上会有几个像素出入）。
+ */
+if (updateBaseline) {
+	const baseline = {
+		note: "版式基线：宽高必须一致，像素计数允许 ±2%。改版式后跑 `node scripts/selftest.mjs --update-baseline` 重生成。",
+		generatedAt: new Date().toISOString(),
+		kinds: snapshotStats,
+		widths: widthStats
+	};
+	mkdirSync(dirname(baselineFile), { recursive: true });
+	writeFileSync(baselineFile, `${JSON.stringify(baseline, null, "\t")}\n`, "utf8");
+	check("基线已重写", existsSync(baselineFile), baselineFile);
+} else if (!existsSync(baselineFile)) {
+	check("快照基线", true, "tools/snapshot-baseline.json 不存在，跳过像素比对（仓库里应当有）");
+} else {
+	const baseline = JSON.parse(readFileSync(baselineFile, "utf8"));
+	for (const [key, expected] of Object.entries(baseline.kinds ?? {})) {
+		const actual = snapshotStats[key];
+		if (actual === undefined) {
+			check(`基线 ${key} 对得上`, false, "本次没有渲染出这张");
+			continue;
+		}
+		const same = actual.width === expected.width && actual.height === expected.height
+			&& withinTolerance(actual.distinct, expected.distinct)
+			&& withinTolerance(actual.dark, expected.dark)
+			&& withinTolerance(actual.text, expected.text)
+			&& withinTolerance(actual.accent, expected.accent);
+		check(`基线 ${key} 对得上`, same,
+			`${actual.width}x${actual.height} 色 ${actual.distinct}/${expected.distinct} 暗 ${actual.dark}/${expected.dark} 亮 ${actual.text}/${expected.text} 状态 ${actual.accent}/${expected.accent}`);
+	}
+	for (const [key, expected] of Object.entries(baseline.widths ?? {})) {
+		const actual = widthStats[key];
+		const same = actual !== undefined && actual.width === expected.width && actual.height === expected.height
+			&& withinTolerance(actual.distinct, expected.distinct) && withinTolerance(actual.text, expected.text);
+		check(`基线宽度 ${key} 对得上`, same,
+			actual === undefined ? "没渲染" : `${actual.width}x${actual.height} 色 ${actual.distinct}/${expected.distinct}`);
+	}
 }
 
 /**
@@ -511,11 +683,14 @@ check("payload 落盘调试开关是环境变量控制的",
 	"debug dump");
 
 /**
- * 7. 单卡互斥与 payload 落盘 ----
+ * 7. 单卡互斥与 payload 落盘（--no-live 时跳过）----
  * 同一时刻只留一张卡：A 先占位，B 上来时 A 必须收到 replaced 并退场。
  * 同一段流程顺手验证调试开关：设了 DSH_NUDGE_DEBUG_PAYLOAD 就该把每次
  * payload 追加成一行 JSON，事后能核对「卡片上到底写了什么」。
  */
+if (noLive) {
+	check("单卡互斥与 payload 落盘段", true, "--no-live 跳过");
+} else {
 const dumpFile = join(tmpdir(), `dsh-nudge-selftest-${process.pid}.jsonl`);
 rmSync(dumpFile, { force: true });
 process.env.DSH_NUDGE_DEBUG_PAYLOAD = "1";
@@ -558,6 +733,7 @@ const dumpTitles = dumpLines.map((line) => {
 });
 check("落盘的正是这两张卡", dumpTitles.every((title) => /^抢卡/u.test(title)), JSON.stringify(dumpTitles));
 rmSync(dumpFile, { force: true });
+}
 
 /**
  * 把子进程输出压成一行证据。

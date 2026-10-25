@@ -1,5 +1,7 @@
 # dsh-nudge
 
+[![selftest](https://github.com/HalfDone03/dsh-nudge/actions/workflows/selftest.yml/badge.svg)](https://github.com/HalfDone03/dsh-nudge/actions/workflows/selftest.yml)
+
 DSH（DeepSeek Harness）插件：会话里**任务完成**、**需要你选择**、**执行失败**时，
 在桌面**右下角**弹一张置顶小卡片提醒你处理。点一下卡片回到 DSH 窗口，并把这批提醒复制到剪贴板。
 
@@ -206,7 +208,22 @@ npm login
 npm publish            # 名字带 scope 时用 npm publish --access public
 ```
 
-发版还带三条**市场索引与发布记录**的收尾（`index.json` 在仓库根目录，jsDelivr 的 `@main` 直接读它）：
+发版走脚本，别手敲（手敲过几次，漏过踩 tag、漏过建 Release）：
+
+```powershell
+# 本机默认 ExecutionPolicy 不让直接跑 .ps1，所以用 powershell -File 的形式
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version 0.3.1 -DryRun
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version 0.3.1
+```
+
+它按顺序做：挑 node 跑语法检查与 99 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
+「未发布」换成本版标题 → 更新本文件里的「当前版本」与版本一览表格 → 提交 → 打附注 tag → 把 `index.json`
+的 `versions[0]` 三字段指向这个提交并再提一条
+`chore(release): 索引指向 x.y.z 最终提交 (<hash>)` → `gh release create --latest` → push `main` 与 tag。
+`-NoPush` 只做本地、`-NoRelease` 免建 Release、`-SkipChecks` 跳过自测、`-Title "…"` 换掉 tag 里那句摘要
+（默认取该版 CHANGELOG 第一条 bullet，去掉 markdown 记号后截 60 字）。
+
+它做的事就是下面这三条**市场索引与发布记录**的收尾（`index.json` 在仓库根目录，jsDelivr 的 `@main` 直接读它）：
 
 1. 改 `package.json` 的 `version`、把 `CHANGELOG.md` 顶部的「未发布」换成本版标题，提交后打 tag（`v<版本>`）；
 2. 再提一条 `chore(release): 索引指向 x.y.z 最终提交 (<hash>)`，把 `index.json` 的
@@ -217,11 +234,11 @@ npm publish            # 名字带 scope 时用 npm publish --access public
 `@main` 上永远是最后一条索引，所以用户点「安装」拿到的就是 `source.commit` 钉死的那一版；
 这也是为什么上文的坑里说「别用 `@v<版本>`」——标签里的 `index.json` 会停在当时那个指针。
 
-发布前自检：
+发布前自检（`release.ps1` 里已经包含，手工时照抄）：
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs      # 91 项全绿
+& $node .\scripts\selftest.mjs      # 99 项全绿；CI 上跑的是 --no-live（89 项）
 ```
 
 三条硬要求，少一条装上就是坏的：
@@ -253,16 +270,27 @@ registry 安装是 `saveExact`（精确版本），不改版本号重装拿不�
 
 ```powershell
 $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe"
-& $node .\scripts\selftest.mjs
+& $node .\scripts\selftest.mjs              # 99 项，含真起窗口与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 89 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
-当前 **91 项全绿**，覆盖：配置校验与默认值、静音时段（含跨零点）、事件合并计数、
+当前 **99 项全绿**，覆盖：配置校验与默认值、静音时段（含跨零点）、事件合并计数、
 严重度排序、三类开关、真起弹窗并收到 `{"type":"shown"}` 与右下角坐标、dispose 后无孤儿进程、
-三种状态各渲染一张 436px 宽快照（尺寸与非空校验），以及一组源码静态约束——
+三种状态各渲染一张 436px 宽快照（尺寸、非空与像素基线比对），以及一组源码静态约束——
 脚本必须纯 ASCII、项目名前不许出现图标字形、字号阶梯必须是「项目 > 任务 > 原因」、
 单卡槽位、剪贴板回报、全屏抑制的两道判断与调试开关不许被删。
 最后一组会**真跑两张卡**：A 占位拿到 `slot:"owner"`，B 上来后 A 收到 `closed/replaced`、
 B 标记 `slot:"replaced"`，验证「同一时刻只有一张卡」，顺带验证 payload 落盘。
+
+快照有像素基线（`tools/snapshot-baseline.json`）：宽高必须一致，`distinct/dark/text/accent`
+允许 ±2%。改了版式、确认新样子是对的之后跑一次：
+
+```powershell
+& $node .\scripts\selftest.mjs --update-baseline
+```
+
+忘了更新就会红，省得 README / VERIFY 里的数字自己漂。CI（`.github/workflows/selftest.yml`）
+在每次 push / PR 上跑 `--no-live`，并检查 `package.json` / `CHANGELOG` / `index.json` 三处版本号是否自洽。
 
 想核对「卡片上到底写了什么」（比如怀疑标题取错），把 payload 落盘打开：
 
@@ -294,7 +322,11 @@ dsh-nudge/
 ├─ scripts/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
-│  └─ selftest.mjs       91 项自测
+│  └─ selftest.mjs       99 项自测（`--no-live` 89 项、`--update-baseline` 重写像素基线）
+├─ tools/
+│  ├─ release.ps1        一条命令发版（自测→版本号→tag→索引指针→Release→push）
+│  └─ snapshot-baseline.json  快照像素基线，改了版式要跟着重生
+├─ .github/workflows/selftest.yml  CI：windows-latest 上跑 --no-live 与版本号自洽检查
 ├─ screenshots/          三态卡片图（纯色底，无桌面内容）
 └─ docs/api-notes.md     事件源与弹窗选型的取证笔记（带源码行号）
 ```
@@ -328,3 +360,8 @@ dsh-nudge/
   状态行，宿主日志里能看见到底写没写成。
 - **非 Windows 直接不注册**：卡片是 powershell + WPF 画的，`package.json` 的 `os` 只在安装期拦，
   开发态跨平台跑会每个回合 spawn 失败刷警告，所以 `createPlugin` 在非 win32 上早退。
+- **要写中文的 PowerShell 脚本得存成 UTF-8 with BOM**：5.1 会把无 BOM 的 UTF-8 当 ANSI 解，
+  中文串会把它后面的引号吃掉，`Parser::ParseFile` 报一堆「意外的标记」。
+  `lib/popup.ps1` 因此干脆保持纯 ASCII；`tools/release.ps1` 有中文提示，所以带 BOM。
+- **版式不能只靠人眼盯**：快照的尺寸和像素统计固化在 `tools/snapshot-baseline.json`，
+  改完版式忘了重生基线，自测直接红——比等 README 里的数字和实际图悄悄分叉强。

@@ -15,13 +15,14 @@ $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\nod
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs
+& $node .\scripts\selftest.mjs              # 99 项，含真起 helper 与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 89 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (91 checks)`，退出码 0。
+- selftest 输出 `ALL PASS (99 checks)`，退出码 0。
 
 证据（实测）：
 
@@ -29,11 +30,22 @@ $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\nod
 PASS  helper 回报 shown  --  [{"width":412,"height":164,"type":"shown","slot":"owner","scale":1,"left":2132,"dpi":"per-monitor-v2","owner":8592,"count":2,"marginPx":16,"ownerSrc":"ancestor","top":1212}]
 PASS  卡片在屏幕右下半区  --  left=2132, top=1212, 412x164
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
-ALL PASS (91 checks)
+PASS  基线 completed 对得上  --  436x174 色 263/263 暗 72874/72874 亮 933/933 状态 352/352
+ALL PASS (99 checks)
 ```
 
 其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 164 高 →
 `2560-412-16 = 2132`、`1392-164-16 = 1212`，正好贴在工作区右下角。
+
+## 1.5 快照基线与 CI（不需要屏幕）
+
+- `tools/snapshot-baseline.json` 存着三态与两种宽度的像素统计（宽高 + `distinct` / `dark` / `text` / `accent`）。
+  selftest 每次渲染完就跟它比：**宽高必须完全一致**，像素计数允许 ±2%（不同机器字体抗锯齿会有几个像素出入）。
+- 改了版式、确认新样子是对的之后，跑一次 `& $node .\scripts\selftest.mjs --update-baseline` 重写基线；
+  忘了更新就会红，而不是让 README / VERIFY 里的数字自己漂。
+- `.github/workflows/selftest.yml` 在每次 push / PR 上跑 `--no-live`（runner 没有交互桌面，起不了真窗口），
+  另外还检查 `node --check`、PowerShell 脚本能否解析、以及 `package.json` / `CHANGELOG` / `index.json` 三处版本号是否自洽。
+
 
 ## 2. 三种状态的无头渲染（不需要屏幕）
 
@@ -173,6 +185,11 @@ failed:       436x152 distinct=157 dark=15540 accent=103 text=543
 - `accent` 各自出现对应强调色（完成=绿、选择=琥珀、失败=红）
 - `text` 大于 150（文字真的渲染了，不是一张空卡）
 - 四角像素必须等于 `31,31,31`（纯色底，证明图里没有任何桌面内容）
+
+> 上面这套是**手动**自证（隔点采样、阈值见脚本）。`tools/snapshot-baseline.json` 是 selftest 用的
+> **自动**基线，统计口径不同（全像素、亮度阈值 40/150），所以两边的 `dark`／`distinct` 数字不能直接对照，
+> 各自内部一致即可。改了版式两边都要重测：手动的重跑本段脚本，自动的跑 `--update-baseline`。
+
 ## 4. 装进 profile 后真跑（需要重启 DSH）
 
 ```powershell

@@ -1,0 +1,48 @@
+{
+	"note": "版式基线：宽高必须一致，像素计数允许 ±2%。改版式后跑 `node scripts/selftest.mjs --update-baseline` 重生成。",
+	"generatedAt": "2026-10-25T23:34:31.101Z",
+	"kinds": {
+		"completed": {
+			"width": 436,
+			"height": 174,
+			"distinct": 263,
+			"dark": 72874,
+			"text": 933,
+			"accent": 352
+		},
+		"needs_choice": {
+			"width": 436,
+			"height": 291,
+			"distinct": 452,
+			"dark": 110825,
+			"text": 2940,
+			"accent": 799
+		},
+		"failed": {
+			"width": 436,
+			"height": 152,
+			"distinct": 304,
+			"dark": 61819,
+			"text": 2019,
+			"accent": 307
+		}
+	},
+	"widths": {
+		"300": {
+			"width": 352,
+			"height": 305,
+			"distinct": 451,
+			"dark": 90175,
+			"text": 2982,
+			"accent": 841
+		},
+		"520": {
+			"width": 572,
+			"height": 291,
+			"distinct": 460,
+			"dark": 146185,
+			"text": 2940,
+			"accent": 799
+		}
+	}
+}

@@ -2,6 +2,26 @@
 
 本插件按语义化版本记录改动。日期为提交到 `main` 的时间。
 
+## 未发布
+
+**工程与测试**
+
+- 加了 CI（`.github/workflows/selftest.yml`）：每次 push / PR 在 `windows-latest` 上跑
+  `node --check`、PowerShell 脚本解析、`selftest.mjs --no-live`（runner 没有交互桌面，跳过真起窗口那两段），
+  外加一条版本号自洽检查（`package.json` 与 `CHANGELOG` 标题必须一致，`index.json` 落后只告警）。
+- 快照有了基线（`tools/snapshot-baseline.json`）：三态与两种宽度的像素统计（宽高 + distinct / dark / text / accent）
+  固化进仓库，selftest 每次渲染完就比对，宽高必须一致、计数允许 ±2%。改版式后跑
+  `selftest.mjs --update-baseline` 重生成，忘更新就会红。
+- 自测项 91 → 99（`--no-live` 时 89），新增每条快照的「不是空白图」断言与 5 条基线比对。
+- 发版收口成一条命令：`tools\release.ps1 -Version 0.3.1`（支持 `-DryRun` / `-SkipChecks` / `-NoPush` /
+  `-NoRelease` / `-Title`），依次做自测 → 改版本号 → 改 CHANGELOG 标题 → 改 README 的「当前版本」与版本一览 →
+  提交 → 打 tag → 改 `index.json` 指针 → `gh release create` → push。
+- 记一条 PowerShell 的坑：脚本里写中文必须存成 **UTF-8 with BOM**，Windows PowerShell 5.1 会把无 BOM 的
+  UTF-8 按 ANSI 解，中文串会把后面的引号吃掉，`Parser::ParseFile` 直接报一堆语法错
+  （顺带：用编辑器改带 BOM 的文件后要确认 BOM 还在，很多工具保存时会丢掉）。
+- 记一条正则的坑：`[regex]::Replace(input, pattern, replacement, 1)` 的第 4 个参数是 `RegexOptions`
+  不是「替换次数」，传 1 等于 `IgnoreCase` 且替换全部匹配——改 README 表格时因此插了两遍。
+
 ## 0.3.0 — 2026-10-26
 
 **变更**
