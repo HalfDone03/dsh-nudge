@@ -139,6 +139,9 @@ export function apply(ctx, config) {
 - 三条坑：
   1. **DPI**：进程不声明 DPI 感知时坐标会被系统缩放，`WorkArea` 与真实像素不一致 →
      helper 里先 `SetProcessDpiAwarenessContext(-4)` 或读 `GetDpiForWindow` 再换算 96dpi 基准。
+     **已实现（0.3.0）**：`lib/popup.ps1` 的 `Enable-DpiAwareness` 按 per-monitor-v2 → per-monitor →
+     system 三级降级，边距按目标屏 `GetDpiForMonitor` 放大，`Loaded` 后按物理像素二次落位；
+     `shown` 状态行带 `dpi` / `scale` / `marginPx` 便于自证。
   2. **多显示器**：`SystemParameters.WorkArea` 只反映主屏；要看鼠标所在屏或配置里指定屏幕，
      用 `MonitorFromWindow` / `MonitorFromPoint` 取目标屏工作区。
   3. **进程生命周期**：DSH 退出/插件 dispose 必须杀掉 helper（`child.kill()` + `process.on('exit')` 兜底），

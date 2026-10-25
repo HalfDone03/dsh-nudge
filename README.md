@@ -33,7 +33,7 @@ https://gcore.jsdelivr.net/gh/HalfDone03/dsh-nudge@main/index.json
 ```
 
 回到 Discover 就能看到「DSH 轻推提醒」，点安装。市场自己写 profile、跑 pnpm，装完重开 DSH 生效。
-索引是标准的 format 1，`source` 用 git 提交钉死（仓库根目录 `index.json` 的 `source.commit`），装到的一定是 `0.2.1` 这一版。
+索引是标准的 format 1，`source` 用 git 提交钉死（仓库根目录 `index.json` 的 `source.commit`），装到的一定是 `0.3.0` 这一版。
 
 上面那条不通就换镜像（同一份内容，路径一样）：
 
@@ -46,14 +46,14 @@ https://cdn.jsdmirror.com/gh/HalfDone03/dsh-nudge@main/index.json
 两个坑：
 
 - **别用 `raw.githubusercontent.com`**——国内常年连不上，一条索引读不出来整个 Discover 就是空的；
-- **别用 `@v0.2.1`**——jsDelivr 对标签会永远返回打标签那一刻的 `index.json`，那份里的 `commit` 还是旧指针。用 `@main`。
+- **别用 `@v0.3.0`**——jsDelivr 对标签会永远返回打标签那一刻的 `index.json`，那份里的 `commit` 还是旧指针。用 `@main`。
 
 这条要求机器上有 `git`（pnpm 拉 `git+https` 规格要用它）。没有 git 就走 C。
 
 ### B. 手动安装（有 git）
 
 ```powershell
-git clone --branch v0.2.1 https://github.com/HalfDone03/dsh-nudge.git
+git clone --branch v0.3.0 https://github.com/HalfDone03/dsh-nudge.git
 cd dsh-nudge
 
 # 只看计划，不写文件
@@ -68,7 +68,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 下这个压缩包解压，进目录跑 B 里那两条命令：
 
 ```
-https://codeload.github.com/HalfDone03/dsh-nudge/tar.gz/refs/tags/v0.2.1
+https://codeload.github.com/HalfDone03/dsh-nudge/tar.gz/refs/tags/v0.3.0
 ```
 
 （npm 上装不到：`dsh-nudge` 这个名字已被别人占用。）
@@ -185,13 +185,22 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 ## 发布
 
 包已按可发布形态配好：`type: module`、`main`/`exports`、`dsh.bundle.patch`、
-`files` 白名单（21 个文件、约 253 KB，只含 `lib`/`scripts`/`cordis.patch.yml`/README/VERIFY/CHANGELOG/`screenshots/*.png`；`docs/` 只留在仓库里）、
+`files` 白名单（21 个文件、约 295 KB，只含 `lib`/`scripts`/`cordis.patch.yml`/README/VERIFY/CHANGELOG/`screenshots/*.png`；`docs/` 只留在仓库里）、
 `engines: { node: ">=20.3.0", dsh: ">=0.2.1-rc.2" }`、`os: ["win32"]`、`publishConfig.access: public`。
 
 ```powershell
 npm login
 npm publish            # 名字带 scope 时用 npm publish --access public
 ```
+
+发版还带两条**市场索引**的收尾（`index.json` 在仓库根目录，jsDelivr 的 `@main` 直接读它）：
+
+1. 改 `package.json` 的 `version`、把 `CHANGELOG.md` 顶部的「未发布」换成本版标题，提交后打 tag（`v<版本>`）；
+2. 再提一条 `chore(release): 索引指向 x.y.z 最终提交 (<hash>)`，把 `index.json` 的
+   `versions[0].version` / `publishTimestamp` / `source.commit` 指向上一步那个提交。
+
+`@main` 上永远是最后一条索引，所以用户点「安装」拿到的就是 `source.commit` 钉死的那一版；
+这也是为什么上文的坑里说「别用 `@v<版本>`」——标签里的 `index.json` 会停在当时那个指针。
 
 发布前自检：
 
