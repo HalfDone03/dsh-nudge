@@ -20,6 +20,19 @@ DSH 的回合经常跑很久，或者卡在等你批准/回答上，而你切到
 几张卡片同时到达时，1.2 秒合并窗口内的事件会合成一张，标题取最严重的那个，右上角显示累计条数。
 子代理会话（`delegationDepth > 0` 或有 `parentSession`）不单独弹，避免每个子任务都响一次。
 
+## 版本
+
+当前 **0.3.0**（2026-10-26）。逐条改动看 [CHANGELOG.md](CHANGELOG.md)，
+带说明的发布记录在 [Releases](https://github.com/HalfDone03/dsh-nudge/releases)，
+市场索引指向的具体提交写在仓库根目录的 `index.json`。
+
+| 版本 | 日期 | 一句话 |
+| --- | --- | --- |
+| 0.3.0 | 2026-10-26 | 版式改成「项目 > 任务 > 原因」、默认停留 15 秒、全屏时不打扰、同一个时刻只留一张卡、点击聚焦提醒来源的那个实例 |
+| 0.2.1 | 2026-10-24 | 工具失败按 `message.isError` 判定、审批卡片带上下文、标题走 `sessionTitle` 服务、排序与缓冲修正、子代理过滤 |
+| 0.2.0 | 2026-10-23 | 卡片跟随 DSH 所在屏幕、右键只关闭、补不抢焦点与拖动缩放 |
+| 0.1.0 | 2026-10-22 | 首版：三种时刻各弹一张置顶卡片，点击聚焦 DSH 并复制摘要 |
+
 ## 安装
 
 两种装法：**有 Discover 入口就用 A（三步，推荐）**，没有就走 B / C。
@@ -185,7 +198,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 ## 发布
 
 包已按可发布形态配好：`type: module`、`main`/`exports`、`dsh.bundle.patch`、
-`files` 白名单（21 个文件、约 295 KB，只含 `lib`/`scripts`/`cordis.patch.yml`/README/VERIFY/CHANGELOG/`screenshots/*.png`；`docs/` 只留在仓库里）、
+`files` 白名单（21 个文件、约 298 KB，只含 `lib`/`scripts`/`cordis.patch.yml`/README/VERIFY/CHANGELOG/`screenshots/*.png`；`docs/` 只留在仓库里）、
 `engines: { node: ">=20.3.0", dsh: ">=0.2.1-rc.2" }`、`os: ["win32"]`、`publishConfig.access: public`。
 
 ```powershell
@@ -193,11 +206,13 @@ npm login
 npm publish            # 名字带 scope 时用 npm publish --access public
 ```
 
-发版还带两条**市场索引**的收尾（`index.json` 在仓库根目录，jsDelivr 的 `@main` 直接读它）：
+发版还带三条**市场索引与发布记录**的收尾（`index.json` 在仓库根目录，jsDelivr 的 `@main` 直接读它）：
 
 1. 改 `package.json` 的 `version`、把 `CHANGELOG.md` 顶部的「未发布」换成本版标题，提交后打 tag（`v<版本>`）；
 2. 再提一条 `chore(release): 索引指向 x.y.z 最终提交 (<hash>)`，把 `index.json` 的
-   `versions[0].version` / `publishTimestamp` / `source.commit` 指向上一步那个提交。
+   `versions[0].version` / `publishTimestamp` / `source.commit` 指向上一步那个提交；
+3. 建 GitHub Release：`gh release create v<版本> --title "v<版本> — 一句话" --notes-file <该版本的 CHANGELOG 段>`，
+   最新一版再加 `--latest`。**只 push git tag 不会生成 Release**，仓库首页的「Releases」区块会是空的。
 
 `@main` 上永远是最后一条索引，所以用户点「安装」拿到的就是 `source.commit` 钉死的那一版；
 这也是为什么上文的坑里说「别用 `@v<版本>`」——标签里的 `index.json` 会停在当时那个指针。
@@ -228,6 +243,9 @@ npm publish            # 名字带 scope 时用 npm publish --access public
 | 回滚 | 装回旧版本，或恢复 `package.json.bak-<时间戳>` | 要 |
 
 registry 安装是 `saveExact`（精确版本），不改版本号重装拿不到新代码。
+
+怎么知道有没有新版：看 [Releases](https://github.com/HalfDone03/dsh-nudge/releases)（每版都有一句话摘要），
+或者直接看 [CHANGELOG.md](CHANGELOG.md)。市场里装的话，插件页出现「更新」按钮就是索引里已经有更高版本。
 
 ## 自测
 
@@ -267,7 +285,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -STA -File .\lib\popup.ps1 `
 ```
 dsh-nudge/
 ├─ package.json          插件包声明（dsh.bundle.patch 指向 cordis.patch.yml）
+├─ index.json            市场索引（format 1）：版本号 + 钉死的 source.commit
 ├─ cordis.patch.yml      bundle patch：把插件插进 Host 的插件图
+├─ CHANGELOG.md          逐版改动（版本号以这里为准）
 ├─ lib/
 │  ├─ index.js           插件逻辑：事件钩子、合并去重、配置校验、helper 进程管理
 │  └─ popup.ps1          WPF 弹窗（纯 ASCII 脚本，含快照渲染模式）
