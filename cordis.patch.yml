@@ -17,6 +17,11 @@
         staySeconds: 15
         showWhenFocused: true
         suppressWhenFullscreen: true
+        # 配色：auto 跟随 Windows 的深浅色设置，也可以固定 dark / light
+        theme: auto
+        # 调试开关：true 时把每次弹出的 payload 追加落盘（debugFile 留空 = %TEMP%\dsh-nudge-payloads.jsonl）
+        debugPayload: false
+        debugFile: ''
         margin: 16
         mergeWindowMs: 1200
         maxItems: 8

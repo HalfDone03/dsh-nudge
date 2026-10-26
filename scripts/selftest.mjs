@@ -189,6 +189,10 @@ function withinTolerance(actual, expected) {
 
 /** 1. 配置校验 ---- */
 const defaults = normalizeConfig(undefined);
+// 真起窗口的几段不能看当前桌面是什么：前台是游戏、视频、甚至只剩桌面（Progman 的矩形
+// 正好等于整块显示器）时，全屏抑制会让卡片整批不弹。所以 live 段显式关掉它，
+// 抑制逻辑本身由第 6 组的源码断言兜着。
+const liveDefaults = { ...defaults, suppressWhenFullscreen: false };
 check("normalizeConfig 落默认值", defaults.staySeconds === DEFAULTS.staySeconds && defaults.enabled === true);
 check("normalizeConfig 合并 kinds", normalizeConfig({ kinds: { failed: false } }).kinds.failed === false
 	&& normalizeConfig({ kinds: { failed: false } }).kinds.completed === true);
@@ -199,6 +203,13 @@ checkThrows("muteRanges 分钟越界抛错", () => normalizeConfig({ muteRanges:
 checkThrows("kinds 非对象抛错", () => normalizeConfig({ kinds: ["completed"] }));
 check("默认全屏时不打扰", defaults.suppressWhenFullscreen === true, String(defaults.suppressWhenFullscreen));
 checkThrows("suppressWhenFullscreen 非布尔抛错", () => normalizeConfig({ suppressWhenFullscreen: "yes" }));
+check("默认配色跟随系统", defaults.theme === "auto", String(defaults.theme));
+check("配色可固定为浅色", normalizeConfig({ theme: "light" }).theme === "light");
+checkThrows("theme 非法值抛错", () => normalizeConfig({ theme: "blue" }));
+check("调试落盘默认关闭", defaults.debugPayload === false, String(defaults.debugPayload));
+check("调试落盘可打开并带路径", normalizeConfig({ debugPayload: true, debugFile: "C:\\temp\\x.jsonl" }).debugFile.endsWith("x.jsonl"));
+checkThrows("debugPayload 非布尔抛错", () => normalizeConfig({ debugPayload: "yes" }));
+checkThrows("debugFile 非字符串抛错", () => normalizeConfig({ debugFile: 1 }));
 
 /** 2. 静音时间段 ---- */
 const at = (h, m) => new Date(2026, 0, 1, h, m);
@@ -492,7 +503,7 @@ if (noLive) {
 	check("真起 helper 段", true, "--no-live 跳过（快照与静态约束仍然覆盖）");
 } else {
 const statuses = [];
-const runner = new PopupRunner({ ...defaults, staySeconds: 6 }, () => {}, { onStatus: (status) => statuses.push(status) });
+const runner = new PopupRunner({ ...liveDefaults, staySeconds: 6 }, () => {}, { onStatus: (status) => statuses.push(status) });
 const delivered = runner.show([{ kind: "needs_choice", sessionId: "session-selftest", title: "自测会话", detail: "等待你选择", at: "21:20", count: 2 }]);
 check("PopupRunner.show 投递成功", delivered === true);
 const shown = await waitFor(() => statuses.some((status) => status.type === "shown"), 12000);
@@ -513,14 +524,14 @@ check("dispose 后 helper 退出（无孤儿）", exited,
 /** 5. 三种状态快照 ---- */
 mkdirSync(shotDir, { recursive: true });
 const payloads = {
-	completed: { kind: "completed", label: "任务完成", accent: "#2ECC71", glyph: "\u2714", count: 1,
+	completed: { kind: "completed", label: "任务完成", accent: "#2ECC71", glyph: "\u2714", count: 1, theme: "dark",
 		headline: "写周报",
 		headlineTint: "",
 		verdictKind: "完成",
 		verdictText: "",
 		context: "dsh-nudge",
 		items: [] },
-	needs_choice: { kind: "needs_choice", label: "需要你选择", accent: "#F5A623", glyph: "?", count: 2,
+	needs_choice: { kind: "needs_choice", label: "需要你选择", accent: "#F5A623", glyph: "?", count: 2, theme: "dark",
 		verdictKind: "待你选择",
 		verdictText: "等待你批准：npm install --production",
 		headlineTint: "#24F5A623",
@@ -529,13 +540,13 @@ const payloads = {
 			{ kind: "needs_choice", title: "部署到生产", detail: "等待你批准一个操作", at: "21:19", count: 1, rowProject: "dsh-nudge" },
 			{ kind: "completed", title: "跑测试", detail: "回合已完成", at: "21:17", count: 1, rowProject: "web-console", rowKind: "完成" }
 		] },
-	failed: { kind: "failed", label: "执行失败", accent: "#E74C3C", glyph: "\u2716", count: 1,
+	failed: { kind: "failed", label: "执行失败", accent: "#E74C3C", glyph: "\u2716", count: 1, theme: "dark",
 		headline: "TypeError: Cannot read property 'stdout' of undefined",
 		headlineTint: "#24E74C3C",
 		context: "dsh-nudge · 构建前端",
 		items: [] },
 	// 清单形态：4 条提醒、3 个项目，README 里当「合并后的样子」用，也顺便钉住清单行版式
-	multi: { kind: "needs_choice", label: "需要你选择", accent: "#F5A623", glyph: "?", count: 4,
+	multi: { kind: "needs_choice", label: "需要你选择", accent: "#F5A623", glyph: "?", count: 4, theme: "dark",
 		headline: "",
 		headlineTint: "",
 		verdictKind: "",
@@ -546,7 +557,16 @@ const payloads = {
 			{ kind: "failed", title: "构建前端", detail: "vite build failed: Could not resolve entry \"src/main.ts\"", at: "21:18", count: 1, rowProject: "web-console", rowKind: "失败" },
 			{ kind: "completed", title: "跑测试", detail: "", at: "21:17", count: 1, rowProject: "dsh-nudge", rowKind: "完成" },
 			{ kind: "completed", title: "写周报", detail: "", at: "21:15", count: 1, rowProject: "notes", rowKind: "完成" }
-		] }
+		] },
+	// 浅色主题：同一张「需要你选择」，只把 payload.theme 换成 light，用来钉住浅色配色与 README 的对照图
+	light: { kind: "needs_choice", label: "需要你选择", accent: "#F5A623", glyph: "?", count: 1,
+		theme: "light",
+		headline: "部署到生产",
+		headlineTint: "#24F5A623",
+		verdictKind: "待你选择",
+		verdictText: "等待你批准：npm run deploy",
+		context: "dsh-nudge",
+		items: [] }
 };
 
 /**
@@ -680,6 +700,14 @@ check("单卡槽位与替换事件都在", popupSource.includes("Local\\dsh-nudg
 	"Mutex + Event");
 check("点击后回报剪贴板是否写成", popupSource.includes("clipboard = [bool]$script:clipboardOk"), "closed.clipboard");
 check("payload 带剪贴板抬头", captured[0]?.clipboardHeader === "DeepSeek Harness · 会话提醒", JSON.stringify(captured[0]?.clipboardHeader));
+check("payload 带配色", captured[0]?.theme === "auto", JSON.stringify(captured[0]?.theme));
+check("弹窗脚本有深浅两套配色",
+	popupSource.includes("function Set-CardTheme") && popupSource.includes("function Resolve-Theme")
+		&& popupSource.includes("AppsUseLightTheme") && popupSource.includes("$script:FrameBg"),
+	"Set-CardTheme + Resolve-Theme");
+check("主题来自 payload，状态行也回报",
+	popupSource.includes("$payload.theme") && popupSource.includes("theme = $script:ThemeName"),
+	"payload.theme -> shown.theme");
 
 const indexSource = readFileSync(join(root, "lib", "index.js"), "utf8");
 check("全屏抑制：shell 查询与前景矩形两道判断都在",
@@ -691,9 +719,15 @@ check("全屏抑制：shell 查询与前景矩形两道判断都在",
 check("全屏抑制开关由宿主按配置传给 helper",
 	indexSource.includes('if (this.config.suppressWhenFullscreen) args.push("-SuppressWhenFullscreen")'),
 	"spawn args");
-check("payload 落盘调试开关是环境变量控制的",
-	indexSource.includes("DSH_NUDGE_DEBUG_PAYLOAD") && indexSource.includes("DSH_NUDGE_DEBUG_FILE"),
-	"debug dump");
+check("桌面、任务栏与最大化窗口不算全屏",
+	popupSource.includes("$script:ShellWindowClasses") && popupSource.includes("'Progman'")
+		&& popupSource.includes("'WorkerW'") && popupSource.includes("IsZoomed($hwnd)")
+		&& popupSource.includes("GetShellWindow()"),
+	"shell/maximized excluded");
+check("调试开关既能用环境变量也能用插件配置",
+	indexSource.includes("DSH_NUDGE_DEBUG_PAYLOAD") && indexSource.includes("DSH_NUDGE_DEBUG_FILE")
+		&& indexSource.includes("config.debugPayload === true") && indexSource.includes("config.debugFile"),
+	"env + config");
 
 /**
  * 7. 单卡互斥与 payload 落盘（--no-live 时跳过）----
@@ -710,8 +744,8 @@ process.env.DSH_NUDGE_DEBUG_PAYLOAD = "1";
 process.env.DSH_NUDGE_DEBUG_FILE = dumpFile;
 const slotStatusesA = [];
 const slotStatusesB = [];
-const runnerA = new PopupRunner({ ...defaults, staySeconds: 12 }, () => {}, { onStatus: (status) => slotStatusesA.push(status) });
-const runnerB = new PopupRunner({ ...defaults, staySeconds: 2 }, () => {}, { onStatus: (status) => slotStatusesB.push(status) });
+const runnerA = new PopupRunner({ ...liveDefaults, staySeconds: 12 }, () => {}, { onStatus: (status) => slotStatusesA.push(status) });
+const runnerB = new PopupRunner({ ...liveDefaults, staySeconds: 2 }, () => {}, { onStatus: (status) => slotStatusesB.push(status) });
 runnerA.show([{ kind: "completed", sessionId: "selftest-slot-a", title: "抢卡 A", detail: "先来的那张", at: "10:00", count: 1 }]);
 const aShown = await waitFor(() => slotStatusesA.some((status) => status.type === "shown"), 15000);
 const aShownStatus = slotStatusesA.find((status) => status.type === "shown");
@@ -746,6 +780,21 @@ const dumpTitles = dumpLines.map((line) => {
 });
 check("落盘的正是这两张卡", dumpTitles.every((title) => /^抢卡/u.test(title)), JSON.stringify(dumpTitles));
 rmSync(dumpFile, { force: true });
+
+// 不想设环境变量的人可以在插件配置里打开同一个开关（debugPayload + debugFile）。
+const cfgDumpFile = join(tmpdir(), `dsh-nudge-selftest-cfg-${process.pid}.jsonl`);
+rmSync(cfgDumpFile, { force: true });
+const runnerC = new PopupRunner(
+	{ ...liveDefaults, staySeconds: 1, debugPayload: true, debugFile: cfgDumpFile },
+	() => {},
+	{ onStatus: () => {} }
+);
+runnerC.show([{ kind: "completed", sessionId: "selftest-cfg-dump", title: "配置落盘", detail: "由 debugPayload 打开", at: "10:02", count: 1 }]);
+await waitFor(() => existsSync(cfgDumpFile), 15000);
+runnerC.dispose();
+const cfgLines = existsSync(cfgDumpFile) ? readFileSync(cfgDumpFile, "utf8").split("\n").filter((line) => line.trim() !== "") : [];
+check("调试开关也能由插件配置打开", cfgLines.length >= 1 && cfgLines[0].includes("配置落盘"), `lines=${cfgLines.length}`);
+rmSync(cfgDumpFile, { force: true });
 }
 
 /**

@@ -15,6 +15,14 @@ DSH（DeepSeek Harness）插件：会话里**任务完成**、**需要你选择*
   </tr>
 </table>
 
+深色是默认样子；`theme: auto` 时跟着 Windows 的「应用模式」走，系统是浅色就出浅色卡片：
+
+<table>
+  <tr>
+    <td align="center"><img src="screenshots/light.png" width="330" alt="浅色主题"><br><sub>浅色（<code>theme: light</code>，或系统是浅色时的 auto）</sub></td>
+  </tr>
+</table>
+
 这些图不是效果图，是 `node scripts/selftest.mjs` 里用**同一个** WPF 渲染器在离屏窗口画出来的快照：
 宽高与像素统计都写进了 `tools/snapshot-baseline.json`，版式一改、图没跟着改就会红。
 卡片右下角弹出、不抢焦点，背景是你的桌面。
@@ -142,6 +150,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
     mergeWindowMs: 1200    # 合并窗口（毫秒），同一窗口内的多条事件合成一张卡
     alertOnToolError: true # 单个工具调用失败也算「失败」提醒
     muteRanges: ['22:00-08:00']  # 静音时段，支持跨零点
+    theme: auto            # 配色：auto 跟随 Windows 的深浅色设置，也可以固定 dark / light
+    debugPayload: false    # 调试开关：true 时把每次弹出的 payload 追加落盘
+    debugFile: ''          # 落盘文件；留空 = %TEMP%\dsh-nudge-payloads.jsonl
     kinds:                 # 三类提醒各自开关
       completed: true
       needs_choice: true
@@ -209,6 +220,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 - 停留时长：条目越多越久（`staySeconds + 2 × (条数-1)`，默认 15 秒起）；「需要你选择」再乘三且不少于 30 秒。
 - 卡片内顺序：先按严重度（失败 > 选择 > 完成），同级别按时间倒序。
 - `popup.ps1` 保持纯 ASCII，所有中文文案（标题/展开提示/底部提示）由 `index.js` 下发的 payload 提供。
+- **深浅两套配色**：`theme: auto` 读 Windows 的「应用模式」自己选（系统浅色就出浅色卡），也可以固定 `dark` / `light`；调试时还能用 `-Theme` 参数临时覆盖。浅色不是把深色反过来——分割线、描边、阴影、状态色都是单独配的一套值。
 
 ## 交互
 
@@ -221,7 +233,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 - **点一下**：把 DSH 窗口切到前台，并把提醒内容（标题 + 明细）放进剪贴板。
   DSH 的 Web GUI 是单页应用，没有「按会话 id 直达」的 URL，所以只能聚焦窗口 + 复制线索。
 - **同一时刻只有一张卡**：按用户会话挂一个命名互斥量（`Local\dsh-nudge-card`），新的一批提醒通过 `Local\dsh-nudge-replace` 事件请上一张退场（200ms 内响应），再接管右下角——多开几个 DSH 也不会叠一屏。拿不到命名对象时退回旧行为（每批一张卡），不会因此不弹。
-- **全屏时不打断你**：前台是全屏应用（游戏、放映、演示）就整批不弹，`suppressWhenFullscreen` 默认开。判定有两道：先问系统「现在适合打扰吗」（`SHQueryUserNotificationState`），再看前台窗口是否正好盖满物理屏——后者能抓住「无边框全屏」的游戏和 F11 浏览器，而普通最大化的窗口因为露出任务栏不算全屏。两个检查都是**只读查询**：不挂钩子、不抓输入、不碰游戏窗口，鼠标和键盘完全不受影响。被跳过的批次直接丢弃（不排队），状态行走 `{"type":"suppressed","reason":"fullscreen"}`。
+- **全屏时不打断你**：前台是全屏应用（游戏、放映、演示）就整批不弹，`suppressWhenFullscreen` 默认开。判定有两道：先问系统「现在适合打扰吗」（`SHQueryUserNotificationState`），再看前台窗口是否正好盖满物理屏——后者能抓住「无边框全屏」的游戏和 F11 浏览器。桌面本身（`Progman` / `WorkerW`）、任务栏和最大化窗口都不算全屏：它们的矩形同样铺满整块屏，但盖不住任务栏。两个检查都是**只读查询**：不挂钩子、不抓输入、不碰游戏窗口，鼠标和键盘完全不受影响。被跳过的批次直接丢弃（不排队），状态行走 `{"type":"suppressed","reason":"fullscreen"}`。
 
 ## 发布
 
@@ -242,7 +254,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version 0.3.1
 ```
 
-它按顺序做：挑 node 跑语法检查与 103 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
+它按顺序做：挑 node 跑语法检查与 119 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
 「未发布」换成本版标题 → 更新本文件里的「当前版本」与版本一览表格 → 提交 → 打附注 tag → 把 `index.json`
 的 `versions[0]` 三字段指向这个提交并再提一条
 `chore(release): 索引指向 x.y.z 最终提交 (<hash>)` → `gh release create --latest` → push `main` 与 tag。
@@ -264,7 +276,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs      # 103 项全绿；CI 上跑的是 --no-live（93 项）
+& $node .\scripts\selftest.mjs      # 119 项全绿；CI 上跑的是 --no-live（108 项）
 ```
 
 三条硬要求，少一条装上就是坏的：
@@ -296,11 +308,11 @@ registry 安装是 `saveExact`（精确版本），不改版本号重装拿不�
 
 ```powershell
 $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe"
-& $node .\scripts\selftest.mjs              # 103 项，含真起窗口与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 93 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 119 项，含真起窗口与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 108 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
-当前 **103 项全绿**，覆盖：配置校验与默认值、静音时段（含跨零点）、事件合并计数、
+当前 **119 项全绿**，覆盖：配置校验与默认值、静音时段（含跨零点）、事件合并计数、
 严重度排序、三类开关、真起弹窗并收到 `{"type":"shown"}` 与右下角坐标、dispose 后无孤儿进程、
 三种状态各渲染一张 436px 宽快照，外加一张 4 条合并的清单快照（`screenshots/multi.png`，尺寸、非空与像素基线比对），以及一组源码静态约束——
 脚本必须纯 ASCII、项目名前不许出现图标字形、字号阶梯必须是「项目 > 任务 > 原因」、
@@ -348,7 +360,7 @@ dsh-nudge/
 ├─ scripts/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
-│  └─ selftest.mjs       103 项自测（`--no-live` 93 项、`--update-baseline` 重写像素基线）
+│  └─ selftest.mjs       119 项自测（`--no-live` 108 项、`--update-baseline` 重写像素基线）
 ├─ tools/
 │  ├─ release.ps1        一条命令发版（自测→版本号→tag→索引指针→Release→push）
 │  └─ snapshot-baseline.json  快照像素基线，改了版式要跟着重生
@@ -391,3 +403,9 @@ dsh-nudge/
   `lib/popup.ps1` 因此干脆保持纯 ASCII；`tools/release.ps1` 有中文提示，所以带 BOM。
 - **版式不能只靠人眼盯**：快照的尺寸和像素统计固化在 `tools/snapshot-baseline.json`，
   改完版式忘了重生基线，自测直接红——比等 README 里的数字和实际图悄悄分叉强。
+- **`$script:` 变量别和参数撞名**：主题状态最早写成 `$script:Theme`，而脚本本身有个 `-Theme` 参数，
+  于是给 `$script:Theme` 赋值等于把参数改了，第二次解析时 CLI 的浅色反过来压住了 payload 的深色。
+  改成 `$script:ThemeName` 才对。PowerShell 里给 `$script:x` 赋值，改的是同一个作用域里的 `$x`。
+- **调试开关要能改配置，不只是环境变量**：`debugPayload` / `debugFile` 进了插件配置，
+  真机复现「卡片显示了不相干文字」时，打开它就能拿到每次弹出的原始 payload，
+  不用重启带环境变量的宿主。

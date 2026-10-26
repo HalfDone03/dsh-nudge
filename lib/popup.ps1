@@ -14,9 +14,9 @@
 #      automated tests and headless runs.
 #
 # stdout protocol (one JSON per line):
-#   {"type":"shown","count":N,"slot":"owner|replaced|parallel"}
+#   {"type":"shown","count":N,"slot":"owner|replaced|parallel","theme":"dark|light"}
 #   {"type":"closed","reason":"clicked|dismissed|timeout|replaced|watchdog","clipboard":bool}
-#   {"type":"suppressed","reason":"foreground|fullscreen","state":N}
+#   {"type":"suppressed","reason":"foreground|fullscreen","state":N,"theme":"dark|light"}
 #   {"type":"error","message":"..."}
 #   {"type":"snapshot","path":"..."}
 #
@@ -32,6 +32,7 @@ param(
     [switch]$SuppressWhenForeground,
     [switch]$SuppressWhenFullscreen,
     [string]$DsProcess = 'DeepSeek Harness',
+    [string]$Theme = '',
     [string]$Snapshot = '',
     [string]$PayloadFile = '',
     [string]$PayloadB64 = '',
@@ -47,6 +48,9 @@ Add-Type -AssemblyName System.Drawing
 
 Add-Type -Namespace Native -Name Win -MemberDefinition @'
 [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern IntPtr GetShellWindow();
+[DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr hWnd);
+[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassNameW(IntPtr hWnd, System.Text.StringBuilder name, int maxCount);
 [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
 [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
@@ -219,9 +223,11 @@ $script:CardRadius = 12
 $script:FontStack = 'Microsoft YaHei UI, Microsoft YaHei, Segoe UI, Arial'
 $script:IconFont = 'Segoe MDL2 Assets'
 
-# Palette: one dark surface with a slight vertical lift, plus a four-step
-# text ramp. Every colour below is referenced from here so the card stays
-# consistent if a token changes.
+# Palette: two surfaces (dark glass / light glass) sharing one token list, so
+# every colour below is referenced from here and switching theme never needs a
+# second code path. Values are filled in by Set-CardTheme before the first card
+# is built; the assignments here are the dark defaults plus a documented fallback
+# in case anything runs before theming.
 $script:CardTop = '#F8212530'
 $script:CardBottom = '#F8181B24'
 $script:CardEdge = '#2BFFFFFF'
@@ -232,6 +238,76 @@ $script:TextMuted = '#8AFFFFFF'
 $script:TextFaint = '#5CFFFFFF'
 $script:TextGhost = '#4DFFFFFF'
 $script:RuleColor = '#1FFFFFFF'
+$script:VerdictText = '#DCFFFFFF'
+$script:MoreText = '#75FFFFFF'
+$script:FooterText = '#59FFFFFF'
+$script:FrameBg = '#FF1F1F1F'
+$script:EdgeFailed = '#4DE74C3C'
+$script:EdgeChoice = '#45F5A623'
+$script:ShadowOpacity = 0.42
+
+function Set-CardTheme {
+    param([string]$Name)
+    switch ($Name) {
+        'light' {
+            # Light glass: near-white surface, ink text ramp, and a much softer
+            # shadow - a 0.42 black halo on a white card looks like dirt.
+            $script:ThemeName = 'light'
+            $script:CardTop = '#F7FBFCFE'
+            $script:CardBottom = '#F4ECEEF3'
+            $script:CardEdge = '#22000000'
+            $script:CardEdgeHover = '#40000000'
+            $script:TextPrimary = '#FF14171C'
+            $script:TextBody = '#FF23282F'
+            $script:TextMuted = '#FF5B6472'
+            $script:TextFaint = '#FF8A929E'
+            $script:TextGhost = '#FFA8AFB9'
+            $script:RuleColor = '#14000000'
+            $script:VerdictText = '#E014171C'
+            $script:MoreText = '#FF6E7686'
+            $script:FooterText = '#FF8A929E'
+            $script:FrameBg = '#FFF0F2F5'
+            $script:ShadowOpacity = 0.18
+        }
+        default {
+            $script:ThemeName = 'dark'
+            $script:CardTop = '#F8212530'
+            $script:CardBottom = '#F8181B24'
+            $script:CardEdge = '#2BFFFFFF'
+            $script:CardEdgeHover = '#5CFFFFFF'
+            $script:TextPrimary = '#FFFFFFFF'
+            $script:TextBody = '#F0FFFFFF'
+            $script:TextMuted = '#8AFFFFFF'
+            $script:TextFaint = '#5CFFFFFF'
+            $script:TextGhost = '#4DFFFFFF'
+            $script:RuleColor = '#1FFFFFFF'
+            $script:VerdictText = '#DCFFFFFF'
+            $script:MoreText = '#75FFFFFF'
+            $script:FooterText = '#59FFFFFF'
+            $script:FrameBg = '#FF1F1F1F'
+            $script:ShadowOpacity = 0.42
+        }
+    }
+}
+
+# "auto" means: follow the Windows setting for app surfaces
+# (Settings > Personalization > Colors > Choose your default app mode).
+# Anything unreadable falls back to dark, which is what the card shipped with.
+function Resolve-Theme {
+    param([string]$Requested, [string]$FromPayload)
+    $want = $Requested
+    if ([string]::IsNullOrWhiteSpace($want)) { $want = $FromPayload }
+    if ([string]::IsNullOrWhiteSpace($want)) { $want = 'auto' }
+    $want = $want.Trim().ToLowerInvariant()
+    if ($want -eq 'dark' -or $want -eq 'light') { return $want }
+    try {
+        $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+        $light = (Get-ItemProperty -Path $key -Name 'AppsUseLightTheme' -ErrorAction Stop).AppsUseLightTheme
+        if ($light -eq 1) { return 'light' }
+        if ($light -eq 0) { return 'dark' }
+    } catch { }
+    return 'dark'
+}
 
 function New-Brush {
     param([string]$Hex)
@@ -452,8 +528,8 @@ function New-Card {
     # broke" from the corner of your eye before you parse a single word.
     $script:cardEdgeNow = $script:CardEdge
     $kindName = [string]$Payload.kind
-    if ($kindName -eq 'failed') { $script:cardEdgeNow = '#4DE74C3C' }
-    elseif ($kindName -eq 'needs_choice') { $script:cardEdgeNow = '#45F5A623' }
+    if ($kindName -eq 'failed') { $script:cardEdgeNow = $script:EdgeFailed }
+    elseif ($kindName -eq 'needs_choice') { $script:cardEdgeNow = $script:EdgeChoice }
     $card.BorderBrush = New-Brush $script:cardEdgeNow
     $card.BorderThickness = New-Object System.Windows.Thickness 1
     $card.Margin = New-Object System.Windows.Thickness $script:ShadowPad
@@ -466,7 +542,7 @@ function New-Card {
     $shadow.BlurRadius = 14
     $shadow.ShadowDepth = 3
     $shadow.Direction = 270
-    $shadow.Opacity = 0.42
+    $shadow.Opacity = $script:ShadowOpacity
     $shadow.Color = [System.Windows.Media.Colors]::Black
     $card.Effect = $shadow
 
@@ -594,7 +670,7 @@ function New-Card {
             [void]$verdictRow.Children.Add($verdictLabel)
         }
         if (-not [string]::IsNullOrWhiteSpace($verdictText)) {
-            $verdictBody = New-Text -Text $verdictText -Size 10.5 -Color '#DCFFFFFF'
+            $verdictBody = New-Text -Text $verdictText -Size 10.5 -Color $script:VerdictText
             $verdictBody.TextWrapping = 'Wrap'
             $verdictBody.TextTrimming = 'CharacterEllipsis'
             $verdictBody.LineHeight = 15
@@ -638,14 +714,14 @@ function New-Card {
 
     $more = [string]$Payload.more
     if (-not [string]::IsNullOrWhiteSpace($more)) {
-        $moreText = New-Text -Text $more -Size 10.5 -Color '#75FFFFFF'
+        $moreText = New-Text -Text $more -Size 10.5 -Color $script:MoreText
         $moreText.Margin = New-Object System.Windows.Thickness 0,8,0,0
         [void]$body.Children.Add($moreText)
     }
 
     $footerText = [string]$Payload.footer
     if (-not [string]::IsNullOrWhiteSpace($footerText)) {
-        $footer = New-Text -Text $footerText -Size 10 -Color '#59FFFFFF'
+        $footer = New-Text -Text $footerText -Size 10 -Color $script:FooterText
         $footer.Margin = New-Object System.Windows.Thickness 0,12,0,0
         [void]$body.Children.Add($footer)
     }
@@ -735,13 +811,34 @@ function Get-NotificationState {
 
 # Borderless fullscreen (a game in windowed-fullscreen mode, a video player, F11 in a
 # browser) is not reported by the shell query, so also compare the foreground window
-# rect with its physical monitor rect. A merely maximized window leaves the taskbar
-# outside the window rect, so it does not count as fullscreen. Both checks are
-# read-only: nothing is hooked, injected, captured or grabbed from the game.
+# rect with its physical monitor rect. Both checks are read-only: nothing is hooked,
+# injected, captured or grabbed from the game.
+#
+# Two shapes look like fullscreen but are not, and used to swallow every card:
+#   * the desktop itself (Progman / WorkerW) and the taskbar - their rect is the monitor;
+#   * a maximized window - since Windows 10 its extended frame rect also covers the
+#     whole monitor, so the taskbar is not what tells them apart.
+# Both are excluded before the rect comparison.
+$script:ShellWindowClasses = @('Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd')
+
+function Test-ShellWindowClass {
+    param([IntPtr]$Window)
+    try {
+        $sb = New-Object System.Text.StringBuilder 128
+        [void][Native.Win]::GetClassNameW($Window, $sb, 128)
+        return ($script:ShellWindowClasses -contains $sb.ToString())
+    } catch {
+        return $false
+    }
+}
+
 function Test-ForegroundFullscreen {
     try {
         $hwnd = [Native.Win]::GetForegroundWindow()
         if ($hwnd -eq [IntPtr]::Zero) { return $false }
+        if ($hwnd -eq [Native.Win]::GetShellWindow()) { return $false }
+        if ([Native.Win]::IsZoomed($hwnd)) { return $false }
+        if (Test-ShellWindowClass $hwnd) { return $false }
         $rect = New-Object 'Native.Win+RECT'
         if (-not [Native.Win]::GetWindowRect($hwnd, [ref]$rect)) { return $false }
         $area = [Native.Win]::MonitorBoundsOf([Native.Win]::MonitorFromWindow($hwnd, 2))
@@ -823,6 +920,11 @@ function Test-CardSlotTakenOver {
     try { return [bool]$script:slotEvent.WaitOne(0) } catch { return $false }
 }
 
+# ---------------- theme ----------------
+# Resolved once, before any surface is built: -Theme wins, then the payload
+# (plugin config), then "auto" (follow the Windows app-mode setting).
+Set-CardTheme (Resolve-Theme -Requested $Theme -FromPayload '')
+
 # ---------------- snapshot mode ----------------
 if (-not [string]::IsNullOrWhiteSpace($Snapshot)) {
     $payload = Resolve-Payload -B64 $PayloadB64 -File $PayloadFile
@@ -830,6 +932,8 @@ if (-not [string]::IsNullOrWhiteSpace($Snapshot)) {
         Write-Status @{ type = 'error'; message = 'snapshot: no payload' }
         exit 2
     }
+    # The payload may pin its own theme; the CLI switch keeps the last word.
+    Set-CardTheme (Resolve-Theme -Requested $Theme -FromPayload ([string]$payload.theme))
     $cardWidth = if ($SnapshotWidth -gt 0) { $SnapshotWidth } else { $script:CardWidth }
     $card = New-Card $payload -Width $cardWidth
     $size = Measure-Card $card
@@ -838,7 +942,7 @@ if (-not [string]::IsNullOrWhiteSpace($Snapshot)) {
     # pixels: render the card on a solid backdrop with a fixed margin.
     $pad = 12
     $frame = New-Object System.Windows.Controls.Border
-    $frame.Background = New-Brush '#FF1F1F1F'
+    $frame.Background = New-Brush $script:FrameBg 
     $frame.Padding = [System.Windows.Thickness]::new($pad)
     $frame.Child = $card
     $frameWidth = $size.Width + ($pad * 2)
@@ -852,7 +956,7 @@ if (-not [string]::IsNullOrWhiteSpace($Snapshot)) {
     [void]$encoder.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($rtb))
     $stream = [System.IO.File]::Create($Snapshot)
     try { $encoder.Save($stream) } finally { $stream.Close() }
-    Write-Status @{ type = 'snapshot'; path = $Snapshot; width = $frameWidth; height = $frameHeight }
+    Write-Status @{ type = 'snapshot'; path = $Snapshot; width = $frameWidth; height = $frameHeight; theme = $script:ThemeName }
     exit 0
 }
 
@@ -861,8 +965,12 @@ if (-not [string]::IsNullOrWhiteSpace($Snapshot)) {
 # card, then exit when it is clicked or the stay timer fires. No stdin, no daemon.
 $payload = Resolve-Payload -B64 $PayloadB64 -File $PayloadFile
 if ($null -ne $payload) {
+    # Theme before the suppress checks: "shown"/"suppressed" both report it, and the
+    # payload is the only place the plugin's config could say otherwise.
+    Set-CardTheme (Resolve-Theme -Requested $Theme -FromPayload ([string]$payload.theme))
+
     if ($SuppressWhenForeground -and (Test-ForegroundIsDs)) {
-        Write-Status @{ type = 'suppressed'; reason = 'foreground'; state = 0 }
+        Write-Status @{ type = 'suppressed'; reason = 'foreground'; state = 0; theme = $script:ThemeName }
         exit 0
     }
 
@@ -872,7 +980,7 @@ if ($null -ne $payload) {
     if ($SuppressWhenFullscreen) {
         $notificationState = Get-NotificationState
         if (($script:QuietNotificationStates -contains $notificationState) -or (Test-ForegroundFullscreen)) {
-            Write-Status @{ type = 'suppressed'; reason = 'fullscreen'; state = $notificationState }
+            Write-Status @{ type = 'suppressed'; reason = 'fullscreen'; state = $notificationState; theme = $script:ThemeName }
             exit 0
         }
     }
@@ -1183,7 +1291,7 @@ if ($null -ne $payload) {
             # Resolve the owner once here so a click never pays the lookup cost, and so
             # the status line can prove which process the card would focus.
             [void](Resolve-OwnerWindow)
-            Write-Status @{ type = 'shown'; count = [int]$payload.count; left = [int]$window.Left; top = [int]$window.Top; width = [int]$window.Width; height = [int]$window.Height; dpi = $script:DpiMode; scale = [double]$script:scale; marginPx = [int]$script:marginPx; owner = [int]$script:ownerPid; ownerSrc = $script:ownerSource; slot = $(if ($script:slotState.took) { 'replaced' } elseif ($script:slotState.owned) { 'owner' } else { 'parallel' }) }
+            Write-Status @{ type = 'shown'; count = [int]$payload.count; theme = $script:ThemeName; left = [int]$window.Left; top = [int]$window.Top; width = [int]$window.Width; height = [int]$window.Height; dpi = $script:DpiMode; scale = [double]$script:scale; marginPx = [int]$script:marginPx; owner = [int]$script:ownerPid; ownerSrc = $script:ownerSource; slot = $(if ($script:slotState.took) { 'replaced' } elseif ($script:slotState.owned) { 'owner' } else { 'parallel' }) }
         })
     $window.Add_Closed({
             try { $script:replacePoll.Stop() } catch { }

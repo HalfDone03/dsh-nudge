@@ -15,14 +15,14 @@ $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\nod
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs              # 103 项，含真起 helper 与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 93 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 119 项，含真起 helper 与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 108 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (103 checks)`，退出码 0。
+- selftest 输出 `ALL PASS (119 checks)`，退出码 0。
 
 证据（实测）：
 
@@ -31,7 +31,7 @@ PASS  helper 回报 shown  --  [{"width":412,"height":164,"type":"shown","slot":
 PASS  卡片在屏幕右下半区  --  left=2132, top=1212, 412x164
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
 PASS  基线 completed 对得上  --  436x174 色 263/263 暗 72874/72874 亮 933/933 状态 352/352
-ALL PASS (103 checks)
+ALL PASS (119 checks)
 ```
 
 其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 164 高 →
@@ -39,7 +39,7 @@ ALL PASS (103 checks)
 
 ## 1.5 快照基线与 CI（不需要屏幕）
 
-- `tools/snapshot-baseline.json` 存着三态、清单（`multi`，4 条 / 3 个项目）与两种宽度的像素统计（宽高 + `distinct` / `dark` / `text` / `accent`）。
+- `tools/snapshot-baseline.json` 存着三态、清单（`multi`，4 条 / 3 个项目）、浅色（`light`）与两种宽度的像素统计（宽高 + `distinct` / `dark` / `text` / `accent`）。
   selftest 每次渲染完就跟它比：**宽高必须完全一致**，像素计数允许 ±2%（不同机器字体抗锯齿会有几个像素出入）。
 - 改了版式、确认新样子是对的之后，跑一次 `& $node .\scripts\selftest.mjs --update-baseline` 重写基线；
   忘了更新就会红，而不是让 README / VERIFY 里的数字自己漂。
@@ -53,7 +53,7 @@ ALL PASS (103 checks)
 & $node .\scripts\selftest.mjs   # 已经包含这一步，产物在 screenshots\*.png
 ```
 
-期望：`completed.png` 436×174、`needs_choice.png` 436×291、`failed.png` 436×152、`multi.png` 436×357（4 条 / 3 个项目）（436 = 卡片 412 宽 + 两侧各 12px 底色留白；底边同样 12px），均 >4KB。
+期望：`completed.png` 436×174、`needs_choice.png` 436×291、`failed.png` 436×152、`multi.png` 436×357（4 条 / 3 个项目）、`light.png` 436×188（浅色单条）（436 = 卡片 412 宽 + 两侧各 12px 底色留白；底边同样 12px），均 >4KB。
 
 ## 2.5 窗口可拖动 / 可缩放
 
@@ -82,9 +82,9 @@ ALL PASS (103 checks)
 - 右键只关闭：不调用 `Focus-Ds`、不写剪贴板，也不激活窗口（`WS_EX_NOACTIVATE`）。
 - 标题上限：任务名按 `TITLE_LIMIT = 42` 截断（带 `…`），标题区 `MaxHeight = 63`（三行）。实测 42 字标题在 384 宽排两行、在最小 260 宽排三行，文字最右 281 < 内沿 285，三行都能完整显示。
 - 停留时长：默认 `staySeconds = 15`（原来的 8 秒实测"还没看完就没了"），`stayFor()` 里条目越多越久（+2 秒/条），「需要你选择」再乘三且不少于 30 秒。实测：完成单条 15 秒、完成 3 条 19 秒、失败 2 条 17 秒、待选择单条 45 秒、待选择 4 条 63 秒。鼠标移进卡片会重置计时，右键随时关掉。
-- 快照校验：`screenshots/` 里六张图全部由 selftest 用**同一个** WPF 渲染器离屏画出、并逐张与基线比对——
+- 快照校验：`screenshots/` 里七张图全部由 selftest 用**同一个** WPF 渲染器离屏画出、并逐张与基线比对——
   `completed.png` 436×174、`needs_choice.png` 436×291、`failed.png` 436×152、`multi.png` 436×357（4 条 / 3 个项目，README 里当「合并且逐条可读」的样子）、
-  `width-300.png` 352×305、`width-520.png` 572×291。更早那批手工渲染的 `single*.png`（旧版式、带文件夹图标）已删除，避免图与版式各说一套。
+  `light.png` 436×188（浅色）、`width-300.png` 352×305、`width-520.png` 572×291。更早那批手工渲染的 `single*.png`（旧版式、带文件夹图标）已删除，避免图与版式各说一套。
   字号层级（`popup.ps1` 常量）：单条 = 项目 15.5 SemiBold → 任务名 12.5 → 原因 10.5；清单每条 = 项目 15 SemiBold → 任务名 12.5 → 明细 10.5。项目名前面**没有图标字形**：原来那处是 Segoe MDL2 Assets 的 `0xE8B7` 文件夹字，10.5-11px 下看起来就是个方块，已整段删除，省下的 16px 归给名字的截断宽度。
 
 ## 2.7 单卡互斥与关窗回报（不需要屏幕）
@@ -121,7 +121,26 @@ B 之后收到: {"type":"closed","reason":"timeout"}
 1. `SHQueryUserNotificationState`（shell32）：返回 1（锁屏/屏保）、2（全屏应用忙）、3（D3D 全屏）、
    4（放映模式）、7（沉浸式全屏应用）时算「现在不适合打扰」；5（接受通知）与 6（新账号第一小时）不动。
 2. 前台窗口矩形是否正好盖满它所在显示器的**物理**矩形（`rcMonitor`，容差 2px）。这条用来抓
-   「无边框全屏」——系统查询在窗口化全屏下不会报全屏，而普通最大化窗口因为露出任务栏不会被误判。
+   「无边框全屏」——系统查询在窗口化全屏下不会报全屏。
+
+第 2 条会误伤两种「矩形=整块屏」的窗口，所以在比矩形之前先排除：
+
+- **桌面本身**（`GetShellWindow()`，窗口类 `Progman` / `WorkerW`）与任务栏（`Shell_TrayWnd` /
+  `Shell_SecondaryTrayWnd`）：它们铺满整块屏，但显然不是「正在玩游戏」。
+- **最大化窗口**（`IsZoomed`）：Windows 10 起最大化窗口的 `GetWindowRect` 返回的是**扩展边框**，
+  同样铺满整块屏，任务栏盖在它上面而不是在它外面——只看矩形会把它们全判成全屏。
+
+这个误伤是真出过的：修之前台式机什么都不点（前台 = 桌面 `Progman`，矩形 `0,0,2560,1440`）时，
+`selftest` 里真起窗口的五条全红，状态行是 `{"theme":"light","reason":"fullscreen","type":"suppressed","state":5}`
+——卡片会被整批吞掉。修完用生产配置（`suppressWhenFullscreen: true`、前台是桌面）实测：
+
+```
+{"width":412,"height":150,"type":"shown","slot":"owner","theme":"light",...}
+{"type":"closed","reason":"timeout"}
+```
+
+真起窗口的几段自测现在显式用 `suppressWhenFullscreen: false`（否则结果取决于跑自测时桌面在干什么），
+抑制逻辑本身由第 6 组的源码断言钉住。
 
 `$SuppressWhenFullscreen`：命中任一条就整批**丢弃**（不排队，卡片模板已经建好但不会 Show），
 状态行写 `{"type":"suppressed","reason":"fullscreen","state":N}`，进程立刻退出。
@@ -150,6 +169,34 @@ foreground covers monitor = False           # 底部差 40px = 任务栏，正�
 
 两道检查都只是读系统状态与窗口矩形：不装钩子、不抓输入、不接触游戏窗口，鼠标键盘与游戏完全不受影响。
 `selftest.mjs` 第 6 组用源码断言钉住这两道判断与宿主传参，防止被顺手删掉。
+
+## 2.9 深浅两套配色（不需要屏幕）
+
+`popup.ps1` 把颜色收成一套 token（`$script:CardTop/CardBottom/TextPrimary/…/ShadowOpacity`），
+`Set-CardTheme` 一次赋一套值，深色是默认、浅色另配一套：
+
+| token | dark | light |
+| --- | --- | --- |
+| `CardTop` / `CardBottom` | `#FF20242E` / `#FF171A22` | `#F7FBFCFE` / `#F4ECEEF3` |
+| `TextPrimary` / `TextBody` | `#FFFFFFFF` / `#FFD8DDE6` | `#FF14171C` / `#FF23282F` |
+| `TextMuted` / `TextFaint` | `#FF9AA3B2` / `#FF6E7686` | `#FF5B6472` / `#FF8A929E` |
+| `CardEdge` / `RuleColor` | `#33FFFFFF` / `#1FFFFFFF` | `#22000000` / `#14000000` |
+| `FrameBg` / `ShadowOpacity` | `#FF101218` / `0.45` | `#FFF0F2F5` / `0.18` |
+
+取值顺序：`-Theme`（命令行，仅调试）→ payload 的 `theme`（来自插件配置）→ `auto`。
+`auto` 读 `HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\AppsUseLightTheme`，
+`1` 走浅色、`0` 走深色，读不到按深色（老系统上没这个键）。
+
+实测（`-Snapshot` 落 PNG 后取像素）：
+
+```
+dark  : 角 31,31,31    卡片顶 32,36,46
+light : 角 240,242,245  卡片顶 248,249,251     # 本机 AppsUseLightTheme=1，auto 就是浅色
+```
+
+`shown` / `suppressed` / `snapshot` 三种状态行都带 `theme`，`selftest` 里 live 那段的 `shown` 现在是
+`"theme":"light"`（这台机器系统是浅色），快照则显式钉成 `dark`（三态 + 清单）与 `light`（`light.png`），
+避免「跟随系统」让基线与 CI 随机漂。
 
 ## 3. 卡片图内容自证（纯像素，不需要屏幕）
 
