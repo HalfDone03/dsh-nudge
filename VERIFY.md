@@ -15,14 +15,14 @@ $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\nod
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs              # 99 项，含真起 helper 与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 89 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 103 项，含真起 helper 与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 93 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (99 checks)`，退出码 0。
+- selftest 输出 `ALL PASS (103 checks)`，退出码 0。
 
 证据（实测）：
 
@@ -31,7 +31,7 @@ PASS  helper 回报 shown  --  [{"width":412,"height":164,"type":"shown","slot":
 PASS  卡片在屏幕右下半区  --  left=2132, top=1212, 412x164
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
 PASS  基线 completed 对得上  --  436x174 色 263/263 暗 72874/72874 亮 933/933 状态 352/352
-ALL PASS (99 checks)
+ALL PASS (103 checks)
 ```
 
 其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 164 高 →
@@ -39,7 +39,7 @@ ALL PASS (99 checks)
 
 ## 1.5 快照基线与 CI（不需要屏幕）
 
-- `tools/snapshot-baseline.json` 存着三态与两种宽度的像素统计（宽高 + `distinct` / `dark` / `text` / `accent`）。
+- `tools/snapshot-baseline.json` 存着三态、清单（`multi`，4 条 / 3 个项目）与两种宽度的像素统计（宽高 + `distinct` / `dark` / `text` / `accent`）。
   selftest 每次渲染完就跟它比：**宽高必须完全一致**，像素计数允许 ±2%（不同机器字体抗锯齿会有几个像素出入）。
 - 改了版式、确认新样子是对的之后，跑一次 `& $node .\scripts\selftest.mjs --update-baseline` 重写基线；
   忘了更新就会红，而不是让 README / VERIFY 里的数字自己漂。
@@ -53,7 +53,7 @@ ALL PASS (99 checks)
 & $node .\scripts\selftest.mjs   # 已经包含这一步，产物在 screenshots\*.png
 ```
 
-期望：`completed.png` 436×174、`needs_choice.png` 436×291、`failed.png` 436×152（436 = 卡片 412 宽 + 两侧各 12px 底色留白；底边同样 12px），均 >4KB。
+期望：`completed.png` 436×174、`needs_choice.png` 436×291、`failed.png` 436×152、`multi.png` 436×357（4 条 / 3 个项目）（436 = 卡片 412 宽 + 两侧各 12px 底色留白；底边同样 12px），均 >4KB。
 
 ## 2.5 窗口可拖动 / 可缩放
 
@@ -82,7 +82,10 @@ ALL PASS (99 checks)
 - 右键只关闭：不调用 `Focus-Ds`、不写剪贴板，也不激活窗口（`WS_EX_NOACTIVATE`）。
 - 标题上限：任务名按 `TITLE_LIMIT = 42` 截断（带 `…`），标题区 `MaxHeight = 63`（三行）。实测 42 字标题在 384 宽排两行、在最小 260 宽排三行，文字最右 281 < 内沿 285，三行都能完整显示。
 - 停留时长：默认 `staySeconds = 15`（原来的 8 秒实测"还没看完就没了"），`stayFor()` 里条目越多越久（+2 秒/条），「需要你选择」再乘三且不少于 30 秒。实测：完成单条 15 秒、完成 3 条 19 秒、失败 2 条 17 秒、待选择单条 45 秒、待选择 4 条 63 秒。鼠标移进卡片会重置计时，右键随时关掉。
-- 快照校验：`screenshots/multi.png` 436×385（4 条 / 3 个项目）、`screenshots/single.png` 436×230（失败单条）、`screenshots/single-choice.png` 436×216（待批准单条）、`screenshots/single-done.png` 436×202（完成单条）。字号层级（`popup.ps1` 常量）：单条 = 项目 15.5 SemiBold → 任务名 12.5 → 原因 10.5；清单每条 = 项目 15 SemiBold → 任务名 12.5 → 明细 10.5。项目名前面**没有图标字形**：原来那处是 Segoe MDL2 Assets 的 `0xE8B7` 文件夹字，10.5-11px 下看起来就是个方块，已整段删除，省下的 16px 归给名字的截断宽度。
+- 快照校验：`screenshots/` 里六张图全部由 selftest 用**同一个** WPF 渲染器离屏画出、并逐张与基线比对——
+  `completed.png` 436×174、`needs_choice.png` 436×291、`failed.png` 436×152、`multi.png` 436×357（4 条 / 3 个项目，README 里当「合并且逐条可读」的样子）、
+  `width-300.png` 352×305、`width-520.png` 572×291。更早那批手工渲染的 `single*.png`（旧版式、带文件夹图标）已删除，避免图与版式各说一套。
+  字号层级（`popup.ps1` 常量）：单条 = 项目 15.5 SemiBold → 任务名 12.5 → 原因 10.5；清单每条 = 项目 15 SemiBold → 任务名 12.5 → 明细 10.5。项目名前面**没有图标字形**：原来那处是 Segoe MDL2 Assets 的 `0xE8B7` 文件夹字，10.5-11px 下看起来就是个方块，已整段删除，省下的 16px 归给名字的截断宽度。
 
 ## 2.7 单卡互斥与关窗回报（不需要屏幕）
 

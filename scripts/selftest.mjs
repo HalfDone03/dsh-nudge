@@ -533,7 +533,20 @@ const payloads = {
 		headline: "TypeError: Cannot read property 'stdout' of undefined",
 		headlineTint: "#24E74C3C",
 		context: "dsh-nudge · 构建前端",
-		items: [] }
+		items: [] },
+	// 清单形态：4 条提醒、3 个项目，README 里当「合并后的样子」用，也顺便钉住清单行版式
+	multi: { kind: "needs_choice", label: "需要你选择", accent: "#F5A623", glyph: "?", count: 4,
+		headline: "",
+		headlineTint: "",
+		verdictKind: "",
+		verdictText: "",
+		context: "",
+		items: [
+			{ kind: "needs_choice", title: "部署到生产", detail: "等待你批准：npm run deploy", at: "21:19", count: 1, rowProject: "dsh-nudge", rowKind: "待你选择" },
+			{ kind: "failed", title: "构建前端", detail: "vite build failed: Could not resolve entry \"src/main.ts\"", at: "21:18", count: 1, rowProject: "web-console", rowKind: "失败" },
+			{ kind: "completed", title: "跑测试", detail: "", at: "21:17", count: 1, rowProject: "dsh-nudge", rowKind: "完成" },
+			{ kind: "completed", title: "写周报", detail: "", at: "21:15", count: 1, rowProject: "notes", rowKind: "完成" }
+		] }
 };
 
 /**

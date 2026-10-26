@@ -5,7 +5,19 @@
 DSH（DeepSeek Harness）插件：会话里**任务完成**、**需要你选择**、**执行失败**时，
 在桌面**右下角**弹一张置顶小卡片提醒你处理。点一下卡片回到 DSH 窗口，并把这批提醒复制到剪贴板。
 
-![三种状态](screenshots/needs_choice.png)
+## 截图
+
+<table>
+  <tr>
+    <td align="center"><img src="screenshots/completed.png" width="300" alt="任务完成"><br><sub>任务完成</sub></td>
+    <td align="center"><img src="screenshots/needs_choice.png" width="300" alt="需要你选择"><br><sub>需要你选择</sub></td>
+    <td align="center"><img src="screenshots/failed.png" width="300" alt="执行失败"><br><sub>执行失败</sub></td>
+  </tr>
+</table>
+
+这些图不是效果图，是 `node scripts/selftest.mjs` 里用**同一个** WPF 渲染器在离屏窗口画出来的快照：
+宽高与像素统计都写进了 `tools/snapshot-baseline.json`，版式一改、图没跟着改就会红。
+卡片右下角弹出、不抢焦点，背景是你的桌面。
 
 ## 它解决什么
 
@@ -29,7 +41,7 @@ DSH 的回合经常跑很久，或者卡在等你批准/回答上，而你切到
 市场索引指向的具体提交写在仓库根目录的 `index.json`。
 
 | 版本 | 日期 | 一句话 |
-| --- | --- | --- |
+| --- | --- | --- |
 | 0.3.1 | 2026-10-26 | CI、快照像素基线与一条命令发版 |
 | 0.3.0 | 2026-10-26 | 版式改成「项目 > 任务 > 原因」、默认停留 15 秒、全屏时不打扰、同一个时刻只留一张卡、点击聚焦提醒来源的那个实例 |
 | 0.2.1 | 2026-10-24 | 工具失败按 `message.isError` 判定、审批卡片带上下文、标题走 `sessionTitle` 服务、排序与缓冲修正、子代理过滤 |
@@ -178,6 +190,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 - 明细为空的条目只排两行（项目 + 任务名）——右侧已经写了「完成」，再补一句「回合已完成」是废话。
 - 超出 `maxItems` 时底部出现「还有 N 条未展开」（文案由 JS 下发，脚本保持纯 ASCII）。
 
+真图（同一套 payload，4 条提醒 / 3 个项目）：
+
+<img src="screenshots/multi.png" width="436" alt="4 条提醒合并成一张清单">
+
+宽度不是写死的：拖窄了明细自己折行，拖宽了一行就放得下（最小 260，没有上限）。
+
+<table>
+  <tr>
+    <td align="center"><img src="screenshots/width-300.png" width="352" alt="拖到 300 宽：明细折行"><br><sub>拖到 300 宽：明细折行</sub></td>
+    <td align="center"><img src="screenshots/width-520.png" width="572" alt="拖到 520 宽：一行放下"><br><sub>拖到 520 宽：一行放下</sub></td>
+  </tr>
+</table>
+
 - 字体用 `Microsoft YaHei UI → Segoe UI → Arial` 回退链，中文不再掉进 Segoe UI。
 - 高度由内容测量决定（`Measure` + `DesiredSize`），长明细换行不会撑破卡片，也不会留白。
 - 出现时 180ms 淡入 + 10px 上滑；鼠标移进卡片边框提亮，同时重置停留计时。
@@ -217,7 +242,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version 0.3.1
 ```
 
-它按顺序做：挑 node 跑语法检查与 99 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
+它按顺序做：挑 node 跑语法检查与 103 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
 「未发布」换成本版标题 → 更新本文件里的「当前版本」与版本一览表格 → 提交 → 打附注 tag → 把 `index.json`
 的 `versions[0]` 三字段指向这个提交并再提一条
 `chore(release): 索引指向 x.y.z 最终提交 (<hash>)` → `gh release create --latest` → push `main` 与 tag。
@@ -239,7 +264,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs      # 99 项全绿；CI 上跑的是 --no-live（89 项）
+& $node .\scripts\selftest.mjs      # 103 项全绿；CI 上跑的是 --no-live（93 项）
 ```
 
 三条硬要求，少一条装上就是坏的：
@@ -271,13 +296,13 @@ registry 安装是 `saveExact`（精确版本），不改版本号重装拿不�
 
 ```powershell
 $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe"
-& $node .\scripts\selftest.mjs              # 99 项，含真起窗口与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 89 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 103 项，含真起窗口与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 93 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
-当前 **99 项全绿**，覆盖：配置校验与默认值、静音时段（含跨零点）、事件合并计数、
+当前 **103 项全绿**，覆盖：配置校验与默认值、静音时段（含跨零点）、事件合并计数、
 严重度排序、三类开关、真起弹窗并收到 `{"type":"shown"}` 与右下角坐标、dispose 后无孤儿进程、
-三种状态各渲染一张 436px 宽快照（尺寸、非空与像素基线比对），以及一组源码静态约束——
+三种状态各渲染一张 436px 宽快照，外加一张 4 条合并的清单快照（`screenshots/multi.png`，尺寸、非空与像素基线比对），以及一组源码静态约束——
 脚本必须纯 ASCII、项目名前不许出现图标字形、字号阶梯必须是「项目 > 任务 > 原因」、
 单卡槽位、剪贴板回报、全屏抑制的两道判断与调试开关不许被删。
 最后一组会**真跑两张卡**：A 占位拿到 `slot:"owner"`，B 上来后 A 收到 `closed/replaced`、
@@ -323,7 +348,7 @@ dsh-nudge/
 ├─ scripts/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
-│  └─ selftest.mjs       99 项自测（`--no-live` 89 项、`--update-baseline` 重写像素基线）
+│  └─ selftest.mjs       103 项自测（`--no-live` 93 项、`--update-baseline` 重写像素基线）
 ├─ tools/
 │  ├─ release.ps1        一条命令发版（自测→版本号→tag→索引指针→Release→push）
 │  └─ snapshot-baseline.json  快照像素基线，改了版式要跟着重生

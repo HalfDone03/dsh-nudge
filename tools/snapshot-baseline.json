@@ -1,6 +1,6 @@
 {
 	"note": "版式基线：宽高必须一致，像素计数允许 ±2%。改版式后跑 `node scripts/selftest.mjs --update-baseline` 重生成。",
-	"generatedAt": "2026-10-25T23:34:31.101Z",
+	"generatedAt": "2026-10-26T00:30:01.739Z",
 	"kinds": {
 		"completed": {
 			"width": 436,
@@ -25,6 +25,14 @@
 			"dark": 61819,
 			"text": 2019,
 			"accent": 307
+		},
+		"multi": {
+			"width": 436,
+			"height": 357,
+			"distinct": 488,
+			"dark": 146124,
+			"text": 3551,
+			"accent": 948
 		}
 	},
 	"widths": {
