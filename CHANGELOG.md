@@ -2,8 +2,7 @@
 
 本插件按语义化版本记录改动。日期为提交到 `main` 的时间。
 
-## 未发布
-
+## 0.3.1 - 2026-10-26
 **工程与测试**
 
 - 加了 CI（`.github/workflows/selftest.yml`）：每次 push / PR 在 `windows-latest` 上跑
