@@ -3,6 +3,9 @@ name: selftest
 # 插件跑在 Windows 上（WPF 弹窗 + PowerShell 5.1），所以 CI 只有 windows 这一档。
 # --no-live 跳过「真起一张卡、真抢槽位」那两段——runner 上没有交互桌面，
 # 但快照渲染、像素基线、逻辑与源码静态约束照样跑。
+#
+# 注意：run: 里的脚本会被 GitHub 落成无 BOM 的 UTF-8，Windows PowerShell 5.1 按 ANSI 读，
+# 中文串会把引号吃掉直接语法错，所以下面 run 块里的输出一律用 ASCII。
 
 on:
   push:
@@ -33,16 +36,17 @@ jobs:
         shell: powershell
         run: |
           $errors = $null
-          [void][System.Management.Automation.Language.Parser]::ParseFile(
-            (Join-Path $PWD 'lib/popup.ps1'), [ref]$null, [ref]$errors)
-          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Host $_ }; exit 1 }
-          $errors = $null
-          foreach ($script in 'scripts/install.ps1', 'scripts/uninstall.ps1', 'tools/release.ps1') {
+          foreach ($script in 'lib/popup.ps1', 'scripts/install.ps1', 'scripts/uninstall.ps1', 'tools/release.ps1') {
             if (-not (Test-Path $script)) { continue }
+            $errors = $null
             [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $script), [ref]$null, [ref]$errors)
-            if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Host $_ }; exit 1 }
+            if ($errors.Count -gt 0) {
+              Write-Host "parse errors in $script"
+              $errors | ForEach-Object { Write-Host $_.Message }
+              exit 1
+            }
           }
-          "PowerShell 脚本解析通过"
+          Write-Host 'PowerShell scripts parse OK'
 
       - name: 自测（no-live）
         run: node scripts/selftest.mjs --no-live
@@ -53,11 +57,11 @@ jobs:
           $pkg = (Get-Content package.json -Raw -Encoding UTF8 | ConvertFrom-Json).version
           $index = (Get-Content index.json -Raw -Encoding UTF8 | ConvertFrom-Json).plugins[0].versions[0].version
           $changelog = (Select-String -Path CHANGELOG.md -Pattern '^## (\d+\.\d+\.\d+)' | Select-Object -First 1).Matches.Groups[1].Value
-          "package.json=$pkg index.json=$index CHANGELOG=$changelog"
+          Write-Host "package.json=$pkg index.json=$index CHANGELOG=$changelog"
           if ($changelog -ne $pkg) {
-            Write-Host "::error::CHANGELOG 最新版本 $changelog 与 package.json $pkg 不一致（发布了却忘了写标题？）"
+            Write-Host "::error::CHANGELOG version $changelog != package.json $pkg (missing version heading?)"
             exit 1
           }
           if ($index -ne $pkg) {
-            Write-Host "::warning::index.json 指向 $index，落后于 package.json $pkg（下一版索引提交后会自动跟上）"
+            Write-Host "::warning::index.json points to $index, behind package.json $pkg"
           }
