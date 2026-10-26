@@ -215,6 +215,8 @@ check("默认记住上次位置", defaults.rememberPosition === true, String(def
 check("位置文件默认留空（用 %LOCALAPPDATA%）", defaults.placementFile === "", JSON.stringify(defaults.placementFile));
 checkThrows("rememberPosition 非布尔抛错", () => normalizeConfig({ rememberPosition: "yes" }));
 checkThrows("placementFile 非字符串抛错", () => normalizeConfig({ placementFile: 1 }));
+check("预览开关默认关闭", defaults.debugPreview === false, String(defaults.debugPreview));
+checkThrows("debugPreview 非布尔抛错", () => normalizeConfig({ debugPreview: "yes" }));
 
 /** 1.6 实时配置：设置界面改完立刻生效 ---- */
 // 照抄 dsh-settings/lib/types/schema.js 的 volatileForm 规则：只有 volatile 字段会被收进设置表单
@@ -565,7 +567,12 @@ if (noLive) {
 	check("真起 helper 段", true, "--no-live 跳过（快照与静态约束仍然覆盖）");
 } else {
 const statuses = [];
-const runner = new PopupRunner({ ...liveDefaults, staySeconds: 6 }, () => {}, { onStatus: (status) => statuses.push(status) });
+// 位置文件指名一份不存在的：真实机器上可能已经记过坐标，这条断言要的是
+// 「从来没记过位置时才落右下角」。
+const freshPlaceDir = join(tmpdir(), "dsh-nudge-corner-selftest");
+rmSync(freshPlaceDir, { recursive: true, force: true });
+const freshPlaceFile = join(freshPlaceDir, "placement.json");
+const runner = new PopupRunner({ ...liveDefaults, staySeconds: 6, placementFile: freshPlaceFile }, () => {}, { onStatus: (status) => statuses.push(status) });
 const delivered = runner.show([{ kind: "needs_choice", sessionId: "session-selftest", title: "自测会话", detail: "等待你选择", at: "21:20", count: 2 }]);
 check("PopupRunner.show 投递成功", delivered === true);
 const shown = await waitFor(() => statuses.some((status) => status.type === "shown"), 12000);
@@ -602,6 +609,51 @@ check("越界位置回落到右下角", strayShown && strayStatus?.placement ===
 strayRunner.dispose();
 await new Promise((resolve) => setTimeout(resolve, 1200));
 rmSync(placeDir, { recursive: true, force: true });
+rmSync(freshPlaceDir, { recursive: true, force: true });
+// 预览：卡片常驻、不自己收场；宿主写 stop 文件才关窗，关之前把位置和尺寸落盘。
+const previewDir = join(tmpdir(), "dsh-nudge-preview-selftest");
+mkdirSync(previewDir, { recursive: true });
+const previewPlace = join(previewDir, "placement.json");
+const previewStatuses = [];
+const previewRunner = new PopupRunner(
+	{ ...liveDefaults, staySeconds: 1, rememberPosition: true, placementFile: previewPlace },
+	() => {},
+	{ onStatus: (status) => previewStatuses.push(status) }
+);
+check("预览卡片投递成功", previewRunner.show([{ kind: "completed", sessionId: "selftest-preview", title: "调试预览", detail: "拖动或缩放这张卡", at: "21:24", count: 1 }], { preview: true }) === true);
+check("runner 知道自己在预览", previewRunner.isPreviewing() === true);
+const previewShown = await waitFor(() => previewStatuses.some((status) => status.type === "shown"), 12000);
+check("预览卡片先报到", previewShown === true);
+// 停留时间只有 1 秒，watchdog 也早就该跳了：等 4 秒以后它必须还在。
+await new Promise((resolve) => setTimeout(resolve, 4000));
+check(
+	"预览卡片不会被停留时间或 watchdog 收走",
+	previewRunner.isPreviewing() === true && !previewStatuses.some((status) => status.type === "closed"),
+	JSON.stringify(previewStatuses.map((status) => status.type))
+);
+const stopRequested = previewRunner.stopPreview();
+const previewClosed = await waitFor(() => previewStatuses.some((status) => status.type === "closed"), 8000);
+const previewClosedStatus = previewStatuses.find((status) => status.type === "closed");
+check(
+	"关掉预览后卡片自己退出（reason=preview）",
+	stopRequested === true && previewClosed === true && previewClosedStatus?.reason === "preview" && previewClosedStatus?.preview === true,
+	JSON.stringify(previewClosedStatus ?? null)
+);
+check(
+	"预览结束时把尺寸一起报回来",
+	typeof previewClosedStatus?.width === "number" && previewClosedStatus.width > 0
+	&& typeof previewClosedStatus?.height === "number" && previewClosedStatus.height > 0,
+	`${previewClosedStatus?.width}x${previewClosedStatus?.height}`
+);
+const previewSaved = existsSync(previewPlace) ? JSON.parse(readFileSync(previewPlace, "utf8")) : null;
+check(
+	"关掉预览时把位置和尺寸存进 placement 文件",
+	previewSaved !== null && typeof previewSaved.left === "number" && typeof previewSaved.top === "number"
+	&& typeof previewSaved.width === "number" && previewSaved.width > 0,
+	JSON.stringify(previewSaved)
+);
+previewRunner.dispose();
+rmSync(previewDir, { recursive: true, force: true });
 const child = runner.child;
 runner.dispose();
 // 被 kill 的进程 exitCode 为 null、signalCode 为 SIGTERM，两个都要看。
@@ -817,6 +869,17 @@ check("调试开关既能用环境变量也能用插件配置",
 	indexSource.includes("DSH_NUDGE_DEBUG_PAYLOAD") && indexSource.includes("DSH_NUDGE_DEBUG_FILE")
 		&& indexSource.includes("config.debugPayload === true") && indexSource.includes("config.debugFile"),
 	"env + config");
+check("弹窗脚本靠 -Preview/-StopFile 常驻，宿主写 stop 文件才收场",
+	popupSource.includes('"-Preview"') === false
+	&& popupSource.includes("if ($Preview) { return }")
+	&& popupSource.includes("$script:stopPoll")
+	&& popupSource.includes("$StopFile")
+	&& popupSource.includes("$script:autoClose = -not $Preview")
+	&& popupSource.includes("preview = [bool]$Preview"));
+check("宿主侧预览靠 isPreviewing / stopPreview 控制，并且读 debugPreview",
+	indexSource.includes("isPreviewing()") && indexSource.includes("stopPreview()")
+	&& indexSource.includes("config.debugPreview === true")
+	&& indexSource.includes("this.previewEndedAt = Date.now()"));
 check("弹窗脚本会读 rememberPosition / placementFile 并维护位置文件",
 	popupSource.includes("$payload.rememberPosition") && popupSource.includes("$payload.placementFile")
 		&& popupSource.includes("function Read-Placement") && popupSource.includes("function Save-Placement")
@@ -974,7 +1037,7 @@ const clientTexts = clientNodes.map((node) => (typeof node.props?.children === "
 const clientControls = clientNodes.filter((node) => ["input", "select", "textarea"].includes(node.type));
 check("设置页有三类提醒与主要分组", ["任务完成", "需要你选择", "执行失败", "配色", "停留秒数", "静音时段"].every((label) => clientTexts.includes(label)));
 check("设置页控件数量", clientControls.length >= 14, "controls=" + clientControls.length);
-check("设置页开关是 checkbox", clientControls.filter((node) => node.props.type === "checkbox").length >= 9);
+check("设置页开关是 checkbox", clientControls.filter((node) => node.props.type === "checkbox").length >= 10);
 check("配色是三个选项的下拉", clientControls.some((node) => node.type === "select") && clientNodes.filter((node) => node.type === "option").length === 3);
 const clientSwitch = clientControls.find((node) => node.props["aria-label"] === "任务完成");
 clientSwitch.props.onChange({ target: { checked: false } });

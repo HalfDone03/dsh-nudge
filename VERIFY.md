@@ -15,14 +15,14 @@ $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\nod
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs              # 152 项，含真起 helper 与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 136 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 163 项，含真起 helper 与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 140 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (152 checks)`，退出码 0（CI 上是 `136 checks`）。
+- selftest 输出 `ALL PASS (163 checks)`，退出码 0（CI 上是 `140 checks`）。
 
 证据（实测）：
 
@@ -36,7 +36,7 @@ PASS  位置文件里的点被沿用  --  {"placement":"remembered","placedLeft"
 PASS  越界位置回落到右下角  --  {"placement":"corner","placedLeft":2146,...}
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
 PASS  基线 completed 对得上  --  436x174 色 263/263 暗 72874/72874 亮 933/933 状态 352/352
-ALL PASS (152 checks)
+ALL PASS (163 checks)
 ```
 
 其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 —— 目标不是窗口贴角，
@@ -141,6 +141,7 @@ PASS  宿主让设置服务别生成重复表单
 
 - 样式位包含 `WS_THICKFRAME`（`GetWindowLong(hwnd, GWL_STYLE) & 0x40000`），这是系统执行缩放的前提。
 - 鼠标进入四边/四角 8px 感应区时光标变成 `SizeWE / SizeNS / SizeNWSE / SizeNESW`。
+- 想认真调位置和大小就开预览：`设置 → 提醒弹窗 → 调试 → 预览弹窗`。卡片常驻，拖动/缩放都不会被打断，关掉开关时自动把位置与大小写进 `%LOCALAPPDATA%\dsh-nudge\placement.json`。
 - 在感应区按下 → `ReleaseCapture()` + `SendMessage(hwnd, WM_NCLBUTTONDOWN, HT<edge>, 0)`，由系统接管缩放；卡片内部按下 → `DragMove()`，位移 < 4px 视为点击（回 DSH + 复制提醒 + 关闭）。
 - 内容自适应可用 `-SnapshotWidth <px>` 验证：同一份 payload 在 240 / 300 / 384 / 560 宽下都能排版，宽度严格跟随参数（图片宽 = 卡片宽 + 28 阴影留白 + 24 底边 = +52）。
 
@@ -153,6 +154,8 @@ PASS  宿主让设置服务别生成重复表单
 - 卡片外框跟随最严重的 kind 染色：failed `#4DE74C3C`、needs_choice `#45F5A623`、其余 `#2BFFFFFF`，扫一眼就知道出事了。
 - 不打扰：卡片是 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` 窗口，永不被激活、不进 Alt+Tab；纯点击不进入系统拖动循环（位移 >4px 才算拖动）；弹出后 320ms 内的点击被忽略；移进卡片会重置停留计时。
 - 定位：`MonitorFromWindow`（DSH 主窗口）→ `MonitorFromPoint`（光标）→ `SystemParameters.WorkArea` 三级退化，取 `rcWork` 右下角内缩 `margin`；实测本机 2560×1440、任务栏 48px、卡片 412×164 → `left=2146`、`top=1226`（=1392−164−16+14），其中 `+14` 是把窗口的透明阴影推到屏幕边缘外，让**可见边框**正好落在 `margin` 上。
+- 预览模式（`popup.ps1 -Preview -StopFile <path>`）：卡片常驻，不启动停留计时器、不启动 watchdog、右键与单击都不关窗，也不参与单卡互斥（`Initialize-CardSlot` 直接返回 `owned`，`replacePoll` 不启动）——预览卡是用户手里的标尺，不能被新提醒顶掉。宿主每秒看一次配置：`debugPreview` 打开且没在跑就弹一张（距上次结束 <3 秒则等一等），关掉就写 stop 文件，卡片 250ms 内看到就关窗，关窗路径里先 `Save-CurrentPlacement` 再发 `{type:'closed',reason:'preview',preview:true,width,height}`。实测：`staySeconds=1` 的预览卡等 4 秒仍在（`["shown"]` 无 closed），`stopPreview()` 后收到 `{"reason":"preview","preview":true,"width":412,"height":150}`，`placement.json` 里写着 `{"left":2146,"top":1240,"width":412,"height":150}`。
+- 只在真的动过之后才落盘：`Save-CurrentPlacement` 先看 `$script:placementDirty`（拖动结束、缩放结束、预览收场时置位）。否则每张卡关掉时都会把「右下角」写成 `remembered`，位置文件既没意义又会让「从没记过位置」这条断言失效——`selftest` 里因此改成每条用例用自己的临时位置文件。
 - 记住位置：`Read-Placement` 读 `placement.json`，用 `MonitorBoundsOfPoint` 校验那个点是否还在某台显示器上；在就沿用它（状态行报 `placement: remembered`），不在就回落到右下角（`corner`）。`DragMove()` 与边界缩放循环返回后各调一次 `Save-Placement` 写回物理坐标。
 - DPI 量纲：`rcWork` 是物理像素而 WPF 的 `Left/Top` 是 DIP，所以 helper 先申请逐显示器 DPI 感知（`SetProcessDpiAwarenessContext(-4)` → `SetProcessDpiAwareness(2)` → `SetProcessDPIAware()` 三级降级），用目标屏 `GetDpiForMonitor` 缩放边距并把工作区折算成 DIP 做初定位，`Loaded` 后再按 `GetWindowRect` + `SetWindowPos` 用物理像素校正一次。100% 单屏下校正量恒为 0，`placedLeft/placedTop` 与 WPF 的 `left/top` 实测一致（2146/1226）。
 - 聚焦哪个实例：helper 的直接父进程是 Host，与 Electron 主进程同名但**没有窗口**，所以不能用

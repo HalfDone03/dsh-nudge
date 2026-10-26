@@ -168,6 +168,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
     theme: auto            # 配色：auto 跟随 Windows 的深浅色设置，也可以固定 dark / light
     debugPayload: false    # 调试开关：true 时把每次弹出的 payload 追加落盘
     debugFile: ''          # 落盘文件；留空 = %TEMP%\dsh-nudge-payloads.jsonl
+    debugPreview: false    # 预览：true 时卡片常驻，可以拖动缩放，关掉时把位置和大小记住
     kinds:                 # 三类提醒各自开关
       completed: true
       needs_choice: true
@@ -191,7 +192,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 | 什么时候弹 | `showWhenFocused`、`suppressWhenFullscreen`、`alertOnToolError` |
 | 样子与位置 | `theme`（auto/light/dark 下拉）、`staySeconds`、`margin`、`rememberPosition` |
 | 合并 | `mergeWindowMs`、`maxItems`、`muteRanges`（一行一段） |
-| 调试 | `debugPayload`、`debugFile` |
+| 调试 | `debugPayload`、`debugFile`、`debugPreview`（预览弹窗） |
 
 它和插件的 `Config` 是同一份数据，写回 profile 的 `cordis.patch.yml`；页面只在宿主提供
 `slots` 与 `configForms` 两个服务时出现（`dsh.client.inject` 里声明了），浏览器半身在
@@ -263,6 +264,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 - **可拖动、可缩放，并且记得住**：按住卡片拖动即可换位置；把鼠标移到四边或四角（光标会变成缩放箭头）拖动即可改大小，最小 260×118。
   没动过的时候它贴着工作区右下角（`margin` 量的是**看得见的边框**，窗口的透明阴影会多伸出 14px 被屏幕边缘裁掉）；
   一旦你拖过或缩过，新的物理坐标就记进 `%LOCALAPPDATA%\dsh-nudge\placement.json`，之后的卡片回到那个位置。
+
+- **想认真调就开预览**：设置 → 提醒弹窗 → 调试 → **预览弹窗**。打开后立刻弹一张常驻的卡片，它不倒数、不被 watchdog 收走、也不会被新提醒顶掉；你可以慢慢拖动、慢慢缩放到满意，关掉开关时它自己关窗，把位置和大小一起记进 `%LOCALAPPDATA%\dsh-nudge\placement.json`。没动过的卡片不会写这个文件——「记住的位置」只有在真的动过之后才有意义。
   记的位置如果已经不在任何显示器上（拔了副屏、改了分辨率），自动回落到右下角；删掉那个文件即可恢复默认。卡片是透明的无边框窗口，所以缩放走的是 `ReleaseCapture` + `WM_NCLBUTTONDOWN`，交给系统原生缩放循环处理。
 - **内容自适应**：卡片宽度不再写死，文字、清单、项目标签都按当前可用宽度重新换行排版；拖大不会留白，拖小自动折行。
 - **一眼看清是哪摊活**：字最大的永远是项目文件夹名，其次是任务名，最后才是一句话的成败原因（`失败：…` / `待你选择：…` / `完成`）。多条提醒逐条三行排版，右侧竖排「完成 / 待你选择 / 失败 + 时间」。不加滚动条，卡片按内容长高，窗口最小高度也跟随内容。
@@ -293,7 +296,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version 0.3.1
 ```
 
-它按顺序做：挑 node 跑语法检查与 152 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
+它按顺序做：挑 node 跑语法检查与 163 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
 「未发布」换成本版标题 → 更新本文件里的「当前版本」与版本一览表格 → 提交 → 打附注 tag → 把 `index.json`
 的 `versions[0]` 三字段指向这个提交并再提一条
 `chore(release): 索引指向 x.y.z 最终提交 (<hash>)` → `gh release create --latest` → push `main` 与 tag。
@@ -315,7 +318,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs      # 152 项全绿；CI 上跑的是 --no-live（136 项）
+& $node .\scripts\selftest.mjs      # 163 项全绿；CI 上跑的是 --no-live（140 项）
 ```
 
 三条硬要求，少一条装上就是坏的：
@@ -348,11 +351,11 @@ registry 安装是 `saveExact`（精确版本），不改版本号重装拿不�
 
 ```powershell
 $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe"
-& $node .\scripts\selftest.mjs              # 152 项，含真起窗口与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 136 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 163 项，含真起窗口与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 140 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
-当前 **152 项全绿**，覆盖：配置校验与默认值、实时配置（设置里改完立即生效）、静音时段（含跨零点）、事件合并计数、
+当前 **163 项全绿**，覆盖：配置校验与默认值、实时配置（设置里改完立即生效）、静音时段（含跨零点）、事件合并计数、
 严重度排序、三类开关、真起弹窗并收到 `{"type":"shown"}` 与右下角坐标、dispose 后无孤儿进程、
 三种状态各渲染一张 436px 宽快照，外加一张 4 条合并的清单快照（`screenshots/multi.png`，尺寸、非空与像素基线比对），以及一组源码静态约束——
 脚本必须纯 ASCII、项目名前不许出现图标字形、字号阶梯必须是「项目 > 任务 > 原因」、
@@ -406,7 +409,7 @@ dsh-nudge/
 ├─ scripts/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
-│  └─ selftest.mjs       152 项自测（`--no-live` 136 项、`--update-baseline` 重写像素基线）
+│  └─ selftest.mjs       163 项自测（`--no-live` 140 项、`--update-baseline` 重写像素基线）
 ├─ tools/
 │  ├─ release.ps1        一条命令发版（自测→版本号→tag→索引指针→Release→push）
 │  └─ snapshot-baseline.json  快照像素基线，改了版式要跟着重生
@@ -464,6 +467,11 @@ dsh-nudge/
 - **`$script:` 变量别和参数撞名**：主题状态最早写成 `$script:Theme`，而脚本本身有个 `-Theme` 参数，
   于是给 `$script:Theme` 赋值等于把参数改了，第二次解析时 CLI 的浅色反过来压住了 payload 的深色。
   改成 `$script:ThemeName` 才对。PowerShell 里给 `$script:x` 赋值，改的是同一个作用域里的 `$x`。
+- **预览卡不能靠杀进程收场**：宿主写一个 stop 文件，卡片每 250ms 看一眼，看到就自己关窗——
+  这样 `Closing` 事件一定会跑，位置和大小才写得下来。直接 `taskkill` 的话窗口还在原地，
+  下一次读到的就是上一次的坐标。
+- **只有真的动过才写位置文件**：`Save-CurrentPlacement` 先看 `placementDirty`（拖动/缩放结束时置位），
+  否则每张卡关掉都把「右下角」写成 `remembered`，位置文件既没意义，也让「从没记过位置」验不出来。
 - **调试开关要能改配置，不只是环境变量**：`debugPayload` / `debugFile` 进了插件配置，
   真机复现「卡片显示了不相干文字」时，打开它就能拿到每次弹出的原始 payload，
   不用重启带环境变量的宿主。

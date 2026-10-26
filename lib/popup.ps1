@@ -36,7 +36,9 @@ param(
     [string]$Snapshot = '',
     [string]$PayloadFile = '',
     [string]$PayloadB64 = '',
-    [int]$SnapshotWidth = 0
+    [int]$SnapshotWidth = 0,
+    [switch]$Preview,
+    [string]$StopFile = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -916,7 +918,14 @@ function Read-Placement {
         # Keep at least a corner-ish sliver of the card reachable.
         if ($left -lt $bounds[0] -or $left -gt ($bounds[2] - 80)) { return $null }
         if ($top -lt $bounds[1] -or $top -gt ($bounds[3] - 60)) { return $null }
-        return @{ left = $left; top = $top }
+        $spot = @{ left = $left; top = $top }
+        # Size is a preference too: preview mode exists so the user can drag the
+        # card to a size they like, so keep whatever they settled on.
+        $savedWidth = [int]$data.width
+        $savedHeight = [int]$data.height
+        if ($savedWidth -ge 200 -and $savedWidth -le 1200) { $spot.width = $savedWidth }
+        if ($savedHeight -ge 90 -and $savedHeight -le 1400) { $spot.height = $savedHeight }
+        return $spot
     } catch {
         return $null
     }
@@ -943,6 +952,7 @@ function Save-Placement {
 function Save-CurrentPlacement {
     if (-not $script:rememberPosition) { return }
     if ([string]::IsNullOrWhiteSpace($script:placementPath)) { return }
+    if (-not $script:placementDirty) { return }
     try {
         $handle = (New-Object System.Windows.Interop.WindowInteropHelper $window).Handle
         Save-Placement -Handle $handle -Path $script:placementPath
@@ -959,6 +969,12 @@ function Save-CurrentPlacement {
 # behaviour (one card per helper) rather than refusing to show anything.
 function Initialize-CardSlot {
     $slot = @{ owned = $false; took = $false }
+    # A preview card is not a reminder: it must not take the slot away from a real
+    # reminder, and it must not be closed the moment one arrives.
+    if ($Preview) {
+        $slot.owned = $true
+        return $slot
+    }
     try {
         $script:slotMutex = New-Object -TypeName System.Threading.Mutex -ArgumentList $false, 'Local\dsh-nudge-card'
         $script:slotEvent = New-Object -TypeName System.Threading.EventWaitHandle -ArgumentList $false, ([System.Threading.EventResetMode]::AutoReset), 'Local\dsh-nudge-replace'
@@ -1079,6 +1095,9 @@ if ($null -ne $payload) {
     # resized before comes back to that spot. The host owns the toggle and the file
     # location, so this script never has to spell out a user path.
     $script:rememberPosition = -not ($payload.rememberPosition -eq $false)
+    # Set when the user actually drags or resizes: only then is there a position
+    # worth remembering. A card that never moved has nothing to save.
+    $script:placementDirty = $false
     $script:placementPath = ''
     $script:placement = $null
     if ($script:rememberPosition) {
@@ -1156,6 +1175,24 @@ if ($null -ne $payload) {
     $window.Left = ($area[2] / $scale) - $window.Width - $Margin + $script:ShadowPad
     $window.Top = ($area[3] / $scale) - $window.Height - $Margin + $script:ShadowPad
 
+    # A size the user dragged out by hand comes back too. Preview mode exists so the
+    # card can be moved and sized until it feels right; remembering only the corner
+    # would throw that work away. Values are physical pixels, so divide by the scale.
+    if ($null -ne $script:placement) {
+        if ($script:placement.ContainsKey('width')) {
+            $wantWidth = [double]$script:placement.width / $scale
+            if ($wantWidth -ge 260 -and $wantWidth -le 960) { $window.Width = [Math]::Round($wantWidth) }
+        }
+        if ($script:placement.ContainsKey('height')) {
+            $wantHeight = [double]$script:placement.height / $scale
+            if ($wantHeight -ge 118 -and $wantHeight -le 1100) { $window.Height = [Math]::Round($wantHeight) }
+        }
+    }
+
+    # Preview cards are the exception to every timer below: they stay until the host
+    # says otherwise, which is exactly what makes them usable as a size/position knob.
+    $script:autoClose = -not $Preview
+
     $script:shownAt = [DateTime]::UtcNow
     $slide = New-Object System.Windows.Media.TranslateTransform 0, 10
     $card.RenderTransform = $slide
@@ -1165,7 +1202,9 @@ if ($null -ne $payload) {
             try { $card.BorderBrush = New-Brush $script:CardEdgeHover } catch { }
             # Looking at the card should not cost you the card: hovering restarts
             # the dwell instead of letting the original countdown run out mid-read.
-            try { $timer.Stop(); $timer.Start() } catch { }
+            try {
+                if ($script:autoClose) { $timer.Stop(); $timer.Start() }
+            } catch { }
         })
     $card.Add_MouseLeave({ try { $card.BorderBrush = New-Brush $script:cardEdgeNow } catch { } })
 
@@ -1221,8 +1260,11 @@ if ($null -ne $payload) {
                     if (([Math]::Abs($point.X - $script:pressX) + [Math]::Abs($point.Y - $script:pressY)) -gt 4) {
                         $script:dragging = $true
                         try { $window.DragMove() } catch { }
+                        $script:placementDirty = $true
                         Save-CurrentPlacement
-                        try { $timer.Stop(); $timer.Start() } catch { }
+                        try {
+                            if ($script:autoClose) { $timer.Stop(); $timer.Start() }
+                        } catch { }
                     }
                 }
             } catch { }
@@ -1253,19 +1295,29 @@ if ($null -ne $payload) {
                 [void][Native.Win]::ReleaseCapture()
                 [void][Native.Win]::SendMessage($handle, 0x00A1, [IntPtr]$code, [IntPtr]::Zero)
                 $script:resizing = $false
+                $script:placementDirty = $true
                 Save-CurrentPlacement
                 $script:pressActive = $false
-                try { $timer.Stop(); $timer.Start() } catch { }
+                try {
+                    if ($script:autoClose) { $timer.Stop(); $timer.Start() }
+                } catch { }
             } catch { }
         })
 
     # Right click just gets rid of the card: no focus change, no clipboard write.
-    $window.Add_MouseRightButtonUp({ $script:closeReason = 'dismissed'; try { $window.Close() } catch { } })
+    # A preview card is excluded: it must outlive clicks, and the host owns its end.
+    $window.Add_MouseRightButtonUp({
+            if ($Preview) { return }
+            $script:closeReason = 'dismissed'
+            try { $window.Close() } catch { }
+        })
 
     # A press that never travels is a click and keeps the original behaviour
-    # (focus the harness, copy the batch, close).
+    # (focus the harness, copy the batch, close). Preview keeps the card up: the
+    # point is to leave it on screen while the setting stays on.
     $window.Add_MouseLeftButtonUp({
             try {
+                if ($Preview) { $script:pressActive = $false; return }
                 if ($script:resizing) { $script:resizing = $false; return }
                 if ($script:dragging) { $script:dragging = $false; $script:pressActive = $false; return }
                 if (-not $script:pressActive) { return }
@@ -1301,15 +1353,18 @@ if ($null -ne $payload) {
         })
 
     # Absolute lifetime cap. Whatever happens to the mouse, the card goes away.
-    $script:hardDeadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(30, ($StaySeconds * 4) + 30))
-    $script:watchdog = New-Object System.Windows.Threading.DispatcherTimer
-    $script:watchdog.Interval = [TimeSpan]::FromSeconds(5)
-    $script:watchdog.Add_Tick({
-            $script:watchdog.Stop()
-            if ([DateTime]::UtcNow -ge $script:hardDeadline) { $script:closeReason = 'watchdog'; try { $window.Close() } catch { } }
-            else { $script:watchdog.Start() }
-        })
-    $script:watchdog.Start()
+    # Preview cards opt out: they are a knob, not a notice.
+    if ($script:autoClose) {
+        $script:hardDeadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(30, ($StaySeconds * 4) + 30))
+        $script:watchdog = New-Object System.Windows.Threading.DispatcherTimer
+        $script:watchdog.Interval = [TimeSpan]::FromSeconds(5)
+        $script:watchdog.Add_Tick({
+                $script:watchdog.Stop()
+                if ([DateTime]::UtcNow -ge $script:hardDeadline) { $script:closeReason = 'watchdog'; try { $window.Close() } catch { } }
+                else { $script:watchdog.Start() }
+            })
+        $script:watchdog.Start()
+    }
 
     # A newer helper asks this card to step aside through the slot event. Poll it on
     # the UI thread so the close happens on the same thread as every other close.
@@ -1322,7 +1377,29 @@ if ($null -ne $payload) {
                 try { $window.Close() } catch { }
             }
         })
-    try { $script:replacePoll.Start() } catch { }
+    # A preview card stays until the host asks it to stop, so it never polls for a
+    # takeover; otherwise a real reminder would make the card vanish while dragging.
+    if (-not $Preview) { try { $script:replacePoll.Start() } catch { } }
+
+    # The host ends a preview by dropping a marker file next to the card rather than
+    # killing the process: that way the window closes itself, the Closed handler runs,
+    # and the position/size it ended at is written before the process exits.
+    if ($Preview -and -not [string]::IsNullOrWhiteSpace($StopFile)) {
+        $script:stopPoll = New-Object System.Windows.Threading.DispatcherTimer
+        $script:stopPoll.Interval = [TimeSpan]::FromMilliseconds(250)
+        $script:stopPoll.Add_Tick({
+                try {
+                    if (Test-Path -LiteralPath $StopFile) {
+                        $script:stopPoll.Stop()
+                        $script:closeReason = 'preview'
+                        $script:placementDirty = $true
+                        try { Save-CurrentPlacement } catch { }
+                        try { $window.Close() } catch { }
+                    }
+                } catch { }
+            })
+        try { $script:stopPoll.Start() } catch { }
+    }
 
     $app = New-Object System.Windows.Application
     $app.ShutdownMode = 'OnExplicitShutdown'
@@ -1342,7 +1419,9 @@ if ($null -ne $payload) {
                 # would leave the window stuck tall after a narrow-then-wide drag.
                 if ($needed -gt 0) { $window.MinHeight = [Math]::Max(90, $needed) }
             } catch { }
-            try { $timer.Stop(); $timer.Start() } catch { }
+            try {
+                if ($script:autoClose) { $timer.Stop(); $timer.Start() }
+            } catch { }
         })
 
     $window.Add_Loaded({
@@ -1380,21 +1459,31 @@ if ($null -ne $payload) {
                 $move.EasingFunction = $ease
                 $slide.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $move)
             } catch { }
-            $timer.Start()
+            if ($script:autoClose) { $timer.Start() }
             # Resolve the owner once here so a click never pays the lookup cost, and so
             # the status line can prove which process the card would focus.
             [void](Resolve-OwnerWindow)
             Write-Status @{ type = 'shown'; count = [int]$payload.count; theme = $script:ThemeName; left = [int]$window.Left; top = [int]$window.Top; placedLeft = [int]$script:placedLeft; placedTop = [int]$script:placedTop; placement = $(if ($null -ne $script:placement) { 'remembered' } else { 'corner' }); width = [int]$window.Width; height = [int]$window.Height; dpi = $script:DpiMode; scale = [double]$script:scale; marginPx = [int]$script:marginPx; padPx = [int]$script:padPx; owner = [int]$script:ownerPid; ownerSrc = $script:ownerSource; slot = $(if ($script:slotState.took) { 'replaced' } elseif ($script:slotState.owned) { 'owner' } else { 'parallel' }) }
         })
+    # By the time Closed runs the window handle is gone, so GetWindowRect cannot read
+    # the final geometry: save once here, where the handle still works.
+    $window.Add_Closing({
+            try { Save-CurrentPlacement } catch { }
+        })
+
     $window.Add_Closed({
             try { $script:replacePoll.Stop() } catch { }
+            try { if ($null -ne $script:stopPoll) { $script:stopPoll.Stop() } } catch { }
+            # A preview card is closed by the host, and the spot it ended at is the whole
+            # point of the exercise: save before reporting so the next card can use it.
+            try { Save-CurrentPlacement } catch { }
             # One line on the way out tells the host how the card ended and whether the
             # batch actually reached the clipboard, which used to fail silently.
             $reason = if ($script:closeReason -ne '') { $script:closeReason } else { 'closed' }
             if ($reason -eq 'clicked') {
-                Write-Status @{ type = 'closed'; reason = $reason; clipboard = [bool]$script:clipboardOk }
+                Write-Status @{ type = 'closed'; reason = $reason; clipboard = [bool]$script:clipboardOk; width = [int]$window.Width; height = [int]$window.Height; preview = [bool]$Preview }
             } else {
-                Write-Status @{ type = 'closed'; reason = $reason }
+                Write-Status @{ type = 'closed'; reason = $reason; width = [int]$window.Width; height = [int]$window.Height; preview = [bool]$Preview }
             }
             try { $app.Shutdown() } catch { }
         })

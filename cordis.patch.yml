@@ -22,6 +22,8 @@
         # 调试开关：true 时把每次弹出的 payload 追加落盘（debugFile 留空 = %TEMP%\dsh-nudge-payloads.jsonl）
         debugPayload: false
         debugFile: ''
+        # 预览开关：true 时卡片常驻，可以拖动缩放，关掉后位置和大小会记住
+        debugPreview: false
         # 记住你拖过或缩过的位置；placementFile 留空 = %LOCALAPPDATA%\dsh-nudge\placement.json
         rememberPosition: true
         placementFile: ''

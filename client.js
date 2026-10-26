@@ -304,6 +304,14 @@ window.__ModuleLoader__.load({
 				h("div", { className: "dsh-nudge-group", key: "master" }, [
 					h("p", { className: "dsh-nudge-group-title", key: "title" }, "总开关"),
 					h(SwitchRow, {
+						key: "debugPreview",
+						label: "预览弹窗（常驻，可拖动缩放）",
+						hint: "打开后立刻弹一张卡片并一直留着；拖动或缩放它，关掉开关时位置和大小会记住。",
+						checked: bool("debugPreview"),
+						disabled,
+						onChange: (next) => write("debugPreview", next),
+					}),
+					h(SwitchRow, {
 						key: "enabled",
 						label: "启用提醒弹窗",
 						hint: "关掉之后不再弹任何卡片，其他设置保持不变。",
