@@ -15,14 +15,14 @@ $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\nod
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs              # 119 项，含真起 helper 与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 108 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 126 项，含真起 helper 与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 115 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (119 checks)`，退出码 0。
+- selftest 输出 `ALL PASS (126 checks)`，退出码 0（CI 上是 `115 checks`）。
 
 证据（实测）：
 
@@ -31,7 +31,7 @@ PASS  helper 回报 shown  --  [{"width":412,"height":164,"type":"shown","slot":
 PASS  卡片在屏幕右下半区  --  left=2132, top=1212, 412x164
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
 PASS  基线 completed 对得上  --  436x174 色 263/263 暗 72874/72874 亮 933/933 状态 352/352
-ALL PASS (119 checks)
+ALL PASS (126 checks)
 ```
 
 其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 164 高 →
@@ -46,6 +46,51 @@ ALL PASS (119 checks)
 - `.github/workflows/selftest.yml` 在每次 push / PR 上跑 `--no-live`（runner 没有交互桌面，起不了真窗口），
   另外还检查 `node --check`、PowerShell 脚本能否解析、以及 `package.json` / `CHANGELOG` / `index.json` 三处版本号是否自洽。
 
+
+## 1.6 实时配置（不需要会话）
+
+设置界面能改的参数，改完必须立刻生效——宿主不会为了配置改动重新 apply 插件。
+
+```powershell
+& $node .\scripts\selftest.mjs --no-live   # 已经包含这一步
+```
+
+期望（这 7 条都在 `--no-live` 里，CI 也会跑）：
+
+- `liveConfig` 读到初始值；把底层配置对象改了之后，同一个视图立刻读到新值（`30` / `light`）。
+- 填非法值（`staySeconds: 999`）不抛错，沿用上一份能用的配置。
+- 视图不污染 `DEFAULTS`。
+- `volatile` 引用（`{ get(), [Symbol.for("cosmokit.volatile.write")] }`）会被 deref 成普通值；
+  模拟宿主就地改写引用之后，视图立刻跟着变（`42` / `dark` / `failed: false`）。
+
+证据（实测）：
+
+```
+PASS  配置对象被改后立刻读到新值  --  30/light
+PASS  非法值沿用上一次可用的配置  --  30
+PASS  实时配置不污染 DEFAULTS  --  15
+PASS  volatile 引用被 deref 成普通值  --  15/true
+PASS  宿主就地更新引用后立刻生效  --  42/dark/false
+```
+
+设置界面能不能看见 nudge，取决于 `Config` 是不是带 volatile 字段的 Schemastery schema：
+
+```powershell
+$env:DSH_NUDGE_SCHEMASTERY = "<含 schemastery 的 node_modules 目录>"
+& $node .\scripts\selftest.mjs --no-live   # 多跑 6 条 schema 断言
+```
+
+- 只有 `toJSON` + 至少一个 `.volatile()` 字段 + 条目 active 的插件会进表单，命名空间取 entry 的 id（这里是 `nudge`）。
+- 顶层 12 个 volatile 字段 + `kinds` 三个子字段各自 volatile；`popupScript` **故意不 volatile**（换脚本要重启）。
+- schema 默认值与 `DEFAULTS` 逐个一致；`theme` 的 `pattern` 拦得住 `rainbow`。
+
+证据（实测）：
+
+```
+PASS  设置界面会收进表单  --  enabled,staySeconds,...,debugFile,kinds
+PASS  Config 是可重建的 schemastery schema  --  object
+PASS  schema 解析出的配置也立刻生效  --  30
+```
 
 ## 2. 三种状态的无头渲染（不需要屏幕）
 

@@ -12,6 +12,13 @@
 - 调试开关进了插件配置：`debugPayload: true` 时把每次弹出的 payload 追加写成 JSONL
   （`debugFile` 留空则落在 `%TEMP%\dsh-nudge-payloads.jsonl`），不用带着环境变量重启宿主；
   原有的 `DSH_NUDGE_DEBUG_PAYLOAD` / `DSH_NUDGE_DEBUG_FILE` 仍然有效。
+- 配置能在 DSH 设置里改：`设置 → 插件 → nudge`。`Config` 换成带 `.volatile()` 字段的
+  Schemastery schema，宿主的设置页会自动给它渲染表单，改一项**立刻生效**（不用重启），写回的是当前
+  profile 的 `cordis.patch.yml`。`popupScript` 故意没标 volatile——换弹窗脚本要重启。
+- 运行时读的是实时配置：新增 `liveConfig()`，每次读属性才展开 volatile 引用并重新校验；
+  设置里填了非法值就沿用上一份能用的配置，不会因为手滑写坏一个字段而整晚没提醒。
+- `@deepseek-ai/schemastery` 不硬依赖：宿主里能解析就用它生成 schema，解析不到（比如纯 node 跑自测）
+  就退回原来的 StandardSchema 校验器。
 
 **修复**
 
@@ -27,9 +34,12 @@
   这些图不是效果图——是 `selftest` 用**同一个** WPF 渲染器在离屏窗口里画出来的快照，和真实弹出来的是同一套代码。
 - `screenshots/multi.png` 改成由 selftest 生成（新增 `multi` 快照：4 条提醒 / 3 个项目），并进像素基线；
   删掉三张旧版式的手工图 `single.png` / `single-choice.png` / `single-done.png`，免得图与版式各说一套。
-- 自测项 99 → 119（`--no-live` 时 108）：清单快照的三条断言 + 基线比对、浅色快照、7 条配色配置校验、
+- 自测项 99 → 126（`--no-live` 时 115；再设 `DSH_NUDGE_SCHEMASTERY` 指向 schemastery 时 132，多出 6 条 schema 断言）：清单快照的三条断言 + 基线比对、浅色快照、7 条配色配置校验、
   3 条配色/调试开关的源码断言、一条「桌面/任务栏/最大化窗口不算全屏」的源码断言，以及一条「调试开关能由插件配置打开」的实跑。
   基线里三态与清单显式钉成深色、`light.png` 单独一条（暗像素从 7 万多降到 817，确实换了一套底）。
+- 新增 7 条实时配置断言（读到初始值、改了就变、非法值不炸且沿用旧值、不污染 `DEFAULTS`、
+  volatile 引用被 deref、模拟宿主就地改引用后立刻生效）与 6 条 schema 断言（可重建、12 个顶层 volatile 字段、
+  `kinds` 子字段各自 volatile、`popupScript` 不是 volatile、设置表单收得进去、schema 解析出的配置也立刻生效）。
 
 ## 0.3.2 - 2026-10-26
 **工程与测试**

@@ -22,10 +22,10 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { inflateSync } from "node:zlib";
 
-import { AlertCenter, DEFAULTS, PopupRunner, createPlugin, inMuteRange, normalizeConfig } from "../lib/index.js";
+import { AlertCenter, DEFAULTS, PopupRunner, buildConfigSchema, createPlugin, inMuteRange, isVolatileRef, liveConfig, normalizeConfig } from "../lib/index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -210,6 +210,63 @@ check("调试落盘默认关闭", defaults.debugPayload === false, String(defaul
 check("调试落盘可打开并带路径", normalizeConfig({ debugPayload: true, debugFile: "C:\\temp\\x.jsonl" }).debugFile.endsWith("x.jsonl"));
 checkThrows("debugPayload 非布尔抛错", () => normalizeConfig({ debugPayload: "yes" }));
 checkThrows("debugFile 非字符串抛错", () => normalizeConfig({ debugFile: 1 }));
+
+/** 1.6 实时配置：设置界面改完立刻生效 ---- */
+// 照抄 dsh-settings/lib/types/schema.js 的 volatileForm 规则：只有 volatile 字段会被收进设置表单
+function volatileFormNames(schema) {
+	const names = Object.keys(schema.dict ?? {}).filter((key) => schema.dict[key].meta?.volatile === true);
+	if (schema.meta?.volatile) names.push("(self)");
+	for (const [key, node] of Object.entries(schema.dict ?? {})) {
+		if (node.meta?.volatile !== true && node.type === "object" && node.dict) {
+			if (Object.values(node.dict).some((child) => child.meta?.volatile === true)) names.push(key);
+		}
+	}
+	return names;
+}
+const WRITE = Symbol.for("cosmokit.volatile.write");
+const ref = (start) => {
+	let current = start;
+	return Object.freeze({ get: () => current, [WRITE]: (next) => { current = next; } });
+};
+const plainRaw = { enabled: true, staySeconds: 15, theme: "auto", kinds: { completed: true } };
+const plainLive = liveConfig(plainRaw);
+check("实时配置读到初始值", plainLive.staySeconds === 15 && plainLive.theme === "auto", `${plainLive.staySeconds}/${plainLive.theme}`);
+plainRaw.staySeconds = 30;
+plainRaw.theme = "light";
+check("配置对象被改后立刻读到新值", plainLive.staySeconds === 30 && plainLive.theme === "light", `${plainLive.staySeconds}/${plainLive.theme}`);
+plainRaw.staySeconds = 999;
+check("非法值沿用上一次可用的配置", plainLive.staySeconds === 30, String(plainLive.staySeconds));
+check("实时配置不污染 DEFAULTS", DEFAULTS.staySeconds === 15, String(DEFAULTS.staySeconds));
+
+const refRaw = { enabled: true, staySeconds: ref(15), theme: ref("auto"), kinds: { completed: ref(true), needs_choice: ref(true), failed: ref(true) } };
+const refLive = liveConfig(refRaw);
+check("volatile 引用被 deref 成普通值", refLive.staySeconds === 15 && refLive.kinds.failed === true, `${refLive.staySeconds}/${refLive.kinds.failed}`);
+refRaw.staySeconds[WRITE](42);
+refRaw.theme[WRITE]("dark");
+refRaw.kinds.failed[WRITE](false);
+check("宿主就地更新引用后立刻生效", refLive.staySeconds === 42 && refLive.theme === "dark" && refLive.kinds.failed === false,
+	`${refLive.staySeconds}/${refLive.theme}/${refLive.kinds.failed}`);
+
+const schemasteryDir = process.env.DSH_NUDGE_SCHEMASTERY;
+if (schemasteryDir) {
+	const z = (await import(pathToFileURL(join(schemasteryDir, "schemastery", "lib", "index.mjs")).href)).default;
+	const schema = buildConfigSchema(z);
+	const rebuilt = new z(schema.toJSON());
+	check("Config 是可重建的 schemastery schema", schema.type === "object" && rebuilt.type === "object", String(schema.type));
+	const volatileKeys = Object.entries(rebuilt.dict).filter(([, node]) => node.meta?.volatile).map(([key]) => key);
+	check("顶层 volatile 字段齐了", volatileKeys.length === 12, volatileKeys.join(","));
+	check("kinds 子字段各自 volatile", Object.values(rebuilt.dict.kinds.dict).every((node) => node.meta?.volatile === true));
+	check("popupScript 故意不 volatile", rebuilt.dict.popupScript.meta?.volatile !== true);
+	const form = volatileFormNames(rebuilt);
+	check("设置界面会收进表单", form.includes("theme") && form.includes("kinds"), form.join(","));
+	const [liveResolved] = z.resolve({ staySeconds: 15, theme: "auto" }, schema, {});
+	check("解析结果里 volatile 字段是引用", isVolatileRef(liveResolved.staySeconds));
+	const schemaLive = liveConfig(liveResolved);
+	liveResolved.staySeconds[WRITE](30);
+	check("schema 解析出的配置也立刻生效", schemaLive.staySeconds === 30, String(schemaLive.staySeconds));
+} else {
+	check("schema 断言已跳过（设 DSH_NUDGE_SCHEMASTERY 才跑）", true, "skipped");
+}
 
 /** 2. 静音时间段 ---- */
 const at = (h, m) => new Date(2026, 0, 1, h, m);

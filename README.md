@@ -40,6 +40,8 @@ DSH 的回合经常跑很久，或者卡在等你批准/回答上，而你切到
 | 回合或工具失败 | `turn/end` 的 `reason.kind === 'error'`、`tool/result` 报错 | 执行失败 |
 
 几张卡片同时到达时，1.2 秒合并窗口内的事件会合成一张，标题取最严重的那个，右上角显示累计条数。
+
+配置不用手改文件：`设置 → 插件 → nudge` 里能直接改停留时长、边距、三四类提醒开关、配色、静音时段，**改一项立刻生效**。
 子代理会话（`delegationDepth > 0` 或有 `parentSession`）不单独弹，避免每个子任务都响一次。
 
 ## 版本
@@ -137,7 +139,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 
 ## 配置
 
-配置写在 profile 的 `cordis.patch.yml` 里，按 id 覆盖本包的默认值：
+两个地方都能改，改完都立即生效：
+
+- **DSH 设置里改**（推荐）：`设置 → 插件 → nudge`。插件的 `Config` 是一份 Schemastery schema，
+  可改的字段都标了 `.volatile()`，宿主会把它们做成表单——改一项立刻生效，**不用重启**。
+  写回的是当前 profile 的 `cordis.patch.yml`，所以加一条 `- id: nudge` 的 YAML 覆盖也没问题，
+  两边看到的是同一份值。
+- **手改 profile 的 `cordis.patch.yml`**，按 id 覆盖本包的默认值（下面这份就是全部字段）：
 
 ```yaml
 - id: nudge
@@ -159,7 +167,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
       failed: true
 ```
 
-非法配置会在插件加载时报错（`staySeconds` 越界、`muteRanges` 格式不对等），不会静默失效。
+非法配置会在插件加载时报错（`staySeconds` 越界、`muteRanges` 格式不对等），不会静默失效；
+设置界面里填了非法值时，插件会继续沿用上一份能用的配置，不会因此把卡片全关掉。
+
+例外是 `popupScript`（弹窗脚本路径）：它**没**标 volatile，改它得重启 DSH——换脚本意味着换进程行为，
+不该在跑着的时候悄悄换掉。
 
 ## 视觉与排版
 
@@ -254,7 +266,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version 0.3.1
 ```
 
-它按顺序做：挑 node 跑语法检查与 119 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
+它按顺序做：挑 node 跑语法检查与 126 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
 「未发布」换成本版标题 → 更新本文件里的「当前版本」与版本一览表格 → 提交 → 打附注 tag → 把 `index.json`
 的 `versions[0]` 三字段指向这个提交并再提一条
 `chore(release): 索引指向 x.y.z 最终提交 (<hash>)` → `gh release create --latest` → push `main` 与 tag。
@@ -276,7 +288,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs      # 119 项全绿；CI 上跑的是 --no-live（108 项）
+& $node .\scripts\selftest.mjs      # 126 项全绿；CI 上跑的是 --no-live（115 项）
 ```
 
 三条硬要求，少一条装上就是坏的：
@@ -293,7 +305,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 | --- | --- | --- |
 | 本地 `file:` 依赖改了代码 | 重新 `install.ps1`（或插件页重装） | 要 |
 | 本地 `link:` 依赖改了代码 | 直接改 `lib/*` | 要 |
-| 只改配置（`config`） | 改 profile patch / 插件页开关 | 启用 HMR 时不用 |
+| 只改配置（`config`） | 设置 → 插件 → nudge 里改（写回 profile patch） | 不用，改一项立刻生效 |
+| 改 `popupScript` | 改 profile patch | 要（它故意不是 volatile） |
 | 发布新版 | 改 `version` → `npm publish` → 插件页「更新」 | 要 |
 | 回滚 | 装回旧版本，或恢复 `package.json.bak-<时间戳>` | 要 |
 
@@ -308,11 +321,11 @@ registry 安装是 `saveExact`（精确版本），不改版本号重装拿不�
 
 ```powershell
 $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe"
-& $node .\scripts\selftest.mjs              # 119 项，含真起窗口与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 108 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 126 项，含真起窗口与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 115 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
-当前 **119 项全绿**，覆盖：配置校验与默认值、静音时段（含跨零点）、事件合并计数、
+当前 **126 项全绿**，覆盖：配置校验与默认值、实时配置（设置里改完立即生效）、静音时段（含跨零点）、事件合并计数、
 严重度排序、三类开关、真起弹窗并收到 `{"type":"shown"}` 与右下角坐标、dispose 后无孤儿进程、
 三种状态各渲染一张 436px 宽快照，外加一张 4 条合并的清单快照（`screenshots/multi.png`，尺寸、非空与像素基线比对），以及一组源码静态约束——
 脚本必须纯 ASCII、项目名前不许出现图标字形、字号阶梯必须是「项目 > 任务 > 原因」、
@@ -360,7 +373,7 @@ dsh-nudge/
 ├─ scripts/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
-│  └─ selftest.mjs       119 项自测（`--no-live` 108 项、`--update-baseline` 重写像素基线）
+│  └─ selftest.mjs       126 项自测（`--no-live` 115 项、`--update-baseline` 重写像素基线）
 ├─ tools/
 │  ├─ release.ps1        一条命令发版（自测→版本号→tag→索引指针→Release→push）
 │  └─ snapshot-baseline.json  快照像素基线，改了版式要跟着重生
@@ -409,3 +422,14 @@ dsh-nudge/
 - **调试开关要能改配置，不只是环境变量**：`debugPayload` / `debugFile` 进了插件配置，
   真机复现「卡片显示了不相干文字」时，打开它就能拿到每次弹出的原始 payload，
   不用重启带环境变量的宿主。
+- **配置要能被设置界面收进去，`Config` 就得是 Schemastery schema**：`dsh-settings` 只认
+  「`Config` 有 `toJSON`、至少一个字段带 `.volatile()`、条目处于 active」的插件，命名空间取 entry 的 id，
+  然后渲染在侧栏「插件」页——不用自己写客户端 bundle。早先手写的 StandardSchema 能被 cordis 校验，
+  但 `toJSON` 一个都没有，所以设置里根本看不见。
+- **volatile 是「就地换引用」，插件不会被重新 apply**：宿主只把 `{ get(), [cosmokit.volatile.write] }`
+  里的值换掉，所以插件不能在自己 `apply` 时把配置拍成快照。现在的做法是 `createPlugin` 里换成
+  `liveConfig(raw)`——每次读属性才展开引用、重新校验，所以设置里改完立刻生效；填了非法值就沿用上一份
+  能用的配置，不至于因为手滑把一个字段写坏而整晚没提醒。
+- **`@deepseek-ai/schemastery` 不能硬依赖**：它在 npm 上，但插件作者的机器上不一定装（profile 里就没有），
+  而静态 `import` 解析不到会让模块求值直接失败。改成顶层 `await import(...)` + 失败回落手写校验器：
+  宿主里生成带 volatile 的 schema（能进设置），纯 node 跑自测时退回校验器。
