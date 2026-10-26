@@ -139,9 +139,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 
 ## 配置
 
-两个地方都能改，改完都立即生效：
+三个地方都能改，改完都立即生效：
 
-- **DSH 设置里改**（推荐）：`设置 → 插件 → nudge`。插件的 `Config` 是一份 Schemastery schema，
+- **插件自己的设置页**（推荐）：`设置 → 提醒弹窗`。这是本包的浏览器半身受（`client.js`），
+  分组摆好了开关、停留、配色、静音与调试项，改一项立刻生效，**不用重启**。
+- **`设置 → 插件 → nudge`**：宿主按 `Config` 里的 `.volatile()` 字段自动生成的表单，和设置页是同一份数据；
+  因为本包自带了设置页，已经用 `configure({ auto: false })` 把这份自动表单关掉了，免得两处重复。
+  （想让它出现，删掉 `lib/index.js` 里那句 `ctx.inject(["settings"], ...)` 即可。）
+  插件的 `Config` 是一份 Schemastery schema，
   可改的字段都标了 `.volatile()`，宿主会把它们做成表单——改一项立刻生效，**不用重启**。
   写回的是当前 profile 的 `cordis.patch.yml`，所以加一条 `- id: nudge` 的 YAML 覆盖也没问题，
   两边看到的是同一份值。
@@ -174,6 +179,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 
 例外是 `popupScript`（弹窗脚本路径）：它**没**标 volatile，改它得重启 DSH——换脚本意味着换进程行为，
 不该在跑着的时候悄悄换掉。
+
+### 设置页
+
+`设置 → 提醒弹窗`（排在「插件」页后面，`order: 20`）分了六组：
+
+| 分组 | 能改什么 |
+| --- | --- |
+| 总开关 | `enabled` |
+| 提醒哪几类 | `kinds.completed` / `needs_choice` / `failed` |
+| 什么时候弹 | `showWhenFocused`、`suppressWhenFullscreen`、`alertOnToolError` |
+| 样子与位置 | `theme`（auto/light/dark 下拉）、`staySeconds`、`margin`、`rememberPosition` |
+| 合并 | `mergeWindowMs`、`maxItems`、`muteRanges`（一行一段） |
+| 调试 | `debugPayload`、`debugFile` |
+
+它和插件的 `Config` 是同一份数据，写回 profile 的 `cordis.patch.yml`；页面只在宿主提供
+`slots` 与 `configForms` 两个服务时出现（`dsh.client.inject` 里声明了），浏览器半身在
+`/plugins/dsh-nudge/client.js`。
 
 ## 视觉与排版
 
@@ -271,7 +293,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version 0.3.1
 ```
 
-它按顺序做：挑 node 跑语法检查与 137 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
+它按顺序做：挑 node 跑语法检查与 152 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
 「未发布」换成本版标题 → 更新本文件里的「当前版本」与版本一览表格 → 提交 → 打附注 tag → 把 `index.json`
 的 `versions[0]` 三字段指向这个提交并再提一条
 `chore(release): 索引指向 x.y.z 最终提交 (<hash>)` → `gh release create --latest` → push `main` 与 tag。
@@ -293,7 +315,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs      # 137 项全绿；CI 上跑的是 --no-live（121 项）
+& $node .\scripts\selftest.mjs      # 152 项全绿；CI 上跑的是 --no-live（136 项）
 ```
 
 三条硬要求，少一条装上就是坏的：
@@ -326,17 +348,22 @@ registry 安装是 `saveExact`（精确版本），不改版本号重装拿不�
 
 ```powershell
 $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe"
-& $node .\scripts\selftest.mjs              # 137 项，含真起窗口与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 121 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 152 项，含真起窗口与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 136 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
-当前 **137 项全绿**，覆盖：配置校验与默认值、实时配置（设置里改完立即生效）、静音时段（含跨零点）、事件合并计数、
+当前 **152 项全绿**，覆盖：配置校验与默认值、实时配置（设置里改完立即生效）、静音时段（含跨零点）、事件合并计数、
 严重度排序、三类开关、真起弹窗并收到 `{"type":"shown"}` 与右下角坐标、dispose 后无孤儿进程、
 三种状态各渲染一张 436px 宽快照，外加一张 4 条合并的清单快照（`screenshots/multi.png`，尺寸、非空与像素基线比对），以及一组源码静态约束——
 脚本必须纯 ASCII、项目名前不许出现图标字形、字号阶梯必须是「项目 > 任务 > 原因」、
 单卡槽位、剪贴板回报、全屏抑制的两道判断与调试开关不许被删。
 最后一组会**真跑两张卡**：A 占位拿到 `slot:"owner"`，B 上来后 A 收到 `closed/replaced`、
 B 标记 `slot:"replaced"`，验证「同一时刻只有一张卡」，顺带验证 payload 落盘。
+
+设置页那 15 项是**离线**跑的：用 `node:vm` 造一个假的 `window.__ModuleLoader__` 把 `client.js`
+加载起来，再用假 React 调它的 factory 与页面组件，断言「注册进 `settings.section`、id 是 `nudge`、
+顺序 20、导航标题是中文、六个分组与 16 个控件都在、写 `kinds.completed` 走多段路径并带 revision」。
+所以浏览器半身坏了不用真开 DSH 就能发现。
 
 快照有像素基线（`tools/snapshot-baseline.json`）：宽高必须一致，`distinct/dark/text/accent`
 允许 ±2%。改了版式、确认新样子是对的之后跑一次：
@@ -368,7 +395,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -STA -File .\lib\popup.ps1 `
 
 ```
 dsh-nudge/
-├─ package.json          插件包声明（dsh.bundle.patch 指向 cordis.patch.yml）
+├─ package.json          插件包声明（dsh.bundle.patch、dsh.client 指向浏览器半身）
+├─ client.js             浏览器半身：注册「设置 → 提醒弹窗」那一页（经典脚本，无需构建）
 ├─ index.json            市场索引（format 1）：版本号 + 钉死的 source.commit
 ├─ cordis.patch.yml      bundle patch：把插件插进 Host 的插件图
 ├─ CHANGELOG.md          逐版改动（版本号以这里为准）
@@ -378,7 +406,7 @@ dsh-nudge/
 ├─ scripts/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
-│  └─ selftest.mjs       137 项自测（`--no-live` 121 项、`--update-baseline` 重写像素基线）
+│  └─ selftest.mjs       152 项自测（`--no-live` 136 项、`--update-baseline` 重写像素基线）
 ├─ tools/
 │  ├─ release.ps1        一条命令发版（自测→版本号→tag→索引指针→Release→push）
 │  └─ snapshot-baseline.json  快照像素基线，改了版式要跟着重生
@@ -423,6 +451,16 @@ dsh-nudge/
   只按窗口贴角会让边框离屏幕边缘变成 `margin + 14`，看上去「没对齐」；所以窗口向右下多伸出 `ShadowPad`，把阴影交给屏幕边缘裁。
 - **版式不能只靠人眼盯**：快照的尺寸和像素统计固化在 `tools/snapshot-baseline.json`，
   改完版式忘了重生基线，自测直接红——比等 README 里的数字和实际图悄悄分叉强。
+- **浏览器半身不是 ESM，也不需要构建**：`client.js` 是一个包在
+  `window.__ModuleLoader__.load({ id, factory })` 里的经典脚本，宿主只负责把文件挂到
+  `/plugins/<包名>/client.js`；`require` 只能拿到共享模块表里的包（这里只要 `react`），
+  所以写成手写 `createElement`、不引 JSX、不引第三方库。想让 DSH 认它，`package.json` 得同时给
+  `exports["./client"]` 和 `dsh.client.platform: "web"`。
+- **设置页的写操作只有一条路**：`configForms` 的 `set(field, value)` 只吃单段路径，
+  `kinds.completed` 这种必须走 `mutate([{ op: "set", path: ["kinds", "completed"], value }], revision)`，
+  而且 revision 要用 `getSnapshot()` 里那份——写旧了会被设置服务当冲突拒掉。
+- **自带设置页就把自动表单关掉**：`ctx.settings.configure({ auto: false }, ctx.fiber)`，
+  否则「插件」页和「提醒弹窗」页会出现两份同样的表单，用户改哪份都糊涂。
 - **`$script:` 变量别和参数撞名**：主题状态最早写成 `$script:Theme`，而脚本本身有个 `-Theme` 参数，
   于是给 `$script:Theme` 赋值等于把参数改了，第二次解析时 CLI 的浅色反过来压住了 payload 的深色。
   改成 `$script:ThemeName` 才对。PowerShell 里给 `$script:x` 赋值，改的是同一个作用域里的 `$x`。

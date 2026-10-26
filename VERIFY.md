@@ -15,14 +15,14 @@ $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\nod
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs              # 137 项，含真起 helper 与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 121 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 152 项，含真起 helper 与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 136 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (137 checks)`，退出码 0（CI 上是 `121 checks`）。
+- selftest 输出 `ALL PASS (152 checks)`，退出码 0（CI 上是 `136 checks`）。
 
 证据（实测）：
 
@@ -36,7 +36,7 @@ PASS  位置文件里的点被沿用  --  {"placement":"remembered","placedLeft"
 PASS  越界位置回落到右下角  --  {"placement":"corner","placedLeft":2146,...}
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
 PASS  基线 completed 对得上  --  436x174 色 263/263 暗 72874/72874 亮 933/933 状态 352/352
-ALL PASS (137 checks)
+ALL PASS (152 checks)
 ```
 
 其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 —— 目标不是窗口贴角，
@@ -99,6 +99,35 @@ PASS  设置界面会收进表单  --  enabled,staySeconds,...,debugFile,kinds
 PASS  Config 是可重建的 schemastery schema  --  object
 PASS  schema 解析出的配置也立刻生效  --  30
 ```
+
+## 1.7 自带的设置页（不需要浏览器）
+
+```powershell
+& $node .\scripts\selftest.mjs --no-live   # 这一段纯离线，CI 也跑
+```
+
+浏览器半身是 `client.js`（经典脚本，包在 `window.__ModuleLoader__.load({ id, factory })` 里）。
+自测用 `node:vm` 造一个假的加载器 + 假 React（`useState` 直接返回初值、`useEffect` 空跑），
+把 factory 与页面组件都真调一遍，所以不需要开 DSH 也不需要浏览器。
+
+- 注册契约：`settings.section` / id `nudge`（= 配置命名空间）/ `order` 20（排在插件页 15 之后）/ 标题「提醒弹窗」。
+- 只依赖 `slots` 与 `configForms` 两个服务；`inject` 里就这两项。
+- 六个分组、16 个控件、开关全是 `checkbox`、配色是三个 `option` 的下拉、静音时段是预填 `22:00-08:00` 的 textarea。
+- 点「任务完成」必须写出 `[{ op: "set", path: ["kinds", "completed"], value: false }]`（多段路径）且 revision 用快照里那份。
+- `package.json` 同时有 `exports["./client"]` 与 `dsh.client.platform: "web"`；宿主侧有 `configure({ auto: false })`。
+
+证据（实测）：
+
+```
+PASS  设置页注册进 settings.section  --  settings.section
+PASS  设置页 id 用配置命名空间 nudge  --  nudge
+PASS  设置页排在插件页之后  --  20
+PASS  设置页控件数量  --  controls=16
+PASS  设置页写嵌套配置带 revision  --  [{"ops":[{"op":"set","path":["kinds","completed"],"value":false}],"revision":7}]
+PASS  宿主让设置服务别生成重复表单
+```
+
+装进 profile 后要看到这一页，得重启 DSH（`设置` 里多一项「提醒弹窗」）。
 
 ## 2. 三种状态的无头渲染（不需要屏幕）
 

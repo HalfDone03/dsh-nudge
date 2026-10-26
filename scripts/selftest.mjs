@@ -23,6 +23,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import vm from "node:vm";
 import { inflateSync } from "node:zlib";
 
 import { AlertCenter, DEFAULTS, PopupRunner, buildConfigSchema, createPlugin, inMuteRange, isVolatileRef, liveConfig, normalizeConfig } from "../lib/index.js";
@@ -893,6 +894,100 @@ const cfgLines = existsSync(cfgDumpFile) ? readFileSync(cfgDumpFile, "utf8").spl
 check("调试开关也能由插件配置打开", cfgLines.length >= 1 && cfgLines[0].includes("配置落盘"), `lines=${cfgLines.length}`);
 rmSync(cfgDumpFile, { force: true });
 }
+
+/**
+ * 8. 客户端设置页（浏览器半身）：用 node:vm 跑 client.js，不起浏览器 ----
+ */
+// 客户端插件是经典脚本，靠 window.__ModuleLoader__.load 注册 factory；这里造一个假的加载器
+// 与假 React（不实现真实更新循环），把 factory 与页面组件都跑一遍，断言注册契约与控件。
+const clientSource = readFileSync(join(root, "client.js"), "utf8");
+let clientDefinition;
+const clientContext = vm.createContext({
+	window: { __ModuleLoader__: { load: (definition) => { clientDefinition = definition; } } },
+	document: {
+		querySelector: () => null,
+		createElement: () => ({ dataset: {}, textContent: "" }),
+		head: { appendChild: () => {} },
+	},
+	console,
+});
+vm.runInContext(clientSource, clientContext, { filename: "client.js" });
+check("设置页用 __ModuleLoader__.load 注册", clientDefinition !== undefined);
+check("设置页 bundle id 是包名", clientDefinition?.id === "dsh-nudge", String(clientDefinition?.id));
+
+/** 假 React：足够跑函数组件，不实现更新循环。 */
+const fakeReact = {
+	createElement: (type, props, ...children) => ({
+		type,
+		props: { ...(props ?? {}), children: children.length === 0 ? props?.children : children.length === 1 ? children[0] : children },
+	}),
+	useState: (init) => [typeof init === "function" ? init() : init, () => {}],
+	useEffect: () => {},
+	useMemo: (build) => build(),
+	useRef: (init) => ({ current: init }),
+};
+const clientExports = clientDefinition.factory((name) => {
+	if (name === "react") return fakeReact;
+	if (name === "react-dom") return {};
+	throw new Error("unexpected module: " + name);
+});
+check("设置页导出 name/apply", clientExports.name === "dsh-nudge" && typeof clientExports.apply === "function");
+check("设置页只依赖 slots 与 configForms", clientExports.inject.join(",") === "slots,configForms", JSON.stringify(clientExports.inject));
+
+const clientConfig = {
+	...DEFAULTS,
+	kinds: { ...DEFAULTS.kinds },
+	muteRanges: ["22:00-08:00"],
+};
+const clientMutations = [];
+const clientForm = {
+	getSnapshot: () => ({ status: "ready", value: clientConfig, revision: 7, writable: true }),
+	subscribe: () => () => {},
+	mutate: (ops, revision) => { clientMutations.push({ ops, revision }); return Promise.resolve(true); },
+};
+let clientRegistration;
+const clientCtx = {
+	configForms: { get: (id) => (id === "nudge" ? clientForm : undefined) },
+	slots: {
+		inject: (name, register) => { register(); return () => {}; },
+		register: (options, Component) => { clientRegistration = { options, Component }; return () => {}; },
+	},
+};
+clientExports.apply(clientCtx);
+check("设置页注册进 settings.section", clientRegistration?.options?.name === "settings.section", clientRegistration?.options?.name);
+check("设置页 id 用配置命名空间 nudge", clientRegistration?.options?.id === "nudge", clientRegistration?.options?.id);
+check("设置页排在插件页之后", clientRegistration?.options?.order === 20, String(clientRegistration?.options?.order));
+check("设置页导航标题是中文", clientRegistration?.options?.label() === "提醒弹窗");
+
+const clientTree = clientRegistration.Component({ ...clientRegistration.options.inject() });
+const clientNodes = [];
+/** 摊平元素树；函数组件手动调用展开（假 React 不会自己渲染）。 */
+const walkClient = (node) => {
+	if (node === null || typeof node !== "object") return;
+	if (Array.isArray(node)) { for (const item of node) walkClient(item); return; }
+	clientNodes.push(node);
+	if (typeof node.type === "function") { walkClient(node.type(node.props)); return; }
+	walkClient(node.props?.children);
+};
+walkClient(clientTree);
+const clientTexts = clientNodes.map((node) => (typeof node.props?.children === "string" ? node.props.children : ""));
+const clientControls = clientNodes.filter((node) => ["input", "select", "textarea"].includes(node.type));
+check("设置页有三类提醒与主要分组", ["任务完成", "需要你选择", "执行失败", "配色", "停留秒数", "静音时段"].every((label) => clientTexts.includes(label)));
+check("设置页控件数量", clientControls.length >= 14, "controls=" + clientControls.length);
+check("设置页开关是 checkbox", clientControls.filter((node) => node.props.type === "checkbox").length >= 9);
+check("配色是三个选项的下拉", clientControls.some((node) => node.type === "select") && clientNodes.filter((node) => node.type === "option").length === 3);
+const clientSwitch = clientControls.find((node) => node.props["aria-label"] === "任务完成");
+clientSwitch.props.onChange({ target: { checked: false } });
+await Promise.resolve();
+check(
+	"设置页写嵌套配置带 revision",
+	JSON.stringify(clientMutations) === JSON.stringify([{ ops: [{ op: "set", path: ["kinds", "completed"], value: false }], revision: 7 }]),
+	JSON.stringify(clientMutations),
+);
+const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+check("package.json 声明了浏览器半身", pkg.exports["./client"] === "./client.js" && pkg.dsh.client?.platform === "web", JSON.stringify(pkg.dsh.client));
+const hostSource = readFileSync(join(root, "lib", "index.js"), "utf8");
+check("宿主让设置服务别生成重复表单", hostSource.includes("settings.configure({ auto: false }"));
 
 /**
  * 把子进程输出压成一行证据。
