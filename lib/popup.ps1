@@ -92,6 +92,14 @@ public static int[] MonitorBoundsOf(IntPtr monitor) {
     if (!GetMonitorInfo(monitor, ref info)) return null;
     return new int[] { info.rcMonitor.Left, info.rcMonitor.Top, info.rcMonitor.Right, info.rcMonitor.Bottom };
 }
+// Monitor that owns a physical point; used to check a remembered card rect still
+// lands on a screen before trusting it.
+public static int[] MonitorBoundsOfPoint(int x, int y) {
+    POINT pt = new POINT();
+    pt.X = x;
+    pt.Y = y;
+    return MonitorBoundsOf(MonitorFromPoint(pt, 2));
+}
 // Read-only shell query: is this a bad moment to interrupt (fullscreen app, slide
 // show, locked screen)? It only returns a state number; nothing is hooked or grabbed.
 [DllImport("shell32.dll")] public static extern int SHQueryUserNotificationState(out int state);
@@ -882,6 +890,65 @@ function Show-CardWindow {
     } catch { }
 }
 
+# ---------------- remembered position ----------------
+# Default placement is the bottom-right corner of the work area. If the user drags
+# or resizes the card, the physical rect it ended at is remembered, so the next
+# reminder comes back where they left it - but only while that spot still lands on a
+# monitor: unplugging the screen must not park the card outside the desktop.
+function Get-PlacementPath {
+    param([string]$Override)
+    if (-not [string]::IsNullOrWhiteSpace($Override)) { return $Override }
+    $base = [Environment]::GetFolderPath('LocalApplicationData')
+    if ([string]::IsNullOrWhiteSpace($base)) { return '' }
+    return (Join-Path (Join-Path $base 'dsh-nudge') 'placement.json')
+}
+
+function Read-Placement {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
+    try {
+        if (-not (Test-Path -LiteralPath $Path)) { return $null }
+        $data = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json
+        $left = [int]$data.left
+        $top = [int]$data.top
+        $bounds = [Native.Win]::MonitorBoundsOfPoint($left, $top)
+        if ($null -eq $bounds) { return $null }
+        # Keep at least a corner-ish sliver of the card reachable.
+        if ($left -lt $bounds[0] -or $left -gt ($bounds[2] - 80)) { return $null }
+        if ($top -lt $bounds[1] -or $top -gt ($bounds[3] - 60)) { return $null }
+        return @{ left = $left; top = $top }
+    } catch {
+        return $null
+    }
+}
+
+function Save-Placement {
+    param([IntPtr]$Handle, [string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return }
+    if ($Handle -eq [IntPtr]::Zero) { return }
+    try {
+        $rect = New-Object 'Native.Win+RECT'
+        if (-not [Native.Win]::GetWindowRect($Handle, [ref]$rect)) { return }
+        $dir = Split-Path -Parent $Path
+        if (-not [string]::IsNullOrWhiteSpace($dir) -and -not (Test-Path -LiteralPath $dir)) {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        }
+        $data = @{ left = $rect.Left; top = $rect.Top; width = ($rect.Right - $rect.Left); height = ($rect.Bottom - $rect.Top) }
+        Set-Content -LiteralPath $Path -Value (($data | ConvertTo-Json -Compress) + [Environment]::NewLine) -Encoding ASCII -NoNewline
+    } catch { }
+}
+
+# Anything the user moved by hand is worth remembering: the next card opens where
+# this one ended instead of jumping back to the corner.
+function Save-CurrentPlacement {
+    if (-not $script:rememberPosition) { return }
+    if ([string]::IsNullOrWhiteSpace($script:placementPath)) { return }
+    try {
+        $handle = (New-Object System.Windows.Interop.WindowInteropHelper $window).Handle
+        Save-Placement -Handle $handle -Path $script:placementPath
+    } catch { }
+}
+
 # ---------------- single-card slot ----------------
 # Only one card may be on screen at a time. Every DSH instance starts its own helper,
 # and every helper computes the same bottom-right corner, so a second card would land
@@ -1008,6 +1075,17 @@ if ($null -ne $payload) {
     $script:clipboardHeader = [string]$payload.clipboardHeader
     if ([string]::IsNullOrWhiteSpace($script:clipboardHeader)) { $script:clipboardHeader = 'DeepSeek Harness session alert' }
 
+    # Default placement is the work-area corner, but a card the user dragged or
+    # resized before comes back to that spot. The host owns the toggle and the file
+    # location, so this script never has to spell out a user path.
+    $script:rememberPosition = -not ($payload.rememberPosition -eq $false)
+    $script:placementPath = ''
+    $script:placement = $null
+    if ($script:rememberPosition) {
+        $script:placementPath = Get-PlacementPath -Override ([string]$payload.placementFile)
+        $script:placement = Read-Placement -Path $script:placementPath
+    }
+
     $card = New-Card $payload
     $size = Measure-Card $card
 
@@ -1071,8 +1149,12 @@ if ($null -ne $payload) {
     $script:marginPx = [int][Math]::Round($Margin * $scale)
     $script:scale = $scale
     # Convert the physical work area into the DIP space WPF positions windows in.
-    $window.Left = ($area[2] / $scale) - $window.Width - $Margin
-    $window.Top = ($area[3] / $scale) - $window.Height - $Margin
+    # The shadow halo is transparent and sits inside the window, so the window has to
+    # overshoot the corner by ShadowPad for the visible border to land exactly Margin
+    # away from the work-area edge.
+    $script:padPx = [int][Math]::Round($script:ShadowPad * $scale)
+    $window.Left = ($area[2] / $scale) - $window.Width - $Margin + $script:ShadowPad
+    $window.Top = ($area[3] / $scale) - $window.Height - $Margin + $script:ShadowPad
 
     $script:shownAt = [DateTime]::UtcNow
     $slide = New-Object System.Windows.Media.TranslateTransform 0, 10
@@ -1139,6 +1221,7 @@ if ($null -ne $payload) {
                     if (([Math]::Abs($point.X - $script:pressX) + [Math]::Abs($point.Y - $script:pressY)) -gt 4) {
                         $script:dragging = $true
                         try { $window.DragMove() } catch { }
+                        Save-CurrentPlacement
                         try { $timer.Stop(); $timer.Start() } catch { }
                     }
                 }
@@ -1170,6 +1253,7 @@ if ($null -ne $payload) {
                 [void][Native.Win]::ReleaseCapture()
                 [void][Native.Win]::SendMessage($handle, 0x00A1, [IntPtr]$code, [IntPtr]::Zero)
                 $script:resizing = $false
+                Save-CurrentPlacement
                 $script:pressActive = $false
                 try { $timer.Stop(); $timer.Start() } catch { }
             } catch { }
@@ -1271,10 +1355,19 @@ if ($null -ne $payload) {
                 $handle = (New-Object System.Windows.Interop.WindowInteropHelper $window).Handle
                 $rect = New-Object 'Native.Win+RECT'
                 if ([Native.Win]::GetWindowRect($handle, [ref]$rect)) {
-                    $targetLeft = $script:targetArea[2] - ($rect.Right - $rect.Left) - $script:marginPx
-                    $targetTop = $script:targetArea[3] - ($rect.Bottom - $rect.Top) - $script:marginPx
+                    if ($null -ne $script:placement) {
+                        # A spot the user picked by hand. Read-Placement already
+                        # dropped anything that no longer lands on a monitor.
+                        $targetLeft = [int]$script:placement.left
+                        $targetTop = [int]$script:placement.top
+                    } else {
+                        $targetLeft = $script:targetArea[2] - ($rect.Right - $rect.Left) - $script:marginPx + $script:padPx
+                        $targetTop = $script:targetArea[3] - ($rect.Bottom - $rect.Top) - $script:marginPx + $script:padPx
+                    }
                     $topmost = New-Object IntPtr -ArgumentList (-1)
                     [void][Native.Win]::SetWindowPos($handle, $topmost, $targetLeft, $targetTop, 0, 0, (0x0001 -bor 0x0010 -bor 0x0040))
+                    $script:placedLeft = [int]$targetLeft
+                    $script:placedTop = [int]$targetTop
                 }
             } catch { }
             $script:cardReady = $true
@@ -1291,7 +1384,7 @@ if ($null -ne $payload) {
             # Resolve the owner once here so a click never pays the lookup cost, and so
             # the status line can prove which process the card would focus.
             [void](Resolve-OwnerWindow)
-            Write-Status @{ type = 'shown'; count = [int]$payload.count; theme = $script:ThemeName; left = [int]$window.Left; top = [int]$window.Top; width = [int]$window.Width; height = [int]$window.Height; dpi = $script:DpiMode; scale = [double]$script:scale; marginPx = [int]$script:marginPx; owner = [int]$script:ownerPid; ownerSrc = $script:ownerSource; slot = $(if ($script:slotState.took) { 'replaced' } elseif ($script:slotState.owned) { 'owner' } else { 'parallel' }) }
+            Write-Status @{ type = 'shown'; count = [int]$payload.count; theme = $script:ThemeName; left = [int]$window.Left; top = [int]$window.Top; placedLeft = [int]$script:placedLeft; placedTop = [int]$script:placedTop; placement = $(if ($null -ne $script:placement) { 'remembered' } else { 'corner' }); width = [int]$window.Width; height = [int]$window.Height; dpi = $script:DpiMode; scale = [double]$script:scale; marginPx = [int]$script:marginPx; padPx = [int]$script:padPx; owner = [int]$script:ownerPid; ownerSrc = $script:ownerSource; slot = $(if ($script:slotState.took) { 'replaced' } elseif ($script:slotState.owned) { 'owner' } else { 'parallel' }) }
         })
     $window.Add_Closed({
             try { $script:replacePoll.Stop() } catch { }

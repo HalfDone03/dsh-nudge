@@ -15,27 +15,35 @@ $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\nod
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs              # 126 项，含真起 helper 与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 115 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 137 项，含真起 helper 与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 121 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (126 checks)`，退出码 0（CI 上是 `115 checks`）。
+- selftest 输出 `ALL PASS (137 checks)`，退出码 0（CI 上是 `121 checks`）。
 
 证据（实测）：
 
 ```
-PASS  helper 回报 shown  --  [{"width":412,"height":164,"type":"shown","slot":"owner","scale":1,"left":2132,"dpi":"per-monitor-v2","owner":8592,"count":2,"marginPx":16,"ownerSrc":"ancestor","top":1212}]
-PASS  卡片在屏幕右下半区  --  left=2132, top=1212, 412x164
+PASS  helper 回报 shown  --  [{"width":412,"height":164,"type":"shown","slot":"owner","scale":1,"left":2146,"placedLeft":2146,"placedTop":1226,"padPx":14,"top":1226,"placement":"corner","dpi":"per-monitor-v2","owner":23876,"count":1,"marginPx":16,"theme":"light","ownerSrc":"ancestor"}]
+PASS  卡片在屏幕右下半区  --  left=2146, top=1226, 412x164
+PASS  默认贴在右下角（不是记住的位置）  --  "corner"
+PASS  物理坐标与 WPF 坐标一致  --  placed=2146,1226 left=2146,top=1226
+PASS  可见边框按 margin 内缩（窗口多伸出阴影）  --  padPx=14, marginPx=16
+PASS  位置文件里的点被沿用  --  {"placement":"remembered","placedLeft":300,"placedTop":200,...}
+PASS  越界位置回落到右下角  --  {"placement":"corner","placedLeft":2146,...}
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
 PASS  基线 completed 对得上  --  436x174 色 263/263 暗 72874/72874 亮 933/933 状态 352/352
-ALL PASS (126 checks)
+ALL PASS (137 checks)
 ```
 
-其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 164 高 →
-`2560-412-16 = 2132`、`1392-164-16 = 1212`，正好贴在工作区右下角。
+其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 —— 目标不是窗口贴角，
+而是**可见边框**贴角。窗口带 14px 透明阴影 halo，所以窗口要向右下多伸出 `shadowPad`：
+`2560-412-16+14 = 2146`、`1392-164-16+14 = 1226`（本次实测卡片高 164），
+卡片边框于是落在 `2146+412-14 = 2544`（= 2560−16）与 `1226+164-14 = 1376`（= 1392−16）。
+装 16px 的旧版贴的是窗口，边框实际离边 30px，这就是「看着没对齐」的来源。
 
 ## 1.5 快照基线与 CI（不需要屏幕）
 
@@ -81,7 +89,7 @@ $env:DSH_NUDGE_SCHEMASTERY = "<含 schemastery 的 node_modules 目录>"
 ```
 
 - 只有 `toJSON` + 至少一个 `.volatile()` 字段 + 条目 active 的插件会进表单，命名空间取 entry 的 id（这里是 `nudge`）。
-- 顶层 12 个 volatile 字段 + `kinds` 三个子字段各自 volatile；`popupScript` **故意不 volatile**（换脚本要重启）。
+- 顶层 14 个 volatile 字段 + `kinds` 三个子字段各自 volatile；`popupScript` **故意不 volatile**（换脚本要重启）。
 - schema 默认值与 `DEFAULTS` 逐个一致；`theme` 的 `pattern` 拦得住 `rainbow`。
 
 证据（实测）：
@@ -115,8 +123,9 @@ PASS  schema 解析出的配置也立刻生效  --  30
 - 明细最多折叠到 6 行（`MaxHeight = 6 × LineHeight`，切在行边界上），窄卡片不会被超长报错撑爆。
 - 卡片外框跟随最严重的 kind 染色：failed `#4DE74C3C`、needs_choice `#45F5A623`、其余 `#2BFFFFFF`，扫一眼就知道出事了。
 - 不打扰：卡片是 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` 窗口，永不被激活、不进 Alt+Tab；纯点击不进入系统拖动循环（位移 >4px 才算拖动）；弹出后 320ms 内的点击被忽略；移进卡片会重置停留计时。
-- 定位：`MonitorFromWindow`（DSH 主窗口）→ `MonitorFromPoint`（光标）→ `SystemParameters.WorkArea` 三级退化，取 `rcWork` 右下角内缩 `margin`；实测本机 2560×1440、任务栏 48px、卡片 412×173 → `left=2132`、`top=1203`（=1392−173−16），与旧主屏逻辑在同一屏上结果一致。
-- DPI 量纲：`rcWork` 是物理像素而 WPF 的 `Left/Top` 是 DIP，所以 helper 先申请逐显示器 DPI 感知（`SetProcessDpiAwarenessContext(-4)` → `SetProcessDpiAwareness(2)` → `SetProcessDPIAware()` 三级降级），用目标屏 `GetDpiForMonitor` 缩放边距并把工作区折算成 DIP 做初定位，`Loaded` 后再按 `GetWindowRect` + `SetWindowPos` 用物理像素校正一次。100% 单屏下校正量恒为 0，实测坐标仍是 2132/1203。
+- 定位：`MonitorFromWindow`（DSH 主窗口）→ `MonitorFromPoint`（光标）→ `SystemParameters.WorkArea` 三级退化，取 `rcWork` 右下角内缩 `margin`；实测本机 2560×1440、任务栏 48px、卡片 412×164 → `left=2146`、`top=1226`（=1392−164−16+14），其中 `+14` 是把窗口的透明阴影推到屏幕边缘外，让**可见边框**正好落在 `margin` 上。
+- 记住位置：`Read-Placement` 读 `placement.json`，用 `MonitorBoundsOfPoint` 校验那个点是否还在某台显示器上；在就沿用它（状态行报 `placement: remembered`），不在就回落到右下角（`corner`）。`DragMove()` 与边界缩放循环返回后各调一次 `Save-Placement` 写回物理坐标。
+- DPI 量纲：`rcWork` 是物理像素而 WPF 的 `Left/Top` 是 DIP，所以 helper 先申请逐显示器 DPI 感知（`SetProcessDpiAwarenessContext(-4)` → `SetProcessDpiAwareness(2)` → `SetProcessDPIAware()` 三级降级），用目标屏 `GetDpiForMonitor` 缩放边距并把工作区折算成 DIP 做初定位，`Loaded` 后再按 `GetWindowRect` + `SetWindowPos` 用物理像素校正一次。100% 单屏下校正量恒为 0，`placedLeft/placedTop` 与 WPF 的 `left/top` 实测一致（2146/1226）。
 - 聚焦哪个实例：helper 的直接父进程是 Host，与 Electron 主进程同名但**没有窗口**，所以不能用
   「按名字取第一个有窗进程」（同时开两个 DSH 会聚焦错的实例）。改为 Toolhelp32 快照一次性拿
   pid→父 pid 表回溯祖先链，取最外层的同名有窗进程：实测链 `powershell(16416) → Host(13992)
@@ -180,7 +189,7 @@ B 之后收到: {"type":"closed","reason":"timeout"}
 ——卡片会被整批吞掉。修完用生产配置（`suppressWhenFullscreen: true`、前台是桌面）实测：
 
 ```
-{"width":412,"height":150,"type":"shown","slot":"owner","theme":"light",...}
+{"width":412,"height":164,"type":"shown","slot":"owner","theme":"light",...}
 {"type":"closed","reason":"timeout"}
 ```
 
@@ -208,7 +217,7 @@ foreground covers monitor = False           # 底部差 40px = 任务栏，正�
 未打补丁的原脚本在普通桌面照常弹出：
 
 ```
-{"width":412,"height":150,"type":"shown","slot":"owner",...}
+{"width":412,"height":164,"type":"shown","slot":"owner",...}
 {"type":"closed","reason":"timeout"}
 ```
 

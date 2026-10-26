@@ -151,7 +151,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 - id: nudge
   config:
     staySeconds: 15        # 卡片停留秒数，1..600，默认 15；待选择的卡片另按三倍算（不少于 30 秒）
-    margin: 16             # 距屏幕工作区右下角的边距，默认 16
+    margin: 16             # 卡片可见边框距工作区右下角的边距，默认 16（窗口的阴影会多伸出、贴边被裁掉）
+    rememberPosition: true # 你拖过或缩过之后记住那个位置，下一张卡片回到那里；默认开
+    placementFile: ''    # 位置记忆文件；留空 = %LOCALAPPDATA%\dsh-nudge\placement.json
     maxItems: 8            # 一张卡片最多列几条（1..20），超出显示「还有 N 条未展开」
     showWhenFocused: true  # DSH 在前台时也弹；设 false 则前台时不打扰
     suppressWhenFullscreen: true  # 前台是全屏应用（游戏/放映/演示）时整批不弹，默认开
@@ -236,7 +238,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 
 ## 交互
 
-- **可拖动、可缩放**：按住卡片拖动即可换位置；把鼠标移到四边或四角（光标会变成缩放箭头）拖动即可改大小，最小 260×118。卡片是透明的无边框窗口，所以缩放走的是 `ReleaseCapture` + `WM_NCLBUTTONDOWN`，交给系统原生缩放循环处理。
+- **可拖动、可缩放，并且记得住**：按住卡片拖动即可换位置；把鼠标移到四边或四角（光标会变成缩放箭头）拖动即可改大小，最小 260×118。
+  没动过的时候它贴着工作区右下角（`margin` 量的是**看得见的边框**，窗口的透明阴影会多伸出 14px 被屏幕边缘裁掉）；
+  一旦你拖过或缩过，新的物理坐标就记进 `%LOCALAPPDATA%\dsh-nudge\placement.json`，之后的卡片回到那个位置。
+  记的位置如果已经不在任何显示器上（拔了副屏、改了分辨率），自动回落到右下角；删掉那个文件即可恢复默认。卡片是透明的无边框窗口，所以缩放走的是 `ReleaseCapture` + `WM_NCLBUTTONDOWN`，交给系统原生缩放循环处理。
 - **内容自适应**：卡片宽度不再写死，文字、清单、项目标签都按当前可用宽度重新换行排版；拖大不会留白，拖小自动折行。
 - **一眼看清是哪摊活**：字最大的永远是项目文件夹名，其次是任务名，最后才是一句话的成败原因（`失败：…` / `待你选择：…` / `完成`）。多条提醒逐条三行排版，右侧竖排「完成 / 待你选择 / 失败 + 时间」。不加滚动条，卡片按内容长高，窗口最小高度也跟随内容。
 - **不打扰**：卡片不抢焦点、不抢鼠标——它是 `WS_EX_NOACTIVATE` 窗口，永不会被激活；只在指针真的移动超过 4px 时才开始拖动，纯点击不会进入系统拖动循环；弹出后 320ms 内落下的点击会被忽略。失败时整张卡的外框会泛红，扫一眼就知道出了事。
@@ -266,7 +271,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version 0.3.1
 ```
 
-它按顺序做：挑 node 跑语法检查与 126 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
+它按顺序做：挑 node 跑语法检查与 137 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
 「未发布」换成本版标题 → 更新本文件里的「当前版本」与版本一览表格 → 提交 → 打附注 tag → 把 `index.json`
 的 `versions[0]` 三字段指向这个提交并再提一条
 `chore(release): 索引指向 x.y.z 最终提交 (<hash>)` → `gh release create --latest` → push `main` 与 tag。
@@ -288,7 +293,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs      # 126 项全绿；CI 上跑的是 --no-live（115 项）
+& $node .\scripts\selftest.mjs      # 137 项全绿；CI 上跑的是 --no-live（121 项）
 ```
 
 三条硬要求，少一条装上就是坏的：
@@ -321,11 +326,11 @@ registry 安装是 `saveExact`（精确版本），不改版本号重装拿不�
 
 ```powershell
 $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe"
-& $node .\scripts\selftest.mjs              # 126 项，含真起窗口与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 115 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 137 项，含真起窗口与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 121 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
-当前 **126 项全绿**，覆盖：配置校验与默认值、实时配置（设置里改完立即生效）、静音时段（含跨零点）、事件合并计数、
+当前 **137 项全绿**，覆盖：配置校验与默认值、实时配置（设置里改完立即生效）、静音时段（含跨零点）、事件合并计数、
 严重度排序、三类开关、真起弹窗并收到 `{"type":"shown"}` 与右下角坐标、dispose 后无孤儿进程、
 三种状态各渲染一张 436px 宽快照，外加一张 4 条合并的清单快照（`screenshots/multi.png`，尺寸、非空与像素基线比对），以及一组源码静态约束——
 脚本必须纯 ASCII、项目名前不许出现图标字形、字号阶梯必须是「项目 > 任务 > 原因」、
@@ -373,7 +378,7 @@ dsh-nudge/
 ├─ scripts/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
-│  └─ selftest.mjs       126 项自测（`--no-live` 115 项、`--update-baseline` 重写像素基线）
+│  └─ selftest.mjs       137 项自测（`--no-live` 121 项、`--update-baseline` 重写像素基线）
 ├─ tools/
 │  ├─ release.ps1        一条命令发版（自测→版本号→tag→索引指针→Release→push）
 │  └─ snapshot-baseline.json  快照像素基线，改了版式要跟着重生
@@ -414,6 +419,8 @@ dsh-nudge/
 - **要写中文的 PowerShell 脚本得存成 UTF-8 with BOM**：5.1 会把无 BOM 的 UTF-8 当 ANSI 解，
   中文串会把它后面的引号吃掉，`Parser::ParseFile` 报一堆「意外的标记」。
   `lib/popup.ps1` 因此干脆保持纯 ASCII；`tools/release.ps1` 有中文提示，所以带 BOM。
+- **阴影是窗口的一部分，定位要按可见边框算**：卡片窗口是透明的，`ShadowPad = 14` 的 halo 让可见边框比窗口内缩 14px。
+  只按窗口贴角会让边框离屏幕边缘变成 `margin + 14`，看上去「没对齐」；所以窗口向右下多伸出 `ShadowPad`，把阴影交给屏幕边缘裁。
 - **版式不能只靠人眼盯**：快照的尺寸和像素统计固化在 `tools/snapshot-baseline.json`，
   改完版式忘了重生基线，自测直接红——比等 README 里的数字和实际图悄悄分叉强。
 - **`$script:` 变量别和参数撞名**：主题状态最早写成 `$script:Theme`，而脚本本身有个 `-Theme` 参数，

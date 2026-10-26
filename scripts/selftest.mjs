@@ -210,6 +210,10 @@ check("调试落盘默认关闭", defaults.debugPayload === false, String(defaul
 check("调试落盘可打开并带路径", normalizeConfig({ debugPayload: true, debugFile: "C:\\temp\\x.jsonl" }).debugFile.endsWith("x.jsonl"));
 checkThrows("debugPayload 非布尔抛错", () => normalizeConfig({ debugPayload: "yes" }));
 checkThrows("debugFile 非字符串抛错", () => normalizeConfig({ debugFile: 1 }));
+check("默认记住上次位置", defaults.rememberPosition === true, String(defaults.rememberPosition));
+check("位置文件默认留空（用 %LOCALAPPDATA%）", defaults.placementFile === "", JSON.stringify(defaults.placementFile));
+checkThrows("rememberPosition 非布尔抛错", () => normalizeConfig({ rememberPosition: "yes" }));
+checkThrows("placementFile 非字符串抛错", () => normalizeConfig({ placementFile: 1 }));
 
 /** 1.6 实时配置：设置界面改完立刻生效 ---- */
 // 照抄 dsh-settings/lib/types/schema.js 的 volatileForm 规则：只有 volatile 字段会被收进设置表单
@@ -254,7 +258,7 @@ if (schemasteryDir) {
 	const rebuilt = new z(schema.toJSON());
 	check("Config 是可重建的 schemastery schema", schema.type === "object" && rebuilt.type === "object", String(schema.type));
 	const volatileKeys = Object.entries(rebuilt.dict).filter(([, node]) => node.meta?.volatile).map(([key]) => key);
-	check("顶层 volatile 字段齐了", volatileKeys.length === 12, volatileKeys.join(","));
+	check("顶层 volatile 字段齐了", volatileKeys.length === 14, volatileKeys.join(","));
 	check("kinds 子字段各自 volatile", Object.values(rebuilt.dict.kinds.dict).every((node) => node.meta?.volatile === true));
 	check("popupScript 故意不 volatile", rebuilt.dict.popupScript.meta?.volatile !== true);
 	const form = volatileFormNames(rebuilt);
@@ -568,8 +572,35 @@ check("helper 回报 shown", shown, JSON.stringify(statuses));
 const shownStatus = statuses.find((status) => status.type === "shown");
 if (shownStatus !== undefined) {
 	check("卡片在屏幕右下半区", shownStatus.left >= shownStatus.width / 2 && shownStatus.top >= shownStatus.height / 2, `left=${shownStatus.left}, top=${shownStatus.top}, ${shownStatus.width}x${shownStatus.height}`);
+	check("默认贴在右下角（不是记住的位置）", shownStatus.placement === "corner", JSON.stringify(shownStatus.placement ?? null));
+	check("物理坐标与 WPF 坐标一致", Math.abs(shownStatus.placedLeft - shownStatus.left) <= 1 && Math.abs(shownStatus.placedTop - shownStatus.top) <= 1, `placed=${shownStatus.placedLeft},${shownStatus.placedTop} left=${shownStatus.left},top=${shownStatus.top}`);
+	check("可见边框按 margin 内缩（窗口多伸出阴影）", shownStatus.padPx > 0 && shownStatus.marginPx > 0, `padPx=${shownStatus.padPx}, marginPx=${shownStatus.marginPx}`);
 	check("卡片计数透传", shownStatus.count === 2, `count=${shownStatus.count}`);
 }
+// 位置记忆：预写一个 placement.json，卡片应该回到那个点而不是右下角。
+const placeDir = join(tmpdir(), "dsh-nudge-place-selftest");
+mkdirSync(placeDir, { recursive: true });
+const placeFile = join(placeDir, "placement.json");
+writeFileSync(placeFile, JSON.stringify({ left: 300, top: 200, width: 420, height: 180 }), "utf8");
+const placeStatuses = [];
+const placeRunner = new PopupRunner({ ...liveDefaults, staySeconds: 1, rememberPosition: true, placementFile: placeFile }, () => {}, { onStatus: (status) => placeStatuses.push(status) });
+placeRunner.show([{ kind: "completed", sessionId: "selftest-place", title: "记住位置", detail: "回到上次的位置", at: "21:22", count: 1 }]);
+const placeShown = await waitFor(() => placeStatuses.some((status) => status.type === "shown"), 12000);
+const placeStatus = placeStatuses.find((status) => status.type === "shown");
+check("位置文件里的点被沿用", placeShown && placeStatus?.placement === "remembered" && placeStatus?.placedLeft === 300 && placeStatus?.placedTop === 200, JSON.stringify(placeStatus ?? null));
+placeRunner.dispose();
+await new Promise((resolve) => setTimeout(resolve, 1200));
+// 文件里的点跑到屏幕外时必须回落右下角，否则卡片会永远看不见。
+writeFileSync(placeFile, JSON.stringify({ left: 99999, top: 99999, width: 420, height: 180 }), "utf8");
+const strayStatuses = [];
+const strayRunner = new PopupRunner({ ...liveDefaults, staySeconds: 1, rememberPosition: true, placementFile: placeFile }, () => {}, { onStatus: (status) => strayStatuses.push(status) });
+strayRunner.show([{ kind: "completed", sessionId: "selftest-place-stray", title: "越界位置", detail: "回落到右下角", at: "21:23", count: 1 }]);
+const strayShown = await waitFor(() => strayStatuses.some((status) => status.type === "shown"), 12000);
+const strayStatus = strayStatuses.find((status) => status.type === "shown");
+check("越界位置回落到右下角", strayShown && strayStatus?.placement === "corner", JSON.stringify(strayStatus ?? null));
+strayRunner.dispose();
+await new Promise((resolve) => setTimeout(resolve, 1200));
+rmSync(placeDir, { recursive: true, force: true });
 const child = runner.child;
 runner.dispose();
 // 被 kill 的进程 exitCode 为 null、signalCode 为 SIGTERM，两个都要看。
@@ -785,6 +816,15 @@ check("调试开关既能用环境变量也能用插件配置",
 	indexSource.includes("DSH_NUDGE_DEBUG_PAYLOAD") && indexSource.includes("DSH_NUDGE_DEBUG_FILE")
 		&& indexSource.includes("config.debugPayload === true") && indexSource.includes("config.debugFile"),
 	"env + config");
+check("弹窗脚本会读 rememberPosition / placementFile 并维护位置文件",
+	popupSource.includes("$payload.rememberPosition") && popupSource.includes("$payload.placementFile")
+		&& popupSource.includes("function Read-Placement") && popupSource.includes("function Save-Placement")
+		&& popupSource.includes("placement.json") && popupSource.includes("MonitorBoundsOfPoint"),
+	"placement plumbing");
+check("默认位置按可见边框对齐：窗口多伸出 ShadowPad",
+	popupSource.includes("- $Margin + $script:ShadowPad")
+		&& popupSource.includes("$script:padPx = [int][Math]::Round($script:ShadowPad * $scale)"),
+	"corner padding");
 
 /**
  * 7. 单卡互斥与 payload 落盘（--no-live 时跳过）----
