@@ -1,6 +1,6 @@
 {
   "name": "dsh-nudge",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "type": "module",
   "description": "DSH Nudge · 桌面轻推提醒：任务完成 / 需要你选择 / 执行失败时，在 Windows 桌面右下角弹一张置顶、不抢焦点的小卡片。",
   "keywords": [
