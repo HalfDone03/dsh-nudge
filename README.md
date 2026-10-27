@@ -271,7 +271,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 - **一眼看清是哪摊活**：字最大的永远是项目文件夹名，其次是任务名，最后才是一句话的成败原因（`失败：…` / `待你选择：…` / `完成`）。多条提醒逐条三行排版，右侧竖排「完成 / 待你选择 / 失败 + 时间」。不加滚动条，卡片按内容长高，窗口最小高度也跟随内容。
 - **不打扰**：卡片不抢焦点、不抢鼠标——它是 `WS_EX_NOACTIVATE` 窗口，永不会被激活；只在指针真的移动超过 4px 时才开始拖动，纯点击不会进入系统拖动循环；弹出后 320ms 内落下的点击会被忽略。失败时整张卡的外框会泛红，扫一眼就知道出了事。
 - **跟着你走**：卡片出现在 DSH 窗口所在的那块屏幕（取不到就退到光标所在屏，再退到主屏）；右键只关掉卡片，不切焦点、不写剪贴板。
-- **自动消失**：`staySeconds` 秒后淡出（到点关闭，无残留进程）。
+- **一张卡要多久**：进程启动到看得见约 560ms（PowerShell 自身启动就占 ~107ms）。原生类型只编译一次，
+  之后从 `%LOCALAPPDATA%\dsh-nudge\bin\native-<哈希>.dll` 读回来（191ms → 45ms）；WPF 程序集推迟到真要画卡时才加载，
+  被抑制时不碰；离屏快照从 776ms 降到约 450ms。想自己看每段耗时，加 `-Trace`：
+  `trace card 224ms` 这样的行会写到 **stderr**（stdout 留给宿主解析状态协议）。- **自动消失**：`staySeconds` 秒后淡出（到点关闭，无残留进程）。
 - **点一下**：把 DSH 窗口切到前台，并把提醒内容（标题 + 明细）放进剪贴板。
   DSH 的 Web GUI 是单页应用，没有「按会话 id 直达」的 URL，所以只能聚焦窗口 + 复制线索。
 - **同一时刻只有一张卡**：按用户会话挂一个命名互斥量（`Local\dsh-nudge-card`），新的一批提醒通过 `Local\dsh-nudge-replace` 事件请上一张退场（200ms 内响应），再接管右下角——多开几个 DSH 也不会叠一屏。拿不到命名对象时退回旧行为（每批一张卡），不会因此不弹。
@@ -296,7 +299,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version 0.3.1
 ```
 
-它按顺序做：挑 node 跑语法检查与 163 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
+它按顺序做：挑 node 跑语法检查与 166 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
 「未发布」换成本版标题 → 更新本文件里的「当前版本」与版本一览表格 → 提交 → 打附注 tag → 把 `index.json`
 的 `versions[0]` 三字段指向这个提交并再提一条
 `chore(release): 索引指向 x.y.z 最终提交 (<hash>)` → `gh release create --latest` → push `main` 与 tag。
@@ -318,7 +321,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs      # 163 项全绿；CI 上跑的是 --no-live（140 项）
+& $node .\scripts\selftest.mjs      # 166 项全绿；CI 上跑的是 --no-live（143 项）
 ```
 
 三条硬要求，少一条装上就是坏的：
@@ -351,11 +354,11 @@ registry 安装是 `saveExact`（精确版本），不改版本号重装拿不�
 
 ```powershell
 $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe"
-& $node .\scripts\selftest.mjs              # 163 项，含真起窗口与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 140 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 166 项，含真起窗口与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 143 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
-当前 **163 项全绿**，覆盖：配置校验与默认值、实时配置（设置里改完立即生效）、静音时段（含跨零点）、事件合并计数、
+当前 **166 项全绿**，覆盖：配置校验与默认值、实时配置（设置里改完立即生效）、静音时段（含跨零点）、事件合并计数、
 严重度排序、三类开关、真起弹窗并收到 `{"type":"shown"}` 与右下角坐标、dispose 后无孤儿进程、
 三种状态各渲染一张 436px 宽快照，外加一张 4 条合并的清单快照（`screenshots/multi.png`，尺寸、非空与像素基线比对），以及一组源码静态约束——
 脚本必须纯 ASCII、项目名前不许出现图标字形、字号阶梯必须是「项目 > 任务 > 原因」、
@@ -409,7 +412,7 @@ dsh-nudge/
 ├─ scripts/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
-│  └─ selftest.mjs       163 项自测（`--no-live` 140 项、`--update-baseline` 重写像素基线）
+│  └─ selftest.mjs       166 项自测（`--no-live` 143 项、`--update-baseline` 重写像素基线）
 ├─ tools/
 │  ├─ release.ps1        一条命令发版（自测→版本号→tag→索引指针→Release→push）
 │  └─ snapshot-baseline.json  快照像素基线，改了版式要跟着重生

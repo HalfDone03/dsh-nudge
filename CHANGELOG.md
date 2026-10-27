@@ -33,6 +33,18 @@
   位置如果已经不在任何显示器上就自动回落到右下角。配置项 `rememberPosition` / `placementFile`，`shown` 状态行新增
   `placement`（`corner` / `remembered`）、`placedLeft` / `placedTop` / `padPx`。
 
+**性能**
+
+- 原生类型（`Native.Win` 那堆 DllImport）只编译一次：第一次用 `Add-Type -OutputAssembly` 落到
+  `%LOCALAPPDATA%\dsh-nudge\bin\native-<源码哈希前 16 位>.dll`，之后每次用 `Assembly::LoadFile` 读回来。
+  每次弹卡都要重编译那道工序从 191ms 降到 45ms。
+- WPF 程序集推迟到真要把卡片画出来时才加载，顺手去掉了全脚本没用到的 `System.Drawing`；
+  被抑制（前台是全屏/静音时段/开关关掉）的那条路径完全不碰 WPF。
+- 新增 `-Trace`：把每段耗时（`payload` / `visible` / `card` / `measure` / `window` / `shown` / `closed`）
+  以 `trace <阶段> <毫秒>` 写到 **stderr**——stdout 是宿主解析的状态协议，不能混。
+- 实测（本机，2560×1440 / 100%）：清单快照 776ms → 约 450ms；一张真实卡片从进程启动到 `shown` 约 560ms，
+  其中 PowerShell 自身启动 ~107ms。剩下的大头是 WPF 冷启动（首张卡搭视觉树 ~224ms，同一个进程里第二张只要 ~1ms）。
+  要再往下压只能上「常驻 helper」，代价是一个常驻进程的内存。
 **修复**
 
 - 全屏抑制误伤「桌面」与「最大化窗口」：这两类窗口的矩形都铺满整块显示器，原来的矩形比较会把它们判成
@@ -47,11 +59,11 @@
   这些图不是效果图——是 `selftest` 用**同一个** WPF 渲染器在离屏窗口里画出来的快照，和真实弹出来的是同一套代码。
 - `screenshots/multi.png` 改成由 selftest 生成（新增 `multi` 快照：4 条提醒 / 3 个项目），并进像素基线；
   删掉三张旧版式的手工图 `single.png` / `single-choice.png` / `single-done.png`，免得图与版式各说一套。
-- 自测项 99 → 163（`--no-live` 时 140；再设 `DSH_NUDGE_SCHEMASTERY` 指向 schemastery 时 169，多出 6 条 schema 断言）：清单快照的三条断言 + 基线比对、浅色快照、7 条配色配置校验、
+- 自测项 99 → 166（`--no-live` 时 143；再设 `DSH_NUDGE_SCHEMASTERY` 指向 schemastery 时 172，多出 6 条 schema 断言）：清单快照的三条断言 + 基线比对、浅色快照、7 条配色配置校验、
   3 条配色/调试开关的源码断言、一条「桌面/任务栏/最大化窗口不算全屏」的源码断言，以及一条「调试开关能由插件配置打开」的实跑。
   基线里三态与清单显式钉成深色、`light.png` 单独一条（暗像素从 7 万多降到 817，确实换了一套底）。
 - 新增 7 条实时配置断言（读到初始值、改了就变、非法值不炸且沿用旧值、不污染 `DEFAULTS`、
-  volatile 引用被 deref、模拟宿主就地改引用后立刻生效）与 6 条 schema 断言（可重建、14 个顶层 volatile 字段、
+  volatile 引用被 deref、模拟宿主就地改引用后立刻生效）与 6 条 schema 断言（可重建、15 个顶层 volatile 字段、
   `kinds` 子字段各自 volatile、`popupScript` 不是 volatile、设置表单收得进去、schema 解析出的配置也立刻生效）。
 - 新增 15 条设置页断言，**离线**用 `node:vm` 跑 `client.js`（假 `__ModuleLoader__` + 假 React，不开浏览器）：
   bundle 注册 id、`inject` 只有 `slots`/`configForms`、注册进 `settings.section`、id 是 `nudge`、顺序 20、
@@ -110,6 +122,18 @@
   `DSH_NUDGE_DEBUG_FILE`（默认临时目录下 `dsh-nudge-payloads.jsonl`），事后能核对「卡片上到底写了什么」。
   写失败只留一条 debug 日志，绝不影响弹卡。
 
+**性能**
+
+- 原生类型（`Native.Win` 那堆 DllImport）只编译一次：第一次用 `Add-Type -OutputAssembly` 落到
+  `%LOCALAPPDATA%\dsh-nudge\bin\native-<源码哈希前 16 位>.dll`，之后每次用 `Assembly::LoadFile` 读回来。
+  每次弹卡都要重编译那道工序从 191ms 降到 45ms。
+- WPF 程序集推迟到真要把卡片画出来时才加载，顺手去掉了全脚本没用到的 `System.Drawing`；
+  被抑制（前台是全屏/静音时段/开关关掉）的那条路径完全不碰 WPF。
+- 新增 `-Trace`：把每段耗时（`payload` / `visible` / `card` / `measure` / `window` / `shown` / `closed`）
+  以 `trace <阶段> <毫秒>` 写到 **stderr**——stdout 是宿主解析的状态协议，不能混。
+- 实测（本机，2560×1440 / 100%）：清单快照 776ms → 约 450ms；一张真实卡片从进程启动到 `shown` 约 560ms，
+  其中 PowerShell 自身启动 ~107ms。剩下的大头是 WPF 冷启动（首张卡搭视觉树 ~224ms，同一个进程里第二张只要 ~1ms）。
+  要再往下压只能上「常驻 helper」，代价是一个常驻进程的内存。
 **修复**
 
 - 高 DPI / 多显示器定位：helper 改为逐显示器 DPI 感知（`SetProcessDpiAwarenessContext(-4)` →
@@ -155,6 +179,18 @@
 
 ## 0.2.1 — 2026-10-24
 
+**性能**
+
+- 原生类型（`Native.Win` 那堆 DllImport）只编译一次：第一次用 `Add-Type -OutputAssembly` 落到
+  `%LOCALAPPDATA%\dsh-nudge\bin\native-<源码哈希前 16 位>.dll`，之后每次用 `Assembly::LoadFile` 读回来。
+  每次弹卡都要重编译那道工序从 191ms 降到 45ms。
+- WPF 程序集推迟到真要把卡片画出来时才加载，顺手去掉了全脚本没用到的 `System.Drawing`；
+  被抑制（前台是全屏/静音时段/开关关掉）的那条路径完全不碰 WPF。
+- 新增 `-Trace`：把每段耗时（`payload` / `visible` / `card` / `measure` / `window` / `shown` / `closed`）
+  以 `trace <阶段> <毫秒>` 写到 **stderr**——stdout 是宿主解析的状态协议，不能混。
+- 实测（本机，2560×1440 / 100%）：清单快照 776ms → 约 450ms；一张真实卡片从进程启动到 `shown` 约 560ms，
+  其中 PowerShell 自身启动 ~107ms。剩下的大头是 WPF 冷启动（首张卡搭视觉树 ~224ms，同一个进程里第二张只要 ~1ms）。
+  要再往下压只能上「常驻 helper」，代价是一个常驻进程的内存。
 **修复**
 
 - `tool/result` 改按 `message.isError` 判断失败：普通工具错误不再漏报（`data.error` 只在 HarnessError 时出现）；明细优先取工具结果正文，而不是只显示错误码。

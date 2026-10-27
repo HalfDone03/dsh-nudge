@@ -261,7 +261,7 @@ if (schemasteryDir) {
 	const rebuilt = new z(schema.toJSON());
 	check("Config 是可重建的 schemastery schema", schema.type === "object" && rebuilt.type === "object", String(schema.type));
 	const volatileKeys = Object.entries(rebuilt.dict).filter(([, node]) => node.meta?.volatile).map(([key]) => key);
-	check("顶层 volatile 字段齐了", volatileKeys.length === 14, volatileKeys.join(","));
+	check("顶层 volatile 字段齐了（15 个，含预览与位置）", volatileKeys.length === 15 && volatileKeys.includes("debugPreview") && volatileKeys.includes("rememberPosition"), volatileKeys.join(","));
 	check("kinds 子字段各自 volatile", Object.values(rebuilt.dict.kinds.dict).every((node) => node.meta?.volatile === true));
 	check("popupScript 故意不 volatile", rebuilt.dict.popupScript.meta?.volatile !== true);
 	const form = volatileFormNames(rebuilt);
@@ -889,6 +889,23 @@ check("默认位置按可见边框对齐：窗口多伸出 ShadowPad",
 	popupSource.includes("- $Margin + $script:ShadowPad")
 		&& popupSource.includes("$script:padPx = [int][Math]::Round($script:ShadowPad * $scale)"),
 	"corner padding");
+check("原生类型只编译一次，之后从磁盘缓存 LoadFile",
+	popupSource.includes("function Get-NativeCachePath")
+		&& popupSource.includes("Assembly]::LoadFile")
+		&& popupSource.includes("-OutputAssembly")
+		&& popupSource.includes("native-"),
+	"native cache");
+check("WPF 程序集推迟到真画卡时才加载，且不再碰 System.Drawing",
+	popupSource.includes("function Initialize-UiRuntime")
+		&& popupSource.includes("$script:uiReady")
+		&& (popupSource.match(/-AssemblyName/g) || []).length === 3
+		&& !popupSource.includes("System.Drawing"),
+	"lazy ui");
+check("弹窗脚本能打阶段耗时：-Trace 写 stderr",
+	popupSource.includes("[switch]$Trace")
+		&& popupSource.includes("function Write-Trace")
+		&& popupSource.includes("[Console]::Error.WriteLine"),
+	"stage trace");
 
 /**
  * 7. 单卡互斥与 payload 落盘（--no-live 时跳过）----

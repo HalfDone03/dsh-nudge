@@ -15,14 +15,14 @@ $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\nod
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs              # 163 项，含真起 helper 与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 140 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 166 项，含真起 helper 与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 143 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (163 checks)`，退出码 0（CI 上是 `140 checks`）。
+- selftest 输出 `ALL PASS (166 checks)`，退出码 0（CI 上是 `143 checks`）。
 
 证据（实测）：
 
@@ -36,7 +36,7 @@ PASS  位置文件里的点被沿用  --  {"placement":"remembered","placedLeft"
 PASS  越界位置回落到右下角  --  {"placement":"corner","placedLeft":2146,...}
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
 PASS  基线 completed 对得上  --  436x174 色 263/263 暗 72874/72874 亮 933/933 状态 352/352
-ALL PASS (163 checks)
+ALL PASS (166 checks)
 ```
 
 其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 —— 目标不是窗口贴角，
@@ -128,6 +128,20 @@ PASS  宿主让设置服务别生成重复表单
 ```
 
 装进 profile 后要看到这一页，得重启 DSH（`设置` 里多一项「提醒弹窗」）。
+
+## 1.8 每张卡的开销（不需要会话）
+
+```powershell
+# 每段的毫秒数写在 stderr，stdout 留给宿主 parse 状态协议
+powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $env:TEMP\shot.png -PayloadB64 $payload -Theme dark -Trace
+```
+
+- 原生类型只编译一次：第一次 `Add-Type -OutputAssembly` 落到 `%LOCALAPPDATA%\dsh-nudge\bin\native-<哈希>.dll`，
+  之后 `Assembly::LoadFile` 读回来。`trace native-compiled 191ms` → `trace native-cached 45ms`。
+- WPF 程序集按需加载（`Initialize-UiRuntime`），并且不再加载用不到的 `System.Drawing`；被抑制的路径完全不碰 WPF。
+- 实测（本机 2560×1440 / 100%）：离屏快照 776ms → 450 / 449 / 446ms；真实卡片从进程启动到 `shown` 约 560ms
+  （`trace native-cached 45 / payload 64 / visible 26 / ui-runtime 6 / card 224 / measure 11 / window 44 / shown 141`）。
+- 剩下的大头是 WPF 冷启动：同进程内画第二张卡只要 ~1ms，所以首张卡那 224ms 是字体/文本布局的一次性开销。
 
 ## 2. 三种状态的无头渲染（不需要屏幕）
 

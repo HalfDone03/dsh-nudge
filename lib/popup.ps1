@@ -38,17 +38,40 @@ param(
     [string]$PayloadB64 = '',
     [int]$SnapshotWidth = 0,
     [switch]$Preview,
-    [string]$StopFile = ''
+    [string]$StopFile = '',
+    [switch]$Trace
 )
 
 $ErrorActionPreference = 'Stop'
 
-Add-Type -AssemblyName PresentationFramework
-Add-Type -AssemblyName PresentationCore
-Add-Type -AssemblyName WindowsBase
-Add-Type -AssemblyName System.Drawing
+# Startup cost is the whole story for a helper that lives one to fifteen seconds, so
+# the two expensive loads are split and made lazy:
+#   * the WPF stack (~90ms) is only needed once a card will really be built, so a
+#     suppressed batch (user is looking at the harness, a game is fullscreen, ...)
+#     never pays for it;
+#   * the Native type is compiled from source in every process by Add-Type (~55ms),
+#     so the compiled assembly is cached on disk and loaded instead.
+$script:traceSw = [System.Diagnostics.Stopwatch]::StartNew()
 
-Add-Type -Namespace Native -Name Win -MemberDefinition @'
+function Write-Trace {
+    param([string]$Stage)
+    if (-not $Trace) { return }
+    # stderr, not stdout: stdout carries the JSON status protocol the host parses.
+    try { [Console]::Error.WriteLine(('trace {0} {1}ms' -f $Stage, $script:traceSw.ElapsedMilliseconds)) } catch { }
+}
+
+function Initialize-UiRuntime {
+    if ($script:uiReady) { return }
+    Add-Type -AssemblyName PresentationFramework
+    Add-Type -AssemblyName PresentationCore
+    Add-Type -AssemblyName WindowsBase
+    $script:uiReady = $true
+    Write-Trace 'ui-runtime'
+}
+
+$script:uiReady = $false
+$script:nativeReady = $false
+$script:nativeSource = @'
 [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
 [DllImport("user32.dll")] public static extern IntPtr GetShellWindow();
 [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr hWnd);
@@ -172,6 +195,50 @@ public static int[] AncestorChain(uint startPid, int maxDepth) {
     return chain.ToArray();
 }
 '@
+
+# Keyed by a hash of the source above: change a DllImport line and the next helper
+# compiles fresh, so a stale DLL can never shadow the source. Every failure falls
+# back to compiling in memory, which is what the helper did before the cache.
+function Get-NativeCachePath {
+    param([string]$Source)
+    try {
+        $root = [Environment]::GetFolderPath('LocalApplicationData')
+        if ([string]::IsNullOrWhiteSpace($root)) { return '' }
+        $dir = Join-Path $root 'dsh-nudge\bin'
+        if (-not (Test-Path -LiteralPath $dir)) {
+            [void](New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop)
+        }
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes($Source)
+            $hash = ($sha.ComputeHash($bytes) | ForEach-Object { $_.ToString('x2') }) -join ''
+        } finally { $sha.Dispose() }
+        return (Join-Path $dir ('native-' + $hash.Substring(0, 16) + '.dll'))
+    } catch { return '' }
+}
+
+function Initialize-Native {
+    if ($script:nativeReady) { return }
+    $cache = Get-NativeCachePath -Source $script:nativeSource
+    if ($cache -ne '' -and (Test-Path -LiteralPath $cache)) {
+        try { [void][System.Reflection.Assembly]::LoadFile($cache) } catch { }
+        if (-not ('Native.Win' -as [type])) {
+            try { Add-Type -Path $cache -ErrorAction Stop } catch { }
+        }
+        if ('Native.Win' -as [type]) { $script:nativeReady = $true; Write-Trace 'native-cached'; return }
+    }
+    if ($cache -ne '') {
+        try {
+            Add-Type -Namespace Native -Name Win -MemberDefinition $script:nativeSource -OutputAssembly $cache -OutputType Library -ErrorAction Stop
+        } catch { }
+        if ('Native.Win' -as [type]) { $script:nativeReady = $true; Write-Trace 'native-compiled'; return }
+    }
+    Add-Type -Namespace Native -Name Win -MemberDefinition $script:nativeSource
+    $script:nativeReady = $true
+    Write-Trace 'native-compiled'
+}
+
+Initialize-Native
 
 function Enable-DpiAwareness {
     # Monitor work areas come back in physical pixels, but WPF positions windows in
@@ -1017,6 +1084,8 @@ if (-not [string]::IsNullOrWhiteSpace($Snapshot)) {
     }
     # The payload may pin its own theme; the CLI switch keeps the last word.
     Set-CardTheme (Resolve-Theme -Requested $Theme -FromPayload ([string]$payload.theme))
+    Initialize-UiRuntime
+    Write-Trace 'snapshot-ui'
     $cardWidth = if ($SnapshotWidth -gt 0) { $SnapshotWidth } else { $script:CardWidth }
     $card = New-Card $payload -Width $cardWidth
     $size = Measure-Card $card
@@ -1047,6 +1116,7 @@ if (-not [string]::IsNullOrWhiteSpace($Snapshot)) {
 # The plugin starts one helper per batch with the payload already known: show the
 # card, then exit when it is clicked or the stay timer fires. No stdin, no daemon.
 $payload = Resolve-Payload -B64 $PayloadB64 -File $PayloadFile
+Write-Trace 'payload'
 if ($null -ne $payload) {
     # Theme before the suppress checks: "shown"/"suppressed" both report it, and the
     # payload is the only place the plugin's config could say otherwise.
@@ -1105,8 +1175,12 @@ if ($null -ne $payload) {
         $script:placement = Read-Placement -Path $script:placementPath
     }
 
+    Write-Trace 'visible'
+    Initialize-UiRuntime
     $card = New-Card $payload
+    Write-Trace 'card'
     $size = Measure-Card $card
+    Write-Trace 'measure'
 
     $window = New-Object System.Windows.Window
     $window.WindowStyle = 'None'
@@ -1193,6 +1267,7 @@ if ($null -ne $payload) {
     # says otherwise, which is exactly what makes them usable as a size/position knob.
     $script:autoClose = -not $Preview
 
+    Write-Trace 'window'
     $script:shownAt = [DateTime]::UtcNow
     $slide = New-Object System.Windows.Media.TranslateTransform 0, 10
     $card.RenderTransform = $slide
@@ -1463,6 +1538,7 @@ if ($null -ne $payload) {
             # Resolve the owner once here so a click never pays the lookup cost, and so
             # the status line can prove which process the card would focus.
             [void](Resolve-OwnerWindow)
+            Write-Trace 'shown'
             Write-Status @{ type = 'shown'; count = [int]$payload.count; theme = $script:ThemeName; left = [int]$window.Left; top = [int]$window.Top; placedLeft = [int]$script:placedLeft; placedTop = [int]$script:placedTop; placement = $(if ($null -ne $script:placement) { 'remembered' } else { 'corner' }); width = [int]$window.Width; height = [int]$window.Height; dpi = $script:DpiMode; scale = [double]$script:scale; marginPx = [int]$script:marginPx; padPx = [int]$script:padPx; owner = [int]$script:ownerPid; ownerSrc = $script:ownerSource; slot = $(if ($script:slotState.took) { 'replaced' } elseif ($script:slotState.owned) { 'owner' } else { 'parallel' }) }
         })
     # By the time Closed runs the window handle is gone, so GetWindowRect cannot read
@@ -1479,6 +1555,7 @@ if ($null -ne $payload) {
             try { Save-CurrentPlacement } catch { }
             # One line on the way out tells the host how the card ended and whether the
             # batch actually reached the clipboard, which used to fail silently.
+            Write-Trace 'closed'
             $reason = if ($script:closeReason -ne '') { $script:closeReason } else { 'closed' }
             if ($reason -eq 'clicked') {
                 Write-Status @{ type = 'closed'; reason = $reason; clipboard = [bool]$script:clipboardOk; width = [int]$window.Width; height = [int]$window.Height; preview = [bool]$Preview }
