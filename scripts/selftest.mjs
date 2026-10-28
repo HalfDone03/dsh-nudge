@@ -217,6 +217,18 @@ checkThrows("rememberPosition 非布尔抛错", () => normalizeConfig({ remember
 checkThrows("placementFile 非字符串抛错", () => normalizeConfig({ placementFile: 1 }));
 check("预览开关默认关闭", defaults.debugPreview === false, String(defaults.debugPreview));
 checkThrows("debugPreview 非布尔抛错", () => normalizeConfig({ debugPreview: "yes" }));
+check("字体默认全是「用默认」",
+	Object.keys(DEFAULTS.typography).length === 8
+		&& Object.values(DEFAULTS.typography).every((role) => role.color === "" && role.size === 0),
+	JSON.stringify(DEFAULTS.typography));
+const typed = normalizeConfig({ typography: { title: { color: "#FFFF0000", size: 22 } } });
+check("字体可以只改一项，其余保持默认",
+	typed.typography.title.size === 22 && typed.typography.title.color === "#FFFF0000"
+		&& typed.typography.task.size === 0 && typed.typography.task.color === "",
+	JSON.stringify(typed.typography.title));
+checkThrows("字体颜色写法不对抛错", () => normalizeConfig({ typography: { title: { color: "red" } } }));
+checkThrows("字号越界抛错", () => normalizeConfig({ typography: { title: { size: 99 } } }));
+checkThrows("字体项不是对象抛错", () => normalizeConfig({ typography: { title: 1 } }));
 
 /** 1.6 实时配置：设置界面改完立刻生效 ---- */
 // 照抄 dsh-settings/lib/types/schema.js 的 volatileForm 规则：只有 volatile 字段会被收进设置表单
@@ -263,6 +275,10 @@ if (schemasteryDir) {
 	const volatileKeys = Object.entries(rebuilt.dict).filter(([, node]) => node.meta?.volatile).map(([key]) => key);
 	check("顶层 volatile 字段齐了（15 个，含预览与位置）", volatileKeys.length === 15 && volatileKeys.includes("debugPreview") && volatileKeys.includes("rememberPosition"), volatileKeys.join(","));
 	check("kinds 子字段各自 volatile", Object.values(rebuilt.dict.kinds.dict).every((node) => node.meta?.volatile === true));
+	check("typography 每类的颜色与字号各自 volatile",
+		Object.keys(rebuilt.dict.typography.dict).length === 8
+			&& Object.values(rebuilt.dict.typography.dict).every((role) => Object.values(role.dict).every((node) => node.meta?.volatile === true)),
+		Object.keys(rebuilt.dict.typography.dict).join(","));
 	check("popupScript 故意不 volatile", rebuilt.dict.popupScript.meta?.volatile !== true);
 	const form = volatileFormNames(rebuilt);
 	check("设置界面会收进表单", form.includes("theme") && form.includes("kinds"), form.join(","));
@@ -711,13 +727,14 @@ const payloads = {
 };
 
 /**
- * 跑一次 snapshot 渲染。
- * @param {string} kind 类型
+ * 用给定 payload 跑一次 snapshot 渲染（字体 A/B 用得上，不必进基线表）。
+ * @param {object} payload 卡片数据
  * @param {string} out 输出 PNG
+ * @param {number} [width] 强制宽度
  * @returns {Promise<{code: number, out: string}>} 结果
  */
-function renderSnapshot(kind, out, width = 0) {
-	const b64 = Buffer.from(JSON.stringify(payloads[kind]), "utf8").toString("base64");
+function renderPayload(payload, out, width = 0) {
+	const b64 = Buffer.from(JSON.stringify(payload), "utf8").toString("base64");
 	const extra = width > 0 ? ["-SnapshotWidth", String(width)] : [];
 	return new Promise((resolve) => {
 		const child = spawn("powershell.exe", [
@@ -740,6 +757,17 @@ function renderSnapshot(kind, out, width = 0) {
 		child.on("error", () => finish(-1));
 		child.on("exit", (code) => finish(code ?? -1));
 	});
+}
+
+/**
+ * 按基线表里的类型跑一次 snapshot。
+ * @param {string} kind 类型
+ * @param {string} out 输出 PNG
+ * @param {number} [width] 强制宽度
+ * @returns {Promise<{code: number, out: string}>} 结果
+ */
+function renderSnapshot(kind, out, width = 0) {
+	return renderPayload(payloads[kind], out, width);
 }
 
 const snapshotStats = {};
@@ -819,6 +847,34 @@ if (updateBaseline) {
 }
 
 /**
+ * 5.7 字体覆盖真的进卡片 ----
+ * 把标题改成 22 号纯红再画一张：卡片应当变高、红像素明显变多。
+ * 这张不进基线表（只在临时目录里画），所以不会污染 screenshots/。
+ */
+const typeDir = join(tmpdir(), "dsh-nudge-type-selftest");
+mkdirSync(typeDir, { recursive: true });
+const plainPng = join(typeDir, "plain.png");
+const bigPng = join(typeDir, "big.png");
+const plainResult = await renderPayload({ ...payloads.completed }, plainPng);
+const bigResult = await renderPayload({
+	...payloads.completed,
+	typography: { title: { color: "#FFFF0000", size: 22 } }
+}, bigPng);
+const readPng = (file) => (existsSync(file) ? readFileSync(file) : Buffer.alloc(0));
+const plainPngBytes = readPng(plainPng);
+const bigPngBytes = readPng(bigPng);
+const pngHeight = (bytes) => (bytes.length > 24 ? bytes.readUInt32BE(20) : 0);
+check("字体覆盖会改卡片高度",
+	plainResult.code === 0 && bigResult.code === 0 && pngHeight(bigPngBytes) > pngHeight(plainPngBytes),
+	`${pngHeight(plainPngBytes)} -> ${pngHeight(bigPngBytes)}`);
+const red = rgbOf("#FF0000");
+const plainRed = plainPngBytes.length > 24 ? pngStats(plainPngBytes, red).accent : 0;
+const bigRed = bigPngBytes.length > 24 ? pngStats(bigPngBytes, red).accent : 0;
+check("标题颜色覆盖生效（红像素变多）", bigPngBytes.length > 24 && bigRed > plainRed + 50,
+	`${plainRed} -> ${bigRed}`);
+rmSync(typeDir, { recursive: true, force: true });
+
+/**
  * 6. 源码静态约束 ----
  * 版式与协议里最容易悄悄回退的东西，用源码断言钉住：脚本必须保持纯 ASCII、
  * 项目名前面不能再出现图标字形、字号阶梯必须是「项目 > 任务 > 原因」，
@@ -830,12 +886,13 @@ check("popup.ps1 保持纯 ASCII", popupBytes.every((byte) => byte < 128),
 	`非 ASCII 字节 ${popupBytes.filter((byte) => byte > 127).length} 个`);
 check("popup.ps1 不再有图标字形", !popupSource.includes("0xE8B7") && !/[\u{1F300}-\u{1FAFF}]/u.test(popupSource),
 	popupSource.includes("0xE8B7") ? "still 0xE8B7" : "clean");
-check("项目名走 15.5，任务名走 12.5",
-	popupSource.includes("$contextText -Size 15.5") && popupSource.includes("$headlineText -Size 12.5")
-		&& popupSource.includes("$rowProject -Size 15"),
+check("字号阶梯还是「项目 > 任务 > 原因」，且都能被字体配置覆盖",
+	popupSource.includes("-Size (Get-FontSize 'project' 15.5)")
+		&& popupSource.includes("-Size (Get-FontSize 'task' 12.5)")
+		&& popupSource.includes("-Size (Get-FontSize 'project' 15)"),
 	"context/headline/row");
 check("清单行的项目名排在任务名前面",
-	popupSource.indexOf("$rowProject -Size 15") < popupSource.indexOf("$title = New-Text"),
+	popupSource.indexOf("-Size (Get-FontSize 'project' 15)") < popupSource.indexOf("$title = New-Text"),
 	"order");
 check("单卡槽位与替换事件都在", popupSource.includes("Local\\dsh-nudge-card") && popupSource.includes("Local\\dsh-nudge-replace"),
 	"Mutex + Event");
@@ -879,7 +936,14 @@ check("弹窗脚本靠 -Preview/-StopFile 常驻，宿主写 stop 文件才收�
 check("宿主侧预览靠 isPreviewing / stopPreview 控制，并且读 debugPreview",
 	indexSource.includes("isPreviewing()") && indexSource.includes("stopPreview()")
 	&& indexSource.includes("config.debugPreview === true")
-	&& indexSource.includes("this.previewEndedAt = Date.now()"));
+	&& indexSource.includes("this.previewRestart ? 0 : Date.now()"));
+check("弹窗脚本按 payload.typography 覆盖每一类文字",
+	popupSource.includes("function Resolve-Typography") && popupSource.includes("function Get-FontSize")
+	&& popupSource.includes("function Get-FontColor")
+	&& popupSource.includes("$script:Fonts = Resolve-Typography $payload.typography"));
+check("宿主把字体配置下发，并在预览时改字体就重画卡片",
+	indexSource.includes("typography: this.config.typography") && indexSource.includes("restartPreview()")
+	&& indexSource.includes("previewFonts"));
 check("弹窗脚本会读 rememberPosition / placementFile 并维护位置文件",
 	popupSource.includes("$payload.rememberPosition") && popupSource.includes("$payload.placementFile")
 		&& popupSource.includes("function Read-Placement") && popupSource.includes("function Save-Placement")
@@ -1064,6 +1128,38 @@ check(
 	JSON.stringify(clientMutations) === JSON.stringify([{ ops: [{ op: "set", path: ["kinds", "completed"], value: false }], revision: 7 }]),
 	JSON.stringify(clientMutations),
 );
+
+/** 再渲染一次设置页：改完 clientConfig 就能看到开关的影响（假表单每次 getSnapshot 都读最新值）。 */
+const renderClientPage = () => {
+	const tree = clientRegistration.Component({ ...clientRegistration.options.inject() });
+	const nodes = [];
+	const components = [];
+	const walk = (node) => {
+		if (node === null || typeof node !== "object") return;
+		if (Array.isArray(node)) { for (const item of node) walk(item); return; }
+		nodes.push(node);
+		if (typeof node.type === "function") { components.push({ type: node.type, props: node.props }); walk(node.type(node.props)); return; }
+		walk(node.props?.children);
+	};
+	walk(tree);
+	return { nodes, components };
+};
+const fontLabels = (nodes) => nodes.filter((node) => node.type === "input" && String(node.props["aria-label"] ?? "").endsWith("颜色"));
+check("预览关着时没有字体组", fontLabels(clientNodes).length === 0, `colors=${fontLabels(clientNodes).length}`);
+clientConfig.debugPreview = true;
+const typingPage = renderClientPage();
+const fontSizes = typingPage.nodes.filter((node) => node.type === "input" && node.props.type === "number" && String(node.props["aria-label"] ?? "").endsWith("字号"));
+check("开着预览时给出每一类文字的颜色与字号",
+	fontLabels(typingPage.nodes).length === 8 && fontSizes.length === 8,
+	`color=${fontLabels(typingPage.nodes).length} size=${fontSizes.length}`);
+const titleColorRow = typingPage.components.find((item) => item.type.name === "TextRow" && item.props.label === "标题颜色");
+check("字体行带写法说明", typeof titleColorRow?.props?.hint === "string" && titleColorRow.props.hint.includes("#RRGGBB"));
+clientMutations.length = 0;
+titleColorRow.props.onCommit("#FFFF0000");
+await Promise.resolve();
+check("字体改动写成三段路径并带 revision",
+	JSON.stringify(clientMutations) === JSON.stringify([{ ops: [{ op: "set", path: ["typography", "title", "color"], value: "#FFFF0000" }], revision: 7 }]),
+	JSON.stringify(clientMutations));
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 check("package.json 声明了浏览器半身", pkg.exports["./client"] === "./client.js" && pkg.dsh.client?.platform === "web", JSON.stringify(pkg.dsh.client));
 const hostSource = readFileSync(join(root, "lib", "index.js"), "utf8");

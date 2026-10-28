@@ -300,6 +300,46 @@ $script:CardRadius = 12
 $script:FontStack = 'Microsoft YaHei UI, Microsoft YaHei, Segoe UI, Arial'
 $script:IconFont = 'Segoe MDL2 Assets'
 
+# Typography overrides. The plugin ships one {color, size} pair per text
+# role; an empty colour or a zero size means "keep the built-in value",
+# so a card with no overrides renders exactly as before.
+$script:Fonts = @{}
+
+function Resolve-Typography {
+    param($Source)
+    $result = @{}
+    if ($null -eq $Source) { return $result }
+    foreach ($role in @('title', 'project', 'task', 'reason', 'status', 'time', 'more', 'footer')) {
+        $entry = $null
+        try { $entry = $Source.$role } catch { $entry = $null }
+        if ($null -eq $entry) { continue }
+        $size = 0.0
+        try { $size = [double]$entry.size } catch { $size = 0.0 }
+        if ($size -lt 0) { $size = 0.0 }
+        if ($size -gt 48) { $size = 48 }
+        $color = ''
+        try { $color = [string]$entry.color } catch { $color = '' }
+        $color = $color.Trim()
+        if ($size -le 0 -and [string]::IsNullOrEmpty($color)) { continue }
+        $result[$role] = @{ Size = $size; Color = $color }
+    }
+    return $result
+}
+
+function Get-FontSize {
+    param([string]$Role, [double]$Fallback)
+    $entry = $script:Fonts[$Role]
+    if ($null -ne $entry -and $entry.Size -gt 0) { return $entry.Size }
+    return $Fallback
+}
+
+function Get-FontColor {
+    param([string]$Role, [string]$Fallback)
+    $entry = $script:Fonts[$Role]
+    if ($null -ne $entry -and -not [string]::IsNullOrEmpty($entry.Color)) { return $entry.Color }
+    return $Fallback
+}
+
 # Palette: two surfaces (dark glass / light glass) sharing one token list, so
 # every colour below is referenced from here and switching theme never needs a
 # second code path. Values are filled in by Set-CardTheme before the first card
@@ -486,7 +526,7 @@ function New-CountPill {
     $pill.Margin = New-Object System.Windows.Thickness 8,0,0,0
     $pill.VerticalAlignment = 'Center'
     $pill.SnapsToDevicePixels = $true
-    $pill.Child = (New-Text -Text ([string]$Count) -Size 10 -Color $Accent -Weight 'SemiBold')
+    $pill.Child = (New-Text -Text ([string]$Count) -Size (Get-FontSize 'status' 10) -Color (Get-FontColor 'status' $Accent) -Weight 'SemiBold')
     return $pill
 }
 
@@ -526,14 +566,14 @@ function New-ItemRow {
     # leads on size alone, and the 16px the icon took is now text width.
     $rowProject = [string]$Item.rowProject
     if (-not [string]::IsNullOrWhiteSpace($rowProject)) {
-        $projectLabel = New-Text -Text $rowProject -Size 15 -Color $script:TextPrimary -Weight 'SemiBold'
+        $projectLabel = New-Text -Text $rowProject -Size (Get-FontSize 'project' 15) -Color (Get-FontColor 'project' $script:TextPrimary) -Weight 'SemiBold'
         $projectLabel.TextTrimming = 'CharacterEllipsis'
         $projectLabel.TextWrapping = 'NoWrap'
         $projectLabel.HorizontalAlignment = 'Left'
         [void]$stack.Children.Add($projectLabel)
     }
 
-    $title = New-Text -Text ("$($Item.title)$suffix") -Size 12.5 -Color $script:TextBody
+    $title = New-Text -Text ("$($Item.title)$suffix") -Size (Get-FontSize 'task' 12.5) -Color (Get-FontColor 'task' $script:TextBody)
     $title.TextTrimming = 'CharacterEllipsis'
     $title.TextWrapping = 'NoWrap'
     $title.HorizontalAlignment = 'Left'
@@ -548,7 +588,7 @@ function New-ItemRow {
     # already passes down (infinite height, finite width).
     $metaText = [string]$Item.detail
     if (-not [string]::IsNullOrWhiteSpace($metaText)) {
-        $detail = New-Text -Text $metaText -Size 10.5 -Color $script:TextMuted
+        $detail = New-Text -Text $metaText -Size (Get-FontSize 'reason' 10.5) -Color (Get-FontColor 'reason' $script:TextMuted)
         $detail.TextWrapping = 'Wrap'
         $detail.LineHeight = 15
         $detail.LineStackingStrategy = 'BlockLineHeight'
@@ -573,11 +613,11 @@ function New-ItemRow {
     $timeBox.Margin = New-Object System.Windows.Thickness 10,1,0,0
     $kindWord = [string]$Item.rowKind
     if (-not [string]::IsNullOrWhiteSpace($kindWord)) {
-        $kindText = New-Text -Text $kindWord -Size 9.5 -Color $accent
+        $kindText = New-Text -Text $kindWord -Size (Get-FontSize 'status' 9.5) -Color (Get-FontColor 'status' $accent)
         $kindText.HorizontalAlignment = 'Right'
         [void]$timeBox.Children.Add($kindText)
     }
-    $time = New-Text -Text ([string]$Item.at) -Size 10 -Color $script:TextGhost
+    $time = New-Text -Text ([string]$Item.at) -Size (Get-FontSize 'time' 10) -Color (Get-FontColor 'time' $script:TextGhost)
     $time.HorizontalAlignment = 'Right'
     $time.Margin = New-Object System.Windows.Thickness 0,1,0,0
     [void]$timeBox.Children.Add($time)
@@ -668,7 +708,7 @@ function New-Card {
     $badge.VerticalAlignment = 'Center'
     [System.Windows.Controls.Grid]::SetColumn($badge, 0)
     [void]$titleLine.Children.Add($badge)
-    $labelText = New-Text -Text ([string]$Payload.label) -Size 14 -Color $script:TextPrimary -Weight 'SemiBold'
+    $labelText = New-Text -Text ([string]$Payload.label) -Size (Get-FontSize 'title' 14) -Color (Get-FontColor 'title' $script:TextPrimary) -Weight 'SemiBold'
     $labelText.TextTrimming = 'CharacterEllipsis'
     $labelText.TextWrapping = 'NoWrap'
     $labelText.VerticalAlignment = 'Center'
@@ -687,7 +727,7 @@ function New-Card {
     if ($items.Count -gt 0) { $newest = [string]$items[0].at }
     if ([string]::IsNullOrWhiteSpace($newest)) { $newest = [string]$Payload.at }
     if (-not [string]::IsNullOrWhiteSpace($newest)) {
-        $headTime = New-Text -Text $newest -Size 10 -Color $script:TextFaint
+        $headTime = New-Text -Text $newest -Size (Get-FontSize 'time' 10) -Color (Get-FontColor 'time' $script:TextFaint)
         $headTime.VerticalAlignment = 'Center'
         $headTime.Margin = New-Object System.Windows.Thickness 8,0,0,0
         [System.Windows.Controls.Grid]::SetColumn($headTime, 1)
@@ -702,7 +742,7 @@ function New-Card {
     # and an icon-font square in front of it just read as a box and stole width.
     $contextText = [string]$Payload.context
     if ($items.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($contextText)) {
-        $contextLabel = New-Text -Text $contextText -Size 15.5 -Color $script:TextPrimary -Weight 'SemiBold'
+        $contextLabel = New-Text -Text $contextText -Size (Get-FontSize 'project' 15.5) -Color (Get-FontColor 'project' $script:TextPrimary) -Weight 'SemiBold'
         $contextLabel.TextTrimming = 'CharacterEllipsis'
         $contextLabel.TextWrapping = 'NoWrap'
         $contextLabel.HorizontalAlignment = 'Left'
@@ -713,7 +753,7 @@ function New-Card {
     # One rung down: which task inside that project.
     $headlineText = [string]$Payload.headline
     if (-not [string]::IsNullOrWhiteSpace($headlineText)) {
-        $headlineBlock = New-Text -Text $headlineText -Size 12.5 -Color $script:TextBody
+        $headlineBlock = New-Text -Text $headlineText -Size (Get-FontSize 'task' 12.5) -Color (Get-FontColor 'task' $script:TextBody)
         $headlineBlock.TextWrapping = 'Wrap'
         $headlineBlock.TextTrimming = 'CharacterEllipsis'
         $headlineBlock.LineHeight = 18
@@ -741,13 +781,13 @@ function New-Card {
             # word alone reads fine, with a colon and nothing after it it does not.
             $verdictLabelText = $verdictKind
             if (-not [string]::IsNullOrWhiteSpace($verdictText)) { $verdictLabelText = $verdictKind + [string][char]0xFF1A }
-            $verdictLabel = New-Text -Text $verdictLabelText -Size 10.5 -Color (Get-KindAccent ([string]$Payload.kind)) -Weight 'SemiBold'
+            $verdictLabel = New-Text -Text $verdictLabelText -Size (Get-FontSize 'status' 10.5) -Color (Get-FontColor 'status' (Get-KindAccent ([string]$Payload.kind))) -Weight 'SemiBold'
             $verdictLabel.VerticalAlignment = 'Top'
             [System.Windows.Controls.Grid]::SetColumn($verdictLabel, 0)
             [void]$verdictRow.Children.Add($verdictLabel)
         }
         if (-not [string]::IsNullOrWhiteSpace($verdictText)) {
-            $verdictBody = New-Text -Text $verdictText -Size 10.5 -Color $script:VerdictText
+            $verdictBody = New-Text -Text $verdictText -Size (Get-FontSize 'reason' 10.5) -Color (Get-FontColor 'reason' $script:VerdictText)
             $verdictBody.TextWrapping = 'Wrap'
             $verdictBody.TextTrimming = 'CharacterEllipsis'
             $verdictBody.LineHeight = 15
@@ -791,14 +831,14 @@ function New-Card {
 
     $more = [string]$Payload.more
     if (-not [string]::IsNullOrWhiteSpace($more)) {
-        $moreText = New-Text -Text $more -Size 10.5 -Color $script:MoreText
+        $moreText = New-Text -Text $more -Size (Get-FontSize 'more' 10.5) -Color (Get-FontColor 'more' $script:MoreText)
         $moreText.Margin = New-Object System.Windows.Thickness 0,8,0,0
         [void]$body.Children.Add($moreText)
     }
 
     $footerText = [string]$Payload.footer
     if (-not [string]::IsNullOrWhiteSpace($footerText)) {
-        $footer = New-Text -Text $footerText -Size 10 -Color $script:FooterText
+        $footer = New-Text -Text $footerText -Size (Get-FontSize 'footer' 10) -Color (Get-FontColor 'footer' $script:FooterText)
         $footer.Margin = New-Object System.Windows.Thickness 0,12,0,0
         [void]$body.Children.Add($footer)
     }
@@ -1084,6 +1124,7 @@ if (-not [string]::IsNullOrWhiteSpace($Snapshot)) {
     }
     # The payload may pin its own theme; the CLI switch keeps the last word.
     Set-CardTheme (Resolve-Theme -Requested $Theme -FromPayload ([string]$payload.theme))
+    $script:Fonts = Resolve-Typography $payload.typography
     Initialize-UiRuntime
     Write-Trace 'snapshot-ui'
     $cardWidth = if ($SnapshotWidth -gt 0) { $SnapshotWidth } else { $script:CardWidth }
@@ -1121,6 +1162,7 @@ if ($null -ne $payload) {
     # Theme before the suppress checks: "shown"/"suppressed" both report it, and the
     # payload is the only place the plugin's config could say otherwise.
     Set-CardTheme (Resolve-Theme -Requested $Theme -FromPayload ([string]$payload.theme))
+    $script:Fonts = Resolve-Typography $payload.typography
 
     if ($SuppressWhenForeground -and (Test-ForegroundIsDs)) {
         Write-Status @{ type = 'suppressed'; reason = 'foreground'; state = 0; theme = $script:ThemeName }

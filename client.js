@@ -17,6 +17,17 @@ window.__ModuleLoader__.load({
 
 		/** Host 侧 Loader 条目 id，配置命名空间与它一致。 */
 		const ENTRY = "nudge";
+		/** 每一类文字：[配置里的名字, 页面上的名字, 一句说明]。顺序决定页面上控件的顺序。 */
+		const FONT_ROLES = [
+			["title", "标题", "顶行右侧那句「会话提醒」"],
+			["project", "项目名", "卡片最醒目的那一行"],
+			["task", "任务名", "每条提醒的标题行"],
+			["reason", "原因", "标题下面那行小字"],
+			["status", "状态词", "完成 / 待你选择 / 失败"],
+			["time", "时间", "右上角和每条右侧的时刻"],
+			["more", "展开提示", "「还有 N 条未展开」"],
+			["footer", "底部提示", "「点击卡片回到 DeepSeek Harness」"],
+		];
 		/** 设置页注册的 slot 类型。 */
 		const SECTION = "settings.section";
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
@@ -455,6 +466,40 @@ window.__ModuleLoader__.load({
 						onCommit: (next) => write("muteRanges", next),
 					}),
 				]),
+
+				// 字体只在开着预览时出现：没有常驻卡片当靶子，改字号全靠猜。
+				bool("debugPreview")
+					? h("div", { className: "dsh-nudge-group", key: "type" }, [
+							h("p", { className: "dsh-nudge-group-title", key: "title" }, "每一项的字号和颜色"),
+							h(
+								"p",
+								{ className: "dsh-nudge-intro", key: "hint" },
+								"只有开着预览弹窗才显示这一组：改一格，卡片会重画一次，能立刻看到效果。留空 / 0 表示用默认。",
+							),
+							...FONT_ROLES.flatMap(([role, label, hint]) => [
+								h(TextRow, {
+									key: role + "-color",
+									label: label + "颜色",
+									hint: hint + "；写 #RRGGBB 或 #AARRGGBB，留空跟随主题。",
+									value: text("typography." + role + ".color"),
+									placeholder: "留空跟随主题",
+									disabled,
+									onCommit: (next) => write("typography." + role + ".color", next),
+								}),
+								h(NumberRow, {
+									key: role + "-size",
+									label: label + "字号",
+									hint: "0 表示默认；常用范围 9–18。",
+									value: num("typography." + role + ".size"),
+									min: 0,
+									max: 48,
+									step: 0.5,
+									disabled,
+									onCommit: (next) => write("typography." + role + ".size", next),
+								}),
+							]),
+						])
+					: null,
 
 				h("div", { className: "dsh-nudge-group", key: "debug" }, [
 					h("p", { className: "dsh-nudge-group-title", key: "title" }, "调试"),

@@ -170,6 +170,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
     debugPayload: false    # 调试开关：true 时把每次弹出的 payload 追加落盘
     debugFile: ''          # 落盘文件；留空 = %TEMP%\dsh-nudge-payloads.jsonl
     debugPreview: false    # 预览：true 时卡片常驻，可以拖动缩放，关掉时把位置和大小记住
+    typography:            # 每一类文字的字号与颜色；留空 / 0 用主题默认（设置页里只在预览开着时显示这一组）
+      title: { color: '', size: 0 }    # 标题
+      project: { color: '', size: 0 }  # 项目名
+      task: { color: '', size: 0 }     # 任务名
+      reason: { color: '', size: 0 }   # 明细 / 原因
+      status: { color: '', size: 0 }   # 状态词与计数胶囊
+      time: { color: '', size: 0 }     # 时间
+      more: { color: '', size: 0 }     # 展开提示
+      footer: { color: '', size: 0 }   # 底部提示
     kinds:                 # 三类提醒各自开关
       completed: true
       needs_choice: true
@@ -193,7 +202,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 | 什么时候弹 | `showWhenFocused`、`suppressWhenFullscreen`、`alertOnToolError` |
 | 样子与位置 | `theme`（auto/light/dark 下拉）、`staySeconds`、`margin`、`rememberPosition` |
 | 合并 | `mergeWindowMs`、`maxItems`、`muteRanges`（一行一段） |
+| 每一项字体 | `typography.<角色>.color` 与 `.size`，8 类文字各一组（**只在预览弹窗打开时出现**） |
 | 调试 | `debugPayload`、`debugFile`、`debugPreview`（预览弹窗） |
+
+「每一项字体」这一组只在「预览弹窗」打开时出现：没有一张常驻的卡片当靶子，调字号只能靠猜。
+改完对**所有**卡片生效，预览卡会当场重画一次（重画不加那 3 秒冷却），所以你改一格就能看到效果。
 
 它和插件的 `Config` 是同一份数据，写回 profile 的 `cordis.patch.yml`；页面只在宿主提供
 `slots` 与 `configForms` 两个服务时出现（`dsh.client.inject` 里声明了），浏览器半身在
@@ -300,7 +313,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version 0.3.1
 ```
 
-它按顺序做：挑 node 跑语法检查与 166 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
+它按顺序做：挑 node 跑语法检查与 179 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
 「未发布」换成本版标题 → 更新本文件里的「当前版本」与版本一览表格 → 提交 → 打附注 tag → 把 `index.json`
 的 `versions[0]` 三字段指向这个提交并再提一条
 `chore(release): 索引指向 x.y.z 最终提交 (<hash>)` → `gh release create --latest` → push `main` 与 tag。
@@ -322,7 +335,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs      # 166 项全绿；CI 上跑的是 --no-live（143 项）
+& $node .\scripts\selftest.mjs      # 179 项全绿；CI 上跑的是 --no-live（156 项）
 ```
 
 三条硬要求，少一条装上就是坏的：
@@ -355,11 +368,11 @@ registry 安装是 `saveExact`（精确版本），不改版本号重装拿不�
 
 ```powershell
 $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe"
-& $node .\scripts\selftest.mjs              # 166 项，含真起窗口与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 143 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 179 项，含真起窗口与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 156 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
-当前 **166 项全绿**，覆盖：配置校验与默认值、实时配置（设置里改完立即生效）、静音时段（含跨零点）、事件合并计数、
+当前 **179 项全绿**，覆盖：配置校验与默认值、实时配置（设置里改完立即生效）、静音时段（含跨零点）、事件合并计数、
 严重度排序、三类开关、真起弹窗并收到 `{"type":"shown"}` 与右下角坐标、dispose 后无孤儿进程、
 三种状态各渲染一张 436px 宽快照，外加一张 4 条合并的清单快照（`screenshots/multi.png`，尺寸、非空与像素基线比对），以及一组源码静态约束——
 脚本必须纯 ASCII、项目名前不许出现图标字形、字号阶梯必须是「项目 > 任务 > 原因」、
@@ -413,7 +426,7 @@ dsh-nudge/
 ├─ scripts/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
-│  └─ selftest.mjs       166 项自测（`--no-live` 143 项、`--update-baseline` 重写像素基线）
+│  └─ selftest.mjs       179 项自测（`--no-live` 156 项、`--update-baseline` 重写像素基线）
 ├─ tools/
 │  ├─ release.ps1        一条命令发版（自测→版本号→tag→索引指针→Release→push）
 │  └─ snapshot-baseline.json  快照像素基线，改了版式要跟着重生

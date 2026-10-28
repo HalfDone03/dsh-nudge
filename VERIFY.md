@@ -15,14 +15,14 @@ $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\nod
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs              # 166 项，含真起 helper 与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 143 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 179 项，含真起 helper 与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 156 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (166 checks)`，退出码 0（CI 上是 `143 checks`）。
+- selftest 输出 `ALL PASS (179 checks)`，退出码 0（CI 上是 `156 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 186 条）。
 
 证据（实测）：
 
@@ -36,7 +36,7 @@ PASS  位置文件里的点被沿用  --  {"placement":"remembered","placedLeft"
 PASS  越界位置回落到右下角  --  {"placement":"corner","placedLeft":2146,...}
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
 PASS  基线 completed 对得上  --  436x174 色 263/263 暗 72874/72874 亮 933/933 状态 352/352
-ALL PASS (166 checks)
+ALL PASS (179 checks)
 ```
 
 其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 —— 目标不是窗口贴角，
@@ -142,6 +142,28 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
 - 实测（本机 2560×1440 / 100%）：离屏快照 776ms → 450 / 449 / 446ms；真实卡片从进程启动到 `shown` 约 560ms
   （`trace native-cached 45 / payload 64 / visible 26 / ui-runtime 6 / card 224 / measure 11 / window 44 / shown 141`）。
 - 剩下的大头是 WPF 冷启动：同进程内画第二张卡只要 ~1ms，所以首张卡那 224ms 是字体/文本布局的一次性开销。
+
+## 1.9 每一项的字号与颜色（不需要会话）
+
+`typography` 是 8 类文字（`title` / `project` / `task` / `reason` / `status` / `time` / `more` / `footer`）
+各自的 `{ color, size }`；留空 / 0 表示用主题默认，所以不配时版式与上一版逐像素一致。
+
+- 配置：默认 8 类全是 `{ color: "", size: 0 }`（`字体默认全是「用默认」`）；只改一项时其余保持默认；
+  `color: "red"` 抛 `must be "" or #RRGGBB / #AARRGGBB`；`size: 99` 抛 RangeError；`title: 1` 抛 `must be an object`。
+- schema：`typography` 下 8 个角色、每个角色的 `color` 与 `size` 都带 `meta.volatile`（设置页才收这一组）。
+- 源码：`popup.ps1` 有 `Resolve-Typography` / `Get-FontSize` / `Get-FontColor`，14 个文本调用点都改成
+  `-Size (Get-FontSize '<角色>' <默认>) -Color (Get-FontColor '<角色>' <默认>)`；两处主题解析后各执行一次
+  `$script:Fonts = Resolve-Typography $payload.typography`。宿主把 `typography` 放进 payload，并在预览期间
+  发现字体变了就 `restartPreview()`（`previewRestart` 标记让重画跳过 3 秒冷却）。
+- 设置页：预览关着时没有字体组（0 个颜色框）；打开后是 8 个颜色框 + 8 个字号框，颜色行带 `#RRGGBB` 写法提示；
+  改一格写出 `[{op:"set",path:["typography","title","color"],value:"#FFFF0000"}]` 并带当前 revision。
+- 真的进卡片（A/B 快照，临时目录里画，不污染 `screenshots/`）：`completed` 把标题改成 22 号纯红 →
+  卡片高度 **174 → 182**，纯红像素 **0 → 861**。
+
+```text
+$env:DSH_NUDGE_SCHEMASTERY = '...\node_modules\@deepseek-ai'
+& $node .\scripts\selftest.mjs --no-live
+```
 
 ## 2. 三种状态的无头渲染（不需要屏幕）
 
