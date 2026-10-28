@@ -46,7 +46,7 @@ DSH 的回合经常跑很久，或者卡在等你批准/回答上，而你切到
 
 ## 版本
 
-当前 **0.3.3**（2026-10-28）。逐条改动看 [CHANGELOG.md](CHANGELOG.md)，
+当前 **1.0.0**（2026-10-29）。逐条改动看 [CHANGELOG.md](CHANGELOG.md)，
 带说明的发布记录在 [Releases](https://github.com/HalfDone03/dsh-nudge/releases)，
 市场索引指向的具体提交写在仓库根目录的 `index.json`。
 
