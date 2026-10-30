@@ -1,7 +1,8 @@
 # dsh-nudge bundle patch.
 #
-# 一行 insert 即挂载 Host 侧插件；浏览器半身不需要（本插件不注入渲染进程 UI），
-# 因此 package.json 里没有 dsh.client 段。
+# 一行 insert 即挂载 Host 侧插件；浏览器那一半由 package.json 的 dsh.client 段
+# 把 client.js 注入渲染进程（设置页「设置 → 提醒弹窗」）。卡片本身是 Host 侧
+# 起的一次性 WPF 进程，不经过渲染进程。
 #
 # 用户覆盖层（profile 的 cordis.patch.yml）可以按 id 覆盖这里的 config：
 #

@@ -1,8 +1,8 @@
 /**
  * dsh-nudge 自测：不依赖真实 DSH 会话，直接驱动插件逻辑与弹窗 helper。
  *
- * 用法（node 不在 PATH）：
- *   & "$env:DSH_HOME\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe" scripts\selftest.mjs
+ * 用法（node 不在 PATH 时用 DSH 自带的，见 scripts\dsh-deps.ps1）：
+ *   node scripts\selftest.mjs
  *
  * 参数：
  *   --no-live         只跑逻辑、快照与静态约束，不起真实 helper 窗口（CI 用）
@@ -879,6 +879,8 @@ rmSync(typeDir, { recursive: true, force: true });
  * 版式与协议里最容易悄悄回退的东西，用源码断言钉住：脚本必须保持纯 ASCII、
  * 项目名前面不能再出现图标字形、字号阶梯必须是「项目 > 任务 > 原因」，
  * 单卡槽位与剪贴板回报也不能被顺手删掉。这些不需要启动窗口，几毫秒跑完。
+ * 装/卸脚本那套「自己找 DSH 自带的 node + pnpm」也归这里：它出错过一次，
+ * 写死单一路径就会在这里挂。
  */
 const popupSource = readFileSync(popupScript, "utf8");
 const popupBytes = readFileSync(popupScript);
@@ -970,6 +972,55 @@ check("弹窗脚本能打阶段耗时：-Trace 写 stderr",
 		&& popupSource.includes("function Write-Trace")
 		&& popupSource.includes("[Console]::Error.WriteLine"),
 	"stage trace");
+
+// 装/卸脚本的 node + pnpm 发现逻辑经历过一次回归：旧实现只认
+// %DSH_HOME%\dsh-runtimes\...，桌面版把运行时放在 <安装目录>\resources\runtime\...，
+// 于是找不到就 exit 0，留下「manifest 改了、node_modules 没建」的半装状态。
+const installSource = readFileSync(join(root, "scripts", "install.ps1"), "utf8");
+const uninstallSource = readFileSync(join(root, "scripts", "uninstall.ps1"), "utf8");
+const depsSource = readFileSync(join(root, "scripts", "dsh-deps.ps1"), "utf8");
+const workflowSource = readFileSync(join(root, ".github", "workflows", "selftest.yml"), "utf8");
+const readmeSource = readFileSync(join(root, "README.md"), "utf8");
+const verifySource = readFileSync(join(root, "VERIFY.md"), "utf8");
+check("装/卸脚本共用 dsh-deps.ps1 去找 DSH 自带的 node + pnpm",
+	installSource.includes(". (Join-Path $PSScriptRoot 'dsh-deps.ps1')")
+		&& uninstallSource.includes(". (Join-Path $PSScriptRoot 'dsh-deps.ps1')")
+		&& installSource.includes("Find-DshDependencies")
+		&& uninstallSource.includes("Find-DshDependencies"),
+	"dot-source + Find-DshDependencies");
+check("两种运行时布局都试：桌面版 resources/runtime 与便携版 %DSH_HOME%/dsh-runtimes",
+	!installSource.includes("dsh-runtimes\\dsh-primary-runtime")
+		&& !uninstallSource.includes("dsh-runtimes\\dsh-primary-runtime")
+		&& depsSource.includes("resources\\runtime\\primary-runtime\\dependencies")
+		&& depsSource.includes("dsh-runtimes\\dsh-primary-runtime\\dependencies"),
+	"candidate layouts");
+check("桌面版进程名带空格，只能按前缀正则匹配",
+	depsSource.includes("-match '^(DeepSeek|dsh)'") && depsSource.includes("-match '^(DeepSeek|DSH)'")
+		&& !depsSource.includes("-Name 'DeepSeekRuntime'"),
+	"prefix regex");
+const noPnpmStart = installSource.indexOf("if ($null -eq $bundled -and $null -eq $pathPnpm)");
+const noPnpmExit = noPnpmStart >= 0 ? installSource.indexOf("exit 1", noPnpmStart) : -1;
+const noPnpmBlock = noPnpmExit > noPnpmStart ? installSource.slice(noPnpmStart, noPnpmExit) : "";
+check("一个 pnpm 都找不到时回滚 package.json 并以退出码 1 结束，不留半装状态",
+	noPnpmBlock.includes("Copy-Item")
+		&& noPnpmBlock.includes("$backupPath")
+		&& noPnpmBlock.includes("no node + pnpm pair found"),
+	`block ${noPnpmBlock.length} chars`);
+check("pnpm 调用期间放宽 $ErrorActionPreference，成败只看退出码",
+	installSource.includes("$ErrorActionPreference = 'Continue'")
+		&& installSource.includes("$ErrorActionPreference = $previousEap")
+		&& uninstallSource.includes("$ErrorActionPreference = 'Continue'")
+		&& installSource.includes("$LASTEXITCODE"),
+	"EAP around pnpm");
+check("CI 会解析共用脚本，并干跑一次装/卸确认不写文件",
+	workflowSource.includes("scripts/dsh-deps.ps1") && workflowSource.includes("-DryRun"),
+	"workflow coverage");
+check("文档里的 node 路径不再写死旧布局，改成走 dsh-deps.ps1",
+	!readmeSource.includes("dsh-runtimes\\dsh-primary-runtime\\dependencies\\node")
+		&& !verifySource.includes("dsh-runtimes\\dsh-primary-runtime\\dependencies\\node")
+		&& readmeSource.includes("Find-DshDependencies")
+		&& verifySource.includes("Find-DshDependencies"),
+	"docs use dsh-deps.ps1");
 
 /**
  * 7. 单卡互斥与 payload 落盘（--no-live 时跳过）----

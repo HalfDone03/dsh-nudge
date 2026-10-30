@@ -10,7 +10,7 @@
   `size` 0–48，`color` 接受 `#RRGGBB` / `#AARRGGBB`，写错在加载时报错而不是静默失效。
   设置页新增「每一项的字号和颜色」一组，**只在「预览弹窗」打开时出现**——没有常驻的卡片当靶子，调字号只能靠猜；
   改完对**所有**卡片生效，预览卡会当场重画一次（重画跳过 3 秒冷却）。
-- 自测 179 项（`--no-live` 156；设 `DSH_NUDGE_SCHEMASTERY` 时 186）：字体配置校验 5 条、schema volatile 1 条、
+- 自测 186 项（`--no-live` 163；设 `DSH_NUDGE_SCHEMASTERY` 时 193）：字体配置校验 5 条、schema volatile 1 条、
   源码约束 2 条、设置页字体组 4 条、字体快照 A/B 2 条（标题 22 号纯红：高度 174→182、红像素 0→861）。
   设置页的控件数从 17 涨到 33（多了 8 个颜色框与 8 个字号框）。
 
@@ -29,6 +29,18 @@
   第一行变成终止性的 `NativeCommandError`，改动前只要 pnpm 啰嗦一句就整脚本中断，现在只看退出码。
 - README 里过期的 `0.3.0` 引用（市场安装说明、`git clone --branch`、`codeload` 地址、`@v0.3.0` 告警）
   全部改成 `1.0.0`，版本表补上 1.0.0 一行，pnpm 位置改成按装法分列的对照表，文件树补上 `scripts/dsh-deps.ps1`。
+- 文档与脚本里几处写死的旧 node 路径（`%USERPROFILE%\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe`）
+  全部改成走 `scripts/dsh-deps.ps1` 的发现逻辑：README 自测一节、`VERIFY.md` 前置、`scripts/demo.mjs` 与
+  `scripts/selftest.mjs` 的用法注释，以及 `tools/release.ps1` 的自测段（那里原先只是碰巧回落到 `node` 才没出事）。
+- `cordis.patch.yml` 顶部注释还写着「本插件不注入渲染进程 UI，因此 package.json 里没有 dsh.client 段」，
+  与事实相反：`dsh.client` 段一直在，`client.js` 就是设置页。改成准确描述（Host 侧插件 + 渲染进程里的设置页 +
+  卡片本身由 Host 起的一次性 WPF 进程画）。
+- CI 补两道：`scripts/dsh-deps.ps1` 进「PowerShell 脚本能解析」的列表；新增「装/卸脚本 dry-run」一步——
+  临时 profile 跑 `install.ps1 -DryRun` 与 `uninstall.ps1 -DryRun`，断言退出码 0、`package.json` 一字未改、
+  没建 `node_modules`，这两个脚本以后再退化 CI 会直接红。
+- 自测加 7 条静态断言钉住装/卸脚本的 pnpm 发现：共用 `dsh-deps.ps1`、桌面版与便携版两种布局都试、
+  进程名带空格只能按前缀正则匹配、一个 pnpm 都找不到时回滚并 `exit 1`、`$ErrorActionPreference` 只在调用期间
+  放宽、CI 覆盖到、文档不再写死旧路径。
 
 ---
 

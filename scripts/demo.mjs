@@ -2,7 +2,7 @@
  * 假会话 demo：不启动 DSH、不改 profile，直接驱动插件逻辑，屏幕上依次弹出三种状态的卡片。
  *
  * 用法：
- *   & "$env:DSH_HOME\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe" scripts\demo.mjs
+ *   node scripts\demo.mjs        # node 不在 PATH 时用 DSH 自带的，见 scripts\dsh-deps.ps1
  *   ... demo.mjs failed      只跑「执行失败」这一张
  *
  * 这是给人看的示例，跑完终端会打印每张卡的位置和判定结果。

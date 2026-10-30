@@ -92,8 +92,14 @@ try {
     # ---------- 自测 ----------
     if (-not $SkipChecks) {
         Step "自测"
-        $node = "$env:USERPROFILE\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe"
-        if (-not (Test-Path $node)) { $node = 'node' }
+        $node = 'node'
+        $depsScript = Join-Path $repo 'scripts\dsh-deps.ps1'
+        if (Test-Path $depsScript) {
+            . $depsScript
+            $bundledDeps = Find-DshDependencies
+            if ($null -ne $bundledDeps) { $node = $bundledDeps.Node }
+        }
+        Say "node: $node"
         foreach ($target in 'lib\index.js', 'scripts\selftest.mjs') {
             & $node --check (Join-Path $repo $target)
             if ($LASTEXITCODE -ne 0) { Fail "$target 语法检查没过" }

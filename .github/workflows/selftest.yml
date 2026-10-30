@@ -36,7 +36,7 @@ jobs:
         shell: powershell
         run: |
           $errors = $null
-          foreach ($script in 'lib/popup.ps1', 'scripts/install.ps1', 'scripts/uninstall.ps1', 'tools/release.ps1') {
+          foreach ($script in 'lib/popup.ps1', 'scripts/dsh-deps.ps1', 'scripts/install.ps1', 'scripts/uninstall.ps1', 'tools/release.ps1') {
             if (-not (Test-Path $script)) { continue }
             $errors = $null
             [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $script), [ref]$null, [ref]$errors)
@@ -47,6 +47,27 @@ jobs:
             }
           }
           Write-Host 'PowerShell scripts parse OK'
+
+      - name: 装/卸脚本 dry-run（不写文件）
+        shell: powershell
+        run: |
+          $profileDir = Join-Path $env:TEMP ('nudge-dry-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+          New-Item -ItemType Directory -Path $profileDir | Out-Null
+          $manifest = Join-Path $profileDir 'package.json'
+          $seeded = '{"name":"dsh-profile-dry","private":true,"dependencies":{},"dsh":{"profile":{"bundles":["@deepseek-ai/dsh-base"]}}}'
+          [System.IO.File]::WriteAllText($manifest, $seeded, (New-Object System.Text.UTF8Encoding $false))
+          $before = [System.IO.File]::ReadAllText($manifest)
+
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install.ps1 -DryRun -ProfileDir $profileDir
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::install.ps1 -DryRun exited $LASTEXITCODE"; exit 1 }
+          if ([System.IO.File]::ReadAllText($manifest) -ne $before) { Write-Host '::error::install.ps1 -DryRun modified package.json'; exit 1 }
+          if (Test-Path (Join-Path $profileDir 'node_modules')) { Write-Host '::error::install.ps1 -DryRun created node_modules'; exit 1 }
+
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/uninstall.ps1 -DryRun -ProfileDir $profileDir
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::uninstall.ps1 -DryRun exited $LASTEXITCODE"; exit 1 }
+
+          Remove-Item -LiteralPath $profileDir -Recurse -Force
+          Write-Host 'install/uninstall dry run OK'
 
       - name: 自测（no-live）
         run: node scripts/selftest.mjs --no-live
