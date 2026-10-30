@@ -52,6 +52,7 @@ DSH 的回合经常跑很久，或者卡在等你批准/回答上，而你切到
 
 | 版本 | 日期 | 一句话 |
 | --- | --- | --- |
+| 1.0.0 | 2026-10-29 | 定版：接口冻结，此后只修 bug 发补丁版 |
 | 0.3.3 | 2026-10-28 | 配置进设置、插件自带设置页、预览开关，弹窗更快 |
 | 0.3.1 | 2026-10-26 | CI、快照像素基线与一条命令发版 |
 | 0.3.0 | 2026-10-26 | 版式改成「项目 > 任务 > 原因」、默认停留 15 秒、全屏时不打扰、同一个时刻只留一张卡、点击聚焦提醒来源的那个实例 |
@@ -72,7 +73,8 @@ https://gcore.jsdelivr.net/gh/HalfDone03/dsh-nudge@main/index.json
 ```
 
 回到 Discover 就能看到「DSH 轻推提醒」，点安装。市场自己写 profile、跑 pnpm，装完重开 DSH 生效。
-索引是标准的 format 1，`source` 用 git 提交钉死（仓库根目录 `index.json` 的 `source.commit`），装到的一定是 `0.3.0` 这一版。
+索引是标准的 format 1，`source` 用 git 提交钉死（仓库根目录 `index.json` 的 `source.commit`，
+就是 `v1.0.0` 的解引用提交），所以装到的一定是 `1.0.0` 那一版，不是 `main` 上的最新代码。
 
 上面那条不通就换镜像（同一份内容，路径一样）：
 
@@ -85,14 +87,14 @@ https://cdn.jsdmirror.com/gh/HalfDone03/dsh-nudge@main/index.json
 两个坑：
 
 - **别用 `raw.githubusercontent.com`**——国内常年连不上，一条索引读不出来整个 Discover 就是空的；
-- **别用 `@v0.3.0`**——jsDelivr 对标签会永远返回打标签那一刻的 `index.json`，那份里的 `commit` 还是旧指针。用 `@main`。
+- **别用 `@v1.0.0`**——jsDelivr 对标签会永远返回打标签那一刻的 `index.json`，那份里的 `commit` 还是旧指针。用 `@main`。
 
 这条要求机器上有 `git`（pnpm 拉 `git+https` 规格要用它）。没有 git 就走 C。
 
 ### B. 手动安装（有 git）
 
 ```powershell
-git clone --branch v0.3.0 https://github.com/HalfDone03/dsh-nudge.git
+git clone --branch v1.0.0 https://github.com/HalfDone03/dsh-nudge.git
 cd dsh-nudge
 
 # 只看计划，不写文件
@@ -107,7 +109,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 下这个压缩包解压，进目录跑 B 里那两条命令：
 
 ```
-https://codeload.github.com/HalfDone03/dsh-nudge/tar.gz/refs/tags/v0.3.0
+https://codeload.github.com/HalfDone03/dsh-nudge/tar.gz/refs/tags/v1.0.0
 ```
 
 （npm 上装不到：`dsh-nudge` 这个名字已被别人占用。）
@@ -126,8 +128,20 @@ https://codeload.github.com/HalfDone03/dsh-nudge/tar.gz/refs/tags/v0.3.0
 **跑之前先退出 DeepSeek Harness**：pnpm 要重写 `node_modules`，Windows 上被占用的文件删不掉。
 装完再启动 DSH 才生效——插件跑在 Host 进程里，Host 侧改动没有热更新。
 
-DSH 自带的 pnpm 在 `%DSH_HOME%\dsh-runtimes\dsh-primary-runtime\dependencies\pnpm\bin\pnpm.cjs`，
-脚本自动找它；找不到时会打印手动命令（`-SkipPnpm` 可跳过这一步）。
+DSH 自带 node 与 pnpm，但不同装法的路径不一样，脚本会挨个试：
+
+| 装法 | 自带 pnpm 的位置 |
+| --- | --- |
+| 桌面版（安装包） | `<安装目录>\resources\runtime\primary-runtime\dependencies\pnpm\bin\pnpm.cjs` |
+| 便携版 / 旧结构 | `%DSH_HOME%\dsh-runtimes\dsh-primary-runtime\dependencies\pnpm\bin\pnpm.cjs` |
+
+安装目录从两个地方认：正在运行的 DSH 进程的可执行文件所在目录，和卸载注册项里的
+`InstallLocation`。想直接指定，就设环境变量 `DSH_NUDGE_INSTALL_ROOT=<安装目录>`
+（脚本会去它下面找 `resources\runtime\primary-runtime\dependencies`）。
+
+两处都找不到、`PATH` 里也没有 `pnpm` 时，脚本**会把 `package.json` 回滚成备份再以退出码 1 结束**，
+不会留一个「manifest 里写了插件、`node_modules` 里没有」的半装状态——那种状态下次启动 DSH 会加载失败。
+`-SkipPnpm` 可跳过这一步（只想改配置、稍后自己跑 `pnpm install --dir <profile>` 时用）。
 
 卸载：
 
@@ -426,6 +440,7 @@ dsh-nudge/
 ├─ scripts/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
+│  ├─ dsh-deps.ps1       两个脚本共用：找 DSH 自带的 node + pnpm
 │  └─ selftest.mjs       179 项自测（`--no-live` 156 项、`--update-baseline` 重写像素基线）
 ├─ tools/
 │  ├─ release.ps1        一条命令发版（自测→版本号→tag→索引指针→Release→push）

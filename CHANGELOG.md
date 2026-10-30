@@ -14,6 +14,22 @@
   源码约束 2 条、设置页字体组 4 条、字体快照 A/B 2 条（标题 22 号纯红：高度 174→182、红像素 0→861）。
   设置页的控件数从 17 涨到 33（多了 8 个颜色框与 8 个字号框）。
 
+**修复**
+
+- `scripts/install.ps1` 找不到自带 pnpm：原来只认 `%DSH_HOME%\dsh-runtimes\dsh-primary-runtime\dependencies`，
+  桌面版（自带运行时在 `<安装目录>\resources\runtime\primary-runtime\dependencies`）一律落空。现在按
+  「进程可执行文件所在目录 / 卸载注册项 `InstallLocation`」认安装目录，再拼 4 种运行时布局逐个探测，
+  最后回落到 `PATH` 里的 `pnpm`；`DSH_NUDGE_INSTALL_ROOT` 可显式指定安装目录。
+  另外，**一处都找不到时改为把 `package.json` 回滚成备份并以退出码 1 结束**——原先只是打印手动命令就
+  `exit 0`，留下「manifest 写了插件、`node_modules` 没有」的半装状态，下次启动 DSH 会加载失败。
+- `scripts/uninstall.ps1` 同一个毛病，摘完插件后 `node_modules` 剪不掉：现在和 `install.ps1` 共用新的
+  `scripts/dsh-deps.ps1`（发现逻辑只写一份），剪枝前后都会告诉你用的是自带 pnpm 还是 PATH 上的；两处都没有时
+  说明残留无害（`dsh.profile.bundles` 才决定加载什么），不再只丢一句「Bundled pnpm not found」。
+- pnpm 调用统一用 `$ErrorActionPreference = 'Continue'` 包住：PS 5.1 在 `Stop` 下会把 pnpm 写往 stderr 的
+  第一行变成终止性的 `NativeCommandError`，改动前只要 pnpm 啰嗦一句就整脚本中断，现在只看退出码。
+- README 里过期的 `0.3.0` 引用（市场安装说明、`git clone --branch`、`codeload` 地址、`@v0.3.0` 告警）
+  全部改成 `1.0.0`，版本表补上 1.0.0 一行，pnpm 位置改成按装法分列的对照表，文件树补上 `scripts/dsh-deps.ps1`。
+
 ---
 
 ## 1.0.0 - 2026-10-29

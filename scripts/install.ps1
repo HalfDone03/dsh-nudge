@@ -55,7 +55,7 @@ function Write-Next {
 }
 
 # ---- 1. validate the package itself ----
-foreach ($relative in @('package.json', 'cordis.patch.yml', 'lib\index.js', 'lib\popup.ps1')) {
+foreach ($relative in @('scripts\dsh-deps.ps1', 'package.json', 'cordis.patch.yml', 'lib\index.js', 'lib\popup.ps1')) {
     $full = Join-Path $packageRoot $relative
     if (-not (Test-Path -LiteralPath $full)) {
         throw "package is incomplete: missing $full"
@@ -142,27 +142,49 @@ Write-Step 'package.json updated'
 if ($SkipPnpm) {
     Write-Step 'pnpm skipped (-SkipPnpm)'
     Write-Next "Run this before starting DSH: pnpm install --dir `"$ProfileDir`""
+    Write-Next 'DSH cannot load a bundle without a node_modules entry; rerun without -SkipPnpm if unsure.'
     exit 0
 }
 
-$runtime = if ([string]::IsNullOrWhiteSpace($env:DSH_HOME)) { $null } else { Join-Path $env:DSH_HOME 'dsh-runtimes\dsh-primary-runtime\dependencies' }
-$nodeEntry = if ($null -eq $runtime) { $null } else { Join-Path $runtime 'node\bin\node.exe' }
-$pnpmEntry = if ($null -eq $runtime) { $null } else { Join-Path $runtime 'pnpm\bin\pnpm.cjs' }
+. (Join-Path $PSScriptRoot 'dsh-deps.ps1')
+$bundled = Find-DshDependencies
+$pathPnpm = Get-DshPnpmOnPath
 
-if ($null -eq $pnpmEntry -or -not (Test-Path -LiteralPath $pnpmEntry) -or -not (Test-Path -LiteralPath $nodeEntry)) {
-    Write-Step 'bundled pnpm not found'
-    Write-Next 'Run this before starting DSH (needs a pnpm on PATH):'
-    Write-Next "  pnpm install --dir `"$ProfileDir`""
-    exit 0
+if ($null -eq $bundled -and $null -eq $pathPnpm) {
+    # A half install is worse than no install: the manifest would name a bundle
+    # the loader cannot resolve and DSH would fail on the next start.
+    Copy-Item -LiteralPath $backupPath -Destination $manifestPath -Force
+    Write-Step 'no node + pnpm pair found -- package.json restored from backup'
+    Write-Next 'Searched these dependency roots:'
+    foreach ($dir in @(Get-DshDependencyCandidates)) { Write-Next "  $dir" }
+    Write-Next 'Fix one of those paths (or put pnpm on PATH), then rerun this script.'
+    Write-Next "Manual alternative: pnpm install --dir `"$ProfileDir`" before starting DSH."
+    exit 1
 }
 
-Write-Step 'pnpm install (bundled pnpm)'
-$pnpmOutput = & $nodeEntry $pnpmEntry install --dir $ProfileDir 2>&1
+# pnpm writes progress to stderr, and PowerShell 5.1 turns the first stderr line
+# into a terminating NativeCommandError under $ErrorActionPreference = 'Stop',
+# so relax it for the duration of the call and judge the result by exit code.
+$previousEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    if ($null -ne $bundled) {
+        Write-Step "pnpm install (bundled pnpm: $($bundled.Root))"
+        $pnpmOutput = & $bundled.Node $bundled.Pnpm install --dir $ProfileDir 2>&1
+    }
+    else {
+        Write-Step "pnpm install (from PATH: $($pathPnpm.Source))"
+        $pnpmOutput = & $pathPnpm.Source install --dir $ProfileDir 2>&1
+    }
+}
+finally {
+    $ErrorActionPreference = $previousEap
+}
 $pnpmCode = $LASTEXITCODE
 if ($pnpmCode -ne 0) {
     $tail = ($pnpmOutput | Select-Object -Last 15) -join [Environment]::NewLine
     Write-Host $tail
-    throw "pnpm install failed (exit $pnpmCode). Quit DeepSeek Harness and retry; package.json is already updated (backup: $backupPath)."
+    throw "pnpm install failed (exit $pnpmCode). Quit the DSH app and rerun this script; package.json is already updated (backup: $backupPath)."
 }
 
 # ---- 6. verify the link the loader will resolve ----

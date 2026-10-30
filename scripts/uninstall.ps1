@@ -101,21 +101,41 @@ if ($SkipPnpm) {
     Write-Step 'pnpm skipped (-SkipPnpm)'
     Write-Host "Run this before starting DSH: pnpm install --dir `"$ProfileDir`""
 } else {
-    $runtime = if ([string]::IsNullOrWhiteSpace($env:DSH_HOME)) { $null } else { Join-Path $env:DSH_HOME 'dsh-runtimes\dsh-primary-runtime\dependencies' }
-    $nodeEntry = if ($null -eq $runtime) { $null } else { Join-Path $runtime 'node\bin\node.exe' }
-    $pnpmEntry = if ($null -eq $runtime) { $null } else { Join-Path $runtime 'pnpm\bin\pnpm.cjs' }
-    if ($null -ne $pnpmEntry -and (Test-Path -LiteralPath $pnpmEntry) -and (Test-Path -LiteralPath $nodeEntry)) {
-        Write-Step 'pnpm install (prune)'
-        $pnpmOutput = & $nodeEntry $pnpmEntry install --dir $ProfileDir 2>&1
+    . (Join-Path $PSScriptRoot 'dsh-deps.ps1')
+    $bundled = Find-DshDependencies
+    $pathPnpm = Get-DshPnpmOnPath
+    $pnpmExe = $null
+    $pnpmArgs = @()
+    if ($null -ne $bundled) {
+        Write-Step "pnpm install (prune, bundled pnpm: $($bundled.Root))"
+        $pnpmExe = $bundled.Node
+        $pnpmArgs = @($bundled.Pnpm, 'install', '--dir', $ProfileDir)
+    }
+    elseif ($null -ne $pathPnpm) {
+        Write-Step "pnpm install (prune, pnpm from PATH: $($pathPnpm.Source))"
+        $pnpmExe = $pathPnpm.Source
+        $pnpmArgs = @('install', '--dir', $ProfileDir)
+    }
+    else {
+        Write-Host 'No bundled pnpm and none on PATH -- node_modules left untouched.'
+        Write-Host 'Leftovers there are harmless: dsh.profile.bundles decides what DSH loads.'
+        Write-Host "Run this after quitting DSH if you want it pruned: pnpm install --dir `"$ProfileDir`""
+    }
+    if ($null -ne $pnpmExe) {
+        # see install.ps1: PS 5.1 turns the first stderr line into a terminating
+        # NativeCommandError under 'Stop', so judge the result by the exit code
+        $previousEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try { $pnpmOutput = & $pnpmExe @pnpmArgs 2>&1 }
+        finally { $ErrorActionPreference = $previousEap }
         if ($LASTEXITCODE -ne 0) {
             Write-Host (($pnpmOutput | Select-Object -Last 10) -join [Environment]::NewLine)
             Write-Host "pnpm install failed; package.json is already updated (backup: $backupPath)"
             Write-Host "Run manually after quitting DSH: pnpm install --dir `"$ProfileDir`""
-        } else {
-            Write-Step "node_modules pruned"
         }
-    } else {
-        Write-Host "Bundled pnpm not found; run this after quitting DSH: pnpm install --dir `"$ProfileDir`""
+        else {
+            Write-Step 'node_modules pruned'
+        }
     }
 }
 
