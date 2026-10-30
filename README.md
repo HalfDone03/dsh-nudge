@@ -141,6 +141,8 @@ DSH 自带 node 与 pnpm，但不同装法的路径不一样，脚本会挨个�
 
 两处都找不到、`PATH` 里也没有 `pnpm` 时，脚本**会把 `package.json` 回滚成备份再以退出码 1 结束**，
 不会留一个「manifest 里写了插件、`node_modules` 里没有」的半装状态——那种状态下次启动 DSH 会加载失败。
+`pnpm install` 自己失败、或者跑完之后 `node_modules\dsh-nudge\package.json` 仍然读不出来，也一样回滚：
+要么装好，要么像没装过。
 `-SkipPnpm` 可跳过这一步（只想改配置、稍后自己跑 `pnpm install --dir <profile>` 时用）。
 
 卸载：
@@ -327,7 +329,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version 0.3.1
 ```
 
-它按顺序做：挑 node 跑语法检查与 186 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
+它按顺序做：挑 node 跑语法检查与 187 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
 「未发布」换成本版标题 → 更新本文件里的「当前版本」与版本一览表格 → 提交 → 打附注 tag → 把 `index.json`
 的 `versions[0]` 三字段指向这个提交并再提一条
 `chore(release): 索引指向 x.y.z 最终提交 (<hash>)` → `gh release create --latest` → push `main` 与 tag。
@@ -349,7 +351,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs      # 186 项全绿；CI 上跑的是 --no-live（163 项）
+& $node .\scripts\selftest.mjs      # 187 项全绿；CI 上跑的是 --no-live（164 项）
 ```
 
 三条硬要求，少一条装上就是坏的：
@@ -384,11 +386,11 @@ registry 安装是 `saveExact`（精确版本），不改版本号重装拿不�
 . .\scripts\dsh-deps.ps1                    # 和装/卸脚本共用同一套「找 DSH 自带的 node」
 $node = (Find-DshDependencies).Node
 if (-not $node) { $node = 'node' }          # PATH 里已有 node 就直接用
-& $node .\scripts\selftest.mjs              # 186 项，含真起窗口与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 163 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 187 项，含真起窗口与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 164 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
-当前 **186 项全绿**，覆盖：配置校验与默认值、实时配置（设置里改完立即生效）、静音时段（含跨零点）、事件合并计数、
+当前 **187 项全绿**，覆盖：配置校验与默认值、实时配置（设置里改完立即生效）、静音时段（含跨零点）、事件合并计数、
 严重度排序、三类开关、真起弹窗并收到 `{"type":"shown"}` 与右下角坐标、dispose 后无孤儿进程、
 三种状态各渲染一张 436px 宽快照，外加一张 4 条合并的清单快照（`screenshots/multi.png`，尺寸、非空与像素基线比对），以及一组源码静态约束——
 脚本必须纯 ASCII、项目名前不许出现图标字形、字号阶梯必须是「项目 > 任务 > 原因」、
@@ -443,7 +445,7 @@ dsh-nudge/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
 │  ├─ dsh-deps.ps1       两个脚本共用：找 DSH 自带的 node + pnpm
-│  └─ selftest.mjs       186 项自测（`--no-live` 163 项、`--update-baseline` 重写像素基线）
+│  └─ selftest.mjs       187 项自测（`--no-live` 164 项、`--update-baseline` 重写像素基线）
 ├─ tools/
 │  ├─ release.ps1        一条命令发版（自测→版本号→tag→索引指针→Release→push）
 │  └─ snapshot-baseline.json  快照像素基线，改了版式要跟着重生

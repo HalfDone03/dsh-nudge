@@ -15,8 +15,10 @@
     deployment secrets) and never restarts DSH. Quit DeepSeek Harness before
     running it: pnpm rewrites node_modules and fails on files the app holds open.
 
-    Safe to run repeatedly. A timestamped backup of package.json is written
-    before any change and restored automatically if the update fails.
+    Safe to run repeatedly, and atomic: a timestamped backup of package.json is
+    written before any change and restored automatically if anything later fails,
+    pnpm included. A manifest naming a bundle that node_modules cannot resolve
+    would break the next DSH start, which is worse than no install at all.
 
 .PARAMETER ProfileDir
     DSH profile directory. Defaults to %DSH_HOME%\profiles\desktop.
@@ -184,13 +186,21 @@ $pnpmCode = $LASTEXITCODE
 if ($pnpmCode -ne 0) {
     $tail = ($pnpmOutput | Select-Object -Last 15) -join [Environment]::NewLine
     Write-Host $tail
-    throw "pnpm install failed (exit $pnpmCode). Quit the DSH app and rerun this script; package.json is already updated (backup: $backupPath)."
+    # Roll back rather than leave the profile half installed: a bundle name the
+    # loader cannot resolve breaks DSH on the next start, and it also shows up in
+    # the plugin manager as a bundle that refuses to be removed.
+    Copy-Item -LiteralPath $backupPath -Destination $manifestPath -Force
+    Write-Step 'pnpm failed -- package.json restored from backup'
+    Write-Next 'Quit the DSH app (it holds node_modules files open) and rerun this script.'
+    throw "pnpm install failed (exit $pnpmCode); package.json restored from backup $backupPath"
 }
 
 # ---- 6. verify the link the loader will resolve ----
 $resolved = Join-Path $ProfileDir "node_modules\$packageName\package.json"
 if (-not (Test-Path -LiteralPath $resolved)) {
-    throw "pnpm finished but $resolved is missing; the Host loader would not find the plugin"
+    Copy-Item -LiteralPath $backupPath -Destination $manifestPath -Force
+    Write-Step 'link missing -- package.json restored from backup'
+    throw "pnpm finished but $resolved is missing; package.json restored from backup $backupPath"
 }
 $linkedManifest = Get-Content -LiteralPath $resolved -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Step "linked: node_modules\$packageName (version $($linkedManifest.version))"
@@ -202,4 +212,4 @@ Write-Host '  1. Start DeepSeek Harness (the plugin runs inside the Host process
 Write-Host '  2. Run a session turn; the card should appear above the taskbar, bottom right.'
 Write-Host '  3. If nothing shows up, see VERIFY.md.'
 Write-Host ''
-Write-Host "Rollback: copy $backupPath back over package.json, then rerun pnpm install."
+Write-Host "Rollback: copy $backupPath back over package.json, then rerun this script."

@@ -1021,6 +1021,19 @@ check("文档里的 node 路径不再写死旧布局，改成走 dsh-deps.ps1",
 		&& readmeSource.includes("Find-DshDependencies")
 		&& verifySource.includes("Find-DshDependencies"),
 	"docs use dsh-deps.ps1");
+// 「装了一半」比「没装」更坏：manifest 里写了 bundles、node_modules 里没有对应目录，
+// 下次 DSH 启动就会去找一个解析不到的包。所以 pnpm 失败、链接没建好，都必须回滚。
+const rollbacks = (
+	installSource.match(/Copy-Item -LiteralPath \$backupPath -Destination \$manifestPath -Force/g) || []
+).length;
+const pnpmFailAt = installSource.indexOf("if ($pnpmCode -ne 0)");
+const pnpmFailBlock = pnpmFailAt >= 0 ? installSource.slice(pnpmFailAt, pnpmFailAt + 700) : "";
+check("pnpm 失败或自检没通过时回滚 package.json，不做半装",
+	rollbacks >= 5
+		&& pnpmFailBlock.includes("Copy-Item -LiteralPath $backupPath")
+		&& pnpmFailBlock.includes("package.json restored from backup")
+		&& !installSource.includes("package.json is already updated"),
+	`rollbacks ${rollbacks}`);
 
 /**
  * 7. 单卡互斥与 payload 落盘（--no-live 时跳过）----
