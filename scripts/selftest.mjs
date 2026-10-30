@@ -1023,6 +1023,15 @@ check("文档里的 node 路径不再写死旧布局，改成走 dsh-deps.ps1",
 	"docs use dsh-deps.ps1");
 // 「装了一半」比「没装」更坏：manifest 里写了 bundles、node_modules 里没有对应目录，
 // 下次 DSH 启动就会去找一个解析不到的包。所以 pnpm 失败、链接没建好，都必须回滚。
+// 手工建的 junction 不算「装好了」：pnpm 没有它的记录，profile 里下一次 pnpm 操作会把它当杂物删掉。
+const earlyExit = installSource.indexOf("if (-not $needsDependency -and -not $needsBundle");
+const earlyExitLine = earlyExit >= 0 ? installSource.slice(earlyExit, earlyExit + 90) : "";
+check("装过没装过看 pnpm 自己的账，不只看 node_modules 有没有那个目录",
+	installSource.includes("pnpm-lock.yaml")
+		&& installSource.includes("$pnpmTracked")
+		&& installSource.includes("$needsInstall")
+		&& earlyExitLine.includes("-not $needsInstall"),
+	earlyExitLine.trim().slice(0, 90));
 const rollbacks = (
 	installSource.match(/Copy-Item -LiteralPath \$backupPath -Destination \$manifestPath -Force/g) || []
 ).length;

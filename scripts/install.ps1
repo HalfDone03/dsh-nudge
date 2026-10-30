@@ -11,6 +11,11 @@
          Host loader can resolve the package by name
       3. verify that node_modules\<package>\package.json is readable
 
+    "Already installed" means the manifest, node_modules and pnpm's own lockfile
+    all agree. A link that pnpm does not know about (an older version of this
+    script built one by hand) is reinstalled rather than trusted, because pnpm
+    would delete it on its next run inside the profile.
+
     The script never edits the profile's cordis.patch.yml (that file holds
     deployment secrets) and never restarts DSH. Quit DeepSeek Harness before
     running it: pnpm rewrites node_modules and fails on files the app holds open.
@@ -93,14 +98,33 @@ $bundles = @($manifest.dsh.profile.bundles)
 $hasBundle = $bundles -contains $packageName
 $linked = Test-Path -LiteralPath (Join-Path $ProfileDir "node_modules\$packageName\package.json")
 
+# A readable node_modules\<package> is not proof that pnpm installed it: an earlier
+# version of this script made that link by hand, so pnpm has no record of the
+# package. pnpm then counts the directory as extraneous (the next pnpm run inside
+# the profile deletes it and the plugin disappears) and a `pnpm remove` coming
+# from the plugin manager does not clean it up. Require the profile lockfile to
+# mention the package as well.
+$lockPath = Join-Path $ProfileDir 'pnpm-lock.yaml'
+$pnpmTracked = $false
+if (Test-Path -LiteralPath $lockPath) {
+    $pnpmTracked = (Get-Content -LiteralPath $lockPath -Raw -Encoding UTF8).Contains($packageName)
+}
+
 $needsDependency = ($null -eq $existingDependency) -or ($existingDependency.Value -ne $dependencySpec)
 $needsBundle = -not $hasBundle
+$needsInstall = (-not $SkipPnpm) -and ((-not $linked) -or (-not $pnpmTracked))
 
 Write-Step "dependency: $packageName -> $dependencySpec"
 Write-Step "bundle list: $(if ($needsBundle) { 'append' } else { 'unchanged' })"
-Write-Step "node_modules: $(if ($linked) { 'already present' } else { 'needs pnpm install' })"
+if (-not $linked) {
+    Write-Step 'node_modules: needs pnpm install'
+} elseif (-not $pnpmTracked) {
+    Write-Step 'node_modules: link exists but pnpm does not know the package -- re-installing'
+} else {
+    Write-Step 'node_modules: already present'
+}
 
-if (-not $needsDependency -and -not $needsBundle -and ($linked -or $SkipPnpm)) {
+if (-not $needsDependency -and -not $needsBundle -and -not $needsInstall) {
     Write-Step 'already installed -- nothing to do'
     Write-Host ''
     Write-Host "Plugin '$packageName' is registered. Restart DeepSeek Harness if it is not running yet."
