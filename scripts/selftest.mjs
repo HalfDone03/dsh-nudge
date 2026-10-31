@@ -1310,6 +1310,20 @@ const clientSwitch = clientControls.find((node) => node.props["aria-label"] === 
 /** 底部那条「还没保存」的提示，以及它上面的按钮。 */
 const applyBarOf = (nodes) => nodes.find((node) => node.type === "div" && node.props.className === "dsh-nudge-applybar");
 const buttonByText = (nodes, text) => nodes.find((node) => node.type === "button" && node.props.children === text);
+check(
+	"应用栏一直显示，没有改动时按钮是灰的",
+	applyBarOf(clientNodes) !== undefined
+		&& clientNodes.some((node) => node.props.children === "没有未保存的改动")
+		&& buttonByText(clientNodes, "应用").props.disabled === true
+		&& buttonByText(clientNodes, "放弃").props.disabled === true,
+	"bar=" + (applyBarOf(clientNodes) !== undefined),
+);
+check(
+	"顶部有分组导航和修订标记",
+	clientNodes.filter((node) => node.type === "button" && String(node.props.className ?? "") === "dsh-nudge-navbtn").length === 9
+		&& clientNodes.some((node) => typeof node.props.children === "string" && node.props.children.startsWith("提醒弹窗设置页 · 修订 ")),
+	"nav=" + clientNodes.filter((node) => node.type === "button" && String(node.props.className ?? "") === "dsh-nudge-navbtn").length,
+);
 clientMutations.length = 0;
 clientSwitch.props.onChange({ target: { checked: false } });
 await Promise.resolve();
@@ -1323,12 +1337,13 @@ check(
 );
 clientMutations.length = 0;
 buttonByText(stagedPage.nodes, "应用").props.onClick();
-await Promise.resolve();
+/* 写回是异步的（mutate 返回 Promise），等一轮宏任务让 then 里的「已保存」落下去。 */
+await new Promise((resolve) => setTimeout(resolve, 0));
 const appliedPage = renderClientPage();
 check(
 	"点应用把草稿一次写回并带 revision",
 	JSON.stringify(clientMutations) === JSON.stringify([{ ops: [{ op: "set", path: ["kinds", "completed"], value: false }], revision: 7 }])
-		&& applyBarOf(appliedPage.nodes) === undefined,
+		&& appliedPage.nodes.some((node) => node.props.children === "已保存"),
 	JSON.stringify(clientMutations),
 );
 /** 样卡里可点的行、角色按钮、预设按钮。 */
@@ -1366,7 +1381,7 @@ const presetPage = renderClientPage();
 check(
 	"预设也是先填草稿",
 	clientMutations.length === 0
-		&& presetPage.nodes.some((node) => node.props.children === "9 项改动还没保存"),
+		&& presetPage.nodes.some((node) => typeof node.props.children === "string" && /^\d+ 项改动还没保存$/.test(node.props.children)),
 	"writes=" + clientMutations.length,
 );
 clientMutations.length = 0;
@@ -1416,7 +1431,9 @@ await Promise.resolve();
 const clearedPage = renderClientPage();
 check(
 	"放弃丢掉草稿、不写回",
-	clientMutations.length === 0 && applyBarOf(clearedPage.nodes) === undefined,
+	clientMutations.length === 0
+		&& applyBarOf(clearedPage.nodes) !== undefined
+		&& !clearedPage.nodes.some((node) => typeof node.props.children === "string" && node.props.children.endsWith("项改动还没保存")),
 	"writes=" + clientMutations.length,
 );
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));

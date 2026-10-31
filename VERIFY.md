@@ -17,14 +17,14 @@ if (-not $node) { $node = 'node' }          # 便携版/旧结构也找不到时
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs              # 208 项，含真起 helper 与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 185 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 210 项，含真起 helper 与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 187 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (208 checks)`，退出码 0（CI 上是 `185 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 215 条）。
+- selftest 输出 `ALL PASS (210 checks)`，退出码 0（CI 上是 `187 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 217 条）。
 
 证据（实测）：
 
@@ -38,7 +38,7 @@ PASS  位置文件里的点被沿用  --  {"placement":"remembered","placedLeft"
 PASS  越界位置回落到右下角  --  {"placement":"corner","placedLeft":2146,...}
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
 PASS  基线 completed 对得上  --  436x174 色 263/263 暗 72874/72874 亮 933/933 状态 352/352
-ALL PASS (208 checks)
+ALL PASS (210 checks)
 ```
 
 其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 —— 目标不是窗口贴角，
@@ -163,6 +163,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
 - 改一格不立刻写回：底部出现「1 项改动还没保存」，点「应用」才写出
   `[{op:"set",path:["typography","title","color"],value:"#FFFF0000"}]`（带当前 revision），点「放弃」则丢掉。
   自测里的假 `useState` 会真存值，所以草稿 → 应用 → 放弃三步都能断言。
+- 应用栏常显：什么都没改时它也在，文案「没有未保存的改动」、「应用」「放弃」都是 `disabled`；
+  写回成功后变「已保存」，两秒后回到常态（断言要等一轮宏任务，`mutate` 返回的是 Promise）。
+- 顶部有 9 个分组按钮（`className === "dsh-nudge-navbtn"`）和一行配置状态
+  （`配置状态：<status> · 可写/只读 · 待保存 N 项`），页面最下面一行「提醒弹窗设置页 · 修订 <PANEL_REVISION>」。
 - 真的进卡片（A/B 快照，临时目录里画，不污染 `screenshots/`）：`completed` 把标题改成 22 号纯红 →
   卡片高度 **174 → 182**，纯红像素 **0 → 861**。
 

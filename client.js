@@ -32,6 +32,20 @@ window.__ModuleLoader__.load({
 		const SECTION = "settings.section";
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
+	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
+	const PANEL_REVISION = "2026-11-01.1";
+	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
+	const NAV_GROUPS = [
+		["peek", "长这样"],
+		["preset", "预设"],
+		["master", "开关"],
+		["kinds", "提醒"],
+		["when", "时机"],
+		["look", "外观"],
+		["merge", "合并"],
+		["type", "字号"],
+		["debug", "调试"],
+	];
 
 		const STYLE = [
 			".dsh-nudge-settings{max-width:760px;display:flex;flex-direction:column;gap:14px;color:var(--dsw-alias-label-primary)}",
@@ -65,6 +79,14 @@ window.__ModuleLoader__.load({
 			".dsh-nudge-btn[data-on=\"1\"]{border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-applybar{position:sticky;bottom:0;z-index:2;display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:0.5px solid var(--dsw-alias-state-business-primary);background:var(--dsw-alias-bg-l1);box-shadow:0 2px 12px rgba(0,0,0,.12)}",
 			".dsh-nudge-applytext{flex:1;font-size:13px;line-height:20px}",
+			".dsh-nudge-applybar[data-dirty=\"0\"]{border-color:var(--dsw-alias-border-l2);box-shadow:none}",
+			".dsh-nudge-group[data-dirty=\"1\"]{border-color:var(--dsw-alias-state-business-primary)}",
+			".dsh-nudge-group[data-dirty=\"1\"] .dsh-nudge-group-title::after{content:\" ·\";color:var(--dsw-alias-state-business-primary)}",
+			".dsh-nudge-nav{display:flex;flex-wrap:wrap;gap:6px;margin:0}",
+			".dsh-nudge-navbtn{font:inherit;font-size:12px;line-height:18px;padding:3px 10px;border-radius:999px;cursor:pointer;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l2);color:var(--dsw-alias-label-tertiary)}",
+			".dsh-nudge-navbtn:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-state-business-primary)}",
+			".dsh-nudge-status{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}",
+			".dsh-nudge-stamp{margin:0;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);opacity:.75}",
 		].join("");
 
 		/** 把样式挂进 <head>，同一个文档只挂一次。 */
@@ -504,6 +526,8 @@ window.__ModuleLoader__.load({
 			const [draft, setDraft] = React.useState({});
 			/** 字号那组是否展开成「8 行一起看」。 */
 			const [allSizes, setAllSizes] = React.useState(false);
+			/** 刚保存完的提示，两秒后自己消失。 */
+			const [saved, setSaved] = React.useState(false);
 			React.useEffect(() => {
 				const timer = setInterval(() => setClock((count) => count + 1), 60000);
 				if (typeof timer.unref === "function") timer.unref();
@@ -550,6 +574,24 @@ window.__ModuleLoader__.load({
 			/** 草稿里有几条还没应用。 */
 			const draftPaths = Object.keys(draft);
 
+			/** 这一项改过，而且改得和配置里的当前值不一样。 */
+			const dirty = (key) => Object.hasOwn(draft, key) && !sameField(value, key, draft[key]);
+			/** 真正待写回的项数：改过又改回原值的不算。 */
+			const pending = draftPaths.filter((path) => dirty(path)).length;
+			/** 某一组里有几项改过，用来给分组标题点个点。 */
+			const groupDirty = (id) => {
+				const found = GROUP_DEFAULTS.find((item) => item[0] === id);
+				if (found === undefined) return 0;
+				return found[1].filter((entry) => dirty(entry[0])).length;
+			};
+			/** 跳到某一组。 */
+			const jumpTo = (id) => {
+				if (typeof document === "undefined" || typeof document.getElementById !== "function") return;
+				const target = document.getElementById("dsh-nudge-g-" + id);
+				if (target !== null && typeof target.scrollIntoView === "function")
+					target.scrollIntoView({ block: "start", behavior: "smooth" });
+			};
+
 			/** 把草稿里与当前值不同的项一次性写回去。 */
 			const applyDraft = () => {
 				setFailure("");
@@ -562,7 +604,12 @@ window.__ModuleLoader__.load({
 				if (ops.length === 0) return;
 				Promise.resolve(form.mutate(ops, snapshot.revision))
 					.then((ok) => {
-						if (ok === false) setFailure("宿主没接受这次修改，已刷新成当前值。");
+						if (ok === false) {
+							setFailure("宿主没接受这次修改，已刷新成当前值。");
+							return;
+						}
+						setSaved(true);
+						setTimeout(() => setSaved(false), 2000);
 					})
 					.catch((error) => {
 						setFailure("写入失败：" + (error instanceof Error ? error.message : String(error)));
@@ -713,6 +760,32 @@ window.__ModuleLoader__.load({
 				h("h2", { key: "title" }, "提醒弹窗"),
 				h(
 					"p",
+					{ className: "dsh-nudge-status", key: "status" },
+					"配置状态：" +
+						String(snapshot.status) +
+						(snapshot.writable === true ? " · 可写" : " · 只读") +
+						" · 待保存 " +
+						pending +
+						" 项",
+				),
+				h(
+					"nav",
+					{ className: "dsh-nudge-nav", key: "nav" },
+					NAV_GROUPS.map(([id, label]) =>
+						h(
+							"button",
+							{
+								key: id,
+								type: "button",
+								className: "dsh-nudge-navbtn",
+								onClick: () => jumpTo(id),
+							},
+							label,
+						),
+					),
+				),
+				h(
+					"p",
 					{ className: "dsh-nudge-intro", key: "intro" },
 					"这里改的是 nudge 插件的配置，存在当前 profile 的 cordis.patch.yml 里；改完点最下面的「应用」存下来，不用重启。",
 				),
@@ -723,7 +796,7 @@ window.__ModuleLoader__.load({
 						: null,
 				failure === "" ? null : h("p", { className: "dsh-nudge-error", key: "failure", role: "alert" }, failure),
 
-				h("div", { className: "dsh-nudge-group", key: "peek" }, [
+				h("div", { className: "dsh-nudge-group", key: "peek", id: "dsh-nudge-g-peek" }, [
 					h("p", { className: "dsh-nudge-group-title", key: "title" }, "长这样"),
 					h(
 						"p",
@@ -753,7 +826,7 @@ window.__ModuleLoader__.load({
 					]),
 				]),
 
-				h("div", { className: "dsh-nudge-group", key: "preset" }, [
+				h("div", { className: "dsh-nudge-group", key: "preset", id: "dsh-nudge-g-preset" }, [
 					h("p", { className: "dsh-nudge-group-title", key: "title" }, "一键预设"),
 					h("p", { className: "dsh-nudge-intro", key: "hint" }, "先挑一个最接近的，再往下微调；只动下面这些开关，不碰字体。"),
 					h(
@@ -776,7 +849,7 @@ window.__ModuleLoader__.load({
 					),
 				]),
 
-				h("div", { className: "dsh-nudge-group", key: "master" }, [
+				h("div", { className: "dsh-nudge-group", key: "master", id: "dsh-nudge-g-master", "data-dirty": groupDirty("master") > 0 ? "1" : "0" }, [
 					h("p", { className: "dsh-nudge-group-title", key: "title" }, "总开关"),
 					h(SwitchRow, {
 						key: "enabled",
@@ -789,7 +862,7 @@ window.__ModuleLoader__.load({
 					h(ResetRow, { key: "reset", group: "master", disabled, onReset: resetGroup }),
 				]),
 
-				h("div", { className: "dsh-nudge-group", key: "kinds" }, [
+				h("div", { className: "dsh-nudge-group", key: "kinds", id: "dsh-nudge-g-kinds", "data-dirty": groupDirty("kinds") > 0 ? "1" : "0" }, [
 					h("p", { className: "dsh-nudge-group-title", key: "title" }, "提醒哪几类"),
 					h(SwitchRow, {
 						key: "completed",
@@ -818,7 +891,7 @@ window.__ModuleLoader__.load({
 					h(ResetRow, { key: "reset", group: "kinds", disabled, onReset: resetGroup }),
 				]),
 
-				h("div", { className: "dsh-nudge-group", key: "when" }, [
+				h("div", { className: "dsh-nudge-group", key: "when", id: "dsh-nudge-g-when", "data-dirty": groupDirty("when") > 0 ? "1" : "0" }, [
 					h("p", { className: "dsh-nudge-group-title", key: "title" }, "什么时候弹"),
 					h(SwitchRow, {
 						key: "showWhenFocused",
@@ -847,7 +920,7 @@ window.__ModuleLoader__.load({
 					h(ResetRow, { key: "reset", group: "when", disabled, onReset: resetGroup }),
 				]),
 
-				h("div", { className: "dsh-nudge-group", key: "look" }, [
+				h("div", { className: "dsh-nudge-group", key: "look", id: "dsh-nudge-g-look", "data-dirty": groupDirty("look") > 0 ? "1" : "0" }, [
 					h("p", { className: "dsh-nudge-group-title", key: "title" }, "样子与位置"),
 					h(SelectRow, {
 						key: "theme",
@@ -893,7 +966,7 @@ window.__ModuleLoader__.load({
 					h(ResetRow, { key: "reset", group: "look", disabled, onReset: resetGroup }),
 				]),
 
-				h("div", { className: "dsh-nudge-group", key: "merge" }, [
+				h("div", { className: "dsh-nudge-group", key: "merge", id: "dsh-nudge-g-merge", "data-dirty": groupDirty("merge") > 0 ? "1" : "0" }, [
 					h("p", { className: "dsh-nudge-group-title", key: "title" }, "合并"),
 					h(NumberRow, {
 						key: "mergeWindowMs",
@@ -942,7 +1015,7 @@ window.__ModuleLoader__.load({
 					h(ResetRow, { key: "reset", group: "merge", disabled, onReset: resetGroup }),
 				]),
 
-				h("div", { className: "dsh-nudge-group", key: "type" }, [
+				h("div", { className: "dsh-nudge-group", key: "type", id: "dsh-nudge-g-type", "data-dirty": groupDirty("type") > 0 ? "1" : "0" }, [
 					h("p", { className: "dsh-nudge-group-title", key: "title" }, "字号与颜色"),
 					h(
 						"p",
@@ -1027,7 +1100,7 @@ window.__ModuleLoader__.load({
 					h(ResetRow, { key: "reset", group: "type", disabled, onReset: resetGroup }),
 				]),
 
-				h("div", { className: "dsh-nudge-group", key: "debug" }, [
+				h("div", { className: "dsh-nudge-group", key: "debug", id: "dsh-nudge-g-debug", "data-dirty": groupDirty("debug") > 0 ? "1" : "0" }, [
 		h(
 			"button",
 			{
@@ -1105,38 +1178,41 @@ window.__ModuleLoader__.load({
 		h(ResetRow, { key: "reset", group: "debug", disabled, onReset: resetGroup }),
 				]),
 
-				draftPaths.length === 0
-					? null
-					: h("div", { className: "dsh-nudge-applybar", key: "applybar", role: "status" }, [
-							h(
-								"span",
-								{ className: "dsh-nudge-applytext", key: "text" },
-								draftPaths.length + " 项改动还没保存",
-							),
-							h(
-								"button",
-								{
-									key: "apply",
-									type: "button",
-									className: "dsh-nudge-btn",
-									"data-on": "1",
-									disabled,
-									onClick: applyDraft,
-								},
-								"应用",
-							),
-							h(
-								"button",
-								{
-									key: "discard",
-									type: "button",
-									className: "dsh-nudge-btn",
-									disabled,
-									onClick: discardDraft,
-								},
-								"放弃",
-							),
-						]),
+				h("div", { className: "dsh-nudge-applybar", key: "applybar", "data-dirty": pending > 0 ? "1" : "0", role: "status" }, [
+					h(
+						"span",
+						{ className: "dsh-nudge-applytext", key: "text" },
+						pending > 0
+							? pending + " 项改动还没保存"
+							: saved === true
+								? "已保存"
+								: "没有未保存的改动",
+					),
+					h(
+						"button",
+						{
+							key: "apply",
+							type: "button",
+							className: "dsh-nudge-btn",
+							"data-on": "1",
+							disabled: disabled || pending === 0,
+							onClick: applyDraft,
+						},
+						"应用",
+					),
+					h(
+						"button",
+						{
+							key: "discard",
+							type: "button",
+							className: "dsh-nudge-btn",
+							disabled: disabled || pending === 0,
+							onClick: discardDraft,
+						},
+						"放弃",
+					),
+				]),
+				h("p", { className: "dsh-nudge-stamp", key: "stamp" }, "提醒弹窗设置页 · 修订 " + PANEL_REVISION),
 			]);
 		}
 
