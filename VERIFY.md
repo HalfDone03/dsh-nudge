@@ -17,14 +17,14 @@ if (-not $node) { $node = 'node' }          # 便携版/旧结构也找不到时
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs              # 201 项，含真起 helper 与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 178 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 208 项，含真起 helper 与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 185 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (201 checks)`，退出码 0（CI 上是 `178 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 208 条）。
+- selftest 输出 `ALL PASS (208 checks)`，退出码 0（CI 上是 `185 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 215 条）。
 
 证据（实测）：
 
@@ -38,7 +38,7 @@ PASS  位置文件里的点被沿用  --  {"placement":"remembered","placedLeft"
 PASS  越界位置回落到右下角  --  {"placement":"corner","placedLeft":2146,...}
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
 PASS  基线 completed 对得上  --  436x174 色 263/263 暗 72874/72874 亮 933/933 状态 352/352
-ALL PASS (201 checks)
+ALL PASS (208 checks)
 ```
 
 其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 —— 目标不是窗口贴角，
@@ -158,8 +158,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
   `$script:Fonts = Resolve-Typography $payload.typography`。宿主把 `typography` 放进 payload，并在预览期间
   发现字体变了就 `restartPreview()`（`previewRestart` 标记让重画跳过 3 秒冷却）。
 - 设置页：那一组常显，但一次只出选中那一类的两个框（1 个颜色框 + 1 个字号框），另有 8 个角色按钮
-  和一张八行的样卡；颜色行带 `#RRGGBB` 写法提示。
-  改一格写出 `[{op:"set",path:["typography","title","color"],value:"#FFFF0000"}]` 并带当前 revision。
+  和一张八行的样卡；颜色行带 `#RRGGBB` 写法提示；点「逐行设字号（8 行一起看）」会把八类的字号框
+  一次列出来（页面上的 `NumberRow` 从 5 个变成 13 个）。
+- 改一格不立刻写回：底部出现「1 项改动还没保存」，点「应用」才写出
+  `[{op:"set",path:["typography","title","color"],value:"#FFFF0000"}]`（带当前 revision），点「放弃」则丢掉。
+  自测里的假 `useState` 会真存值，所以草稿 → 应用 → 放弃三步都能断言。
 - 真的进卡片（A/B 快照，临时目录里画，不污染 `screenshots/`）：`completed` 把标题改成 22 号纯红 →
   卡片高度 **174 → 182**，纯红像素 **0 → 861**。
 
@@ -183,6 +186,9 @@ $env:DSH_NUDGE_SCHEMASTERY = '...\node_modules\@deepseek-ai'
 - 想认真调位置和大小就开预览：`设置 → 提醒弹窗 → 调试 → 预览弹窗`。卡片常驻，拖动/缩放都不会被打断，关掉开关时自动把位置与大小写进 `%LOCALAPPDATA%\dsh-nudge\placement.json`。
 - 在感应区按下 → `ReleaseCapture()` + `SendMessage(hwnd, WM_NCLBUTTONDOWN, HT<edge>, 0)`，由系统接管缩放；卡片内部按下 → `DragMove()`，位移 < 4px 视为点击（回 DSH + 复制提醒 + 关闭）。
 - 内容自适应可用 `-SnapshotWidth <px>` 验证：同一份 payload 在 240 / 300 / 384 / 560 宽下都能排版，宽度严格跟随参数（图片宽 = 卡片宽 + 28 阴影留白 + 24 底边 = +52）。
+- 字号跟着窗口缩放：`Set-CardTextScale` 遍历可视树，第一次见到每个 `TextBlock` 就把当时的字号、行高、
+  `MaxHeight` 记进 `$script:textBase`，之后按「当前宽度 / 首次量出的宽度」重设，夹在 0.85–1.8 倍；
+  `SizeChanged` 里先缩放再按新宽度 `Measure`，`MinHeight` 跟着抬。基准宽度在窗口建好后从 `Measure-Card` 取。
 
 ## 2.6 多条提醒的可读性
 

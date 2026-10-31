@@ -63,6 +63,8 @@ window.__ModuleLoader__.load({
 			".dsh-nudge-btn:hover:not(:disabled){border-color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-btn:disabled{opacity:.5;cursor:not-allowed}",
 			".dsh-nudge-btn[data-on=\"1\"]{border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}",
+			".dsh-nudge-applybar{position:sticky;bottom:0;z-index:2;display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:0.5px solid var(--dsw-alias-state-business-primary);background:var(--dsw-alias-bg-l1);box-shadow:0 2px 12px rgba(0,0,0,.12)}",
+			".dsh-nudge-applytext{flex:1;font-size:13px;line-height:20px}",
 		].join("");
 
 		/** 把样式挂进 <head>，同一个文档只挂一次。 */
@@ -88,6 +90,17 @@ window.__ModuleLoader__.load({
 				current = current[part];
 			}
 			return current;
+		}
+
+		/**
+		 * 字段的新值和配置里的当前值是否等价（数组、对象按内容比）。
+		 * @param {object} value 配置对象
+		 * @param {string} key 字段路径
+		 * @param {unknown} next 待比较的新值
+		 * @returns {boolean} 是否相同
+		 */
+		function sameField(value, key, next) {
+			return JSON.stringify(readField(value, key)) === JSON.stringify(next);
 		}
 
 		/**
@@ -487,6 +500,10 @@ window.__ModuleLoader__.load({
 			const [dump, setDump] = React.useState("");
 			/** 每分钟加一，让「现在是否静音」跟着时间走。 */
 			const [clock, setClock] = React.useState(0);
+			/** 还没点「应用」的改动：字段路径 → 新值。空对象表示没有待应用的改动。 */
+			const [draft, setDraft] = React.useState({});
+			/** 字号那组是否展开成「8 行一起看」。 */
+			const [allSizes, setAllSizes] = React.useState(false);
 			React.useEffect(() => {
 				const timer = setInterval(() => setClock((count) => count + 1), 60000);
 				if (typeof timer.unref === "function") timer.unref();
@@ -501,11 +518,25 @@ window.__ModuleLoader__.load({
 			}, []);
 
 			/**
-			 * 写一个字段（支持 `a.b` 路径）。
+			 * 改一项：先记进草稿，点「应用」才写进配置。
 			 * @param {string} key 字段路径
 			 * @param {unknown} next 新值
 			 */
 			const write = (key, next) => {
+				setFailure("");
+				setDraft((current) => {
+					const merged = { ...current };
+					merged[key] = next;
+					return merged;
+				});
+			};
+
+			/**
+			 * 立刻写一项，不进草稿（弹预览卡这类动作要马上见效）。
+			 * @param {string} key 字段路径
+			 * @param {unknown} next 新值
+			 */
+			const writeNow = (key, next) => {
 				setFailure("");
 				Promise.resolve(form.mutate([{ op: "set", path: key.split("."), value: next }], snapshot.revision))
 					.then((ok) => {
@@ -516,13 +547,19 @@ window.__ModuleLoader__.load({
 					});
 			};
 
-			/**
-			 * 一次写多个字段（预设用）。
-			 * @param {{path: string, value: unknown}[]} entries 字段路径与新值
-			 */
-			const writeMany = (entries) => {
+			/** 草稿里有几条还没应用。 */
+			const draftPaths = Object.keys(draft);
+
+			/** 把草稿里与当前值不同的项一次性写回去。 */
+			const applyDraft = () => {
 				setFailure("");
-				const ops = entries.map((entry) => ({ op: "set", path: entry.path.split("."), value: entry.value }));
+				const ops = [];
+				for (const path of draftPaths) {
+					if (sameField(value, path, draft[path])) continue;
+					ops.push({ op: "set", path: path.split("."), value: draft[path] });
+				}
+				setDraft({});
+				if (ops.length === 0) return;
 				Promise.resolve(form.mutate(ops, snapshot.revision))
 					.then((ok) => {
 						if (ok === false) setFailure("宿主没接受这次修改，已刷新成当前值。");
@@ -532,17 +569,38 @@ window.__ModuleLoader__.load({
 					});
 			};
 
-			const bool = (key) => readField(value, key) === true;
+			/** 丢掉草稿，回到配置里的当前值。 */
+			const discardDraft = () => {
+				setFailure("");
+				setDraft({});
+			};
+
+			/**
+			 * 一次改多个字段（预设、恢复默认、导入都用它），同样先进草稿。
+			 * @param {{path: string, value: unknown}[]} entries 字段路径与新值
+			 */
+			const writeMany = (entries) => {
+				setFailure("");
+				setDraft((current) => {
+					const merged = { ...current };
+					for (const entry of entries) merged[entry.path] = entry.value;
+					return merged;
+				});
+			};
+
+			/** 读一个字段：草稿里有就用草稿的，页面总是显示「改完会是什么样」。 */
+			const raw = (key) => (Object.hasOwn(draft, key) ? draft[key] : readField(value, key));
+			const bool = (key) => raw(key) === true;
 			const num = (key) => {
-				const current = readField(value, key);
+				const current = raw(key);
 				return typeof current === "number" ? current : 0;
 			};
 			const text = (key) => {
-				const current = readField(value, key);
+				const current = raw(key);
 				return typeof current === "string" ? current : "";
 			};
 			const lines = (key) => {
-				const current = readField(value, key);
+				const current = raw(key);
 				return Array.isArray(current) ? current.map((item) => String(item)) : [];
 			};
 			const mute = splitRanges(lines("muteRanges"));
@@ -656,7 +714,7 @@ window.__ModuleLoader__.load({
 				h(
 					"p",
 					{ className: "dsh-nudge-intro", key: "intro" },
-					"这里改的是 nudge 插件的配置，存在当前 profile 的 cordis.patch.yml 里；改一项立刻生效，不用重启。",
+					"这里改的是 nudge 插件的配置，存在当前 profile 的 cordis.patch.yml 里；改完点最下面的「应用」存下来，不用重启。",
 				),
 				!ready
 					? h("p", { className: "dsh-nudge-warn", key: "loading" }, "正在读取配置…")
@@ -688,7 +746,7 @@ window.__ModuleLoader__.load({
 								type: "button",
 								className: "dsh-nudge-btn",
 								disabled,
-								onClick: () => write("debugPreview", !bool("debugPreview")),
+								onClick: () => writeNow("debugPreview", !bool("debugPreview")),
 							},
 							bool("debugPreview") ? "收起桌面上的卡片" : "在桌面上弹一张看看",
 						),
@@ -910,6 +968,42 @@ window.__ModuleLoader__.load({
 							),
 						),
 					),
+					h(
+						"div",
+						{ className: "dsh-nudge-actions", key: "alltoggle" },
+						h(
+							"button",
+							{
+								key: "all",
+								type: "button",
+								className: "dsh-nudge-btn",
+								"data-on": allSizes ? "1" : "0",
+								"aria-expanded": allSizes ? "true" : "false",
+								disabled,
+								onClick: () => setAllSizes(!allSizes),
+							},
+							allSizes ? "收起逐行字号" : "逐行设字号（8 行一起看）",
+						),
+					),
+					allSizes
+						? h(
+								"div",
+								{ className: "dsh-nudge-sizerows", key: "sizes" },
+								FONT_ROLES.map(([role]) =>
+									h(NumberRow, {
+										key: role,
+										label: roleLabel(role),
+										hint: "0 表示用默认的 " + ROLE_SIZE[role] + "。",
+										value: num("typography." + role + ".size"),
+										min: 0,
+										max: 48,
+										step: 0.5,
+										disabled,
+										onCommit: (next) => write("typography." + role + ".size", next),
+									}),
+								),
+							)
+						: null,
 					h(TextRow, {
 						key: "color",
 						label: "颜色（" + roleLabel(fontRole) + "）",
@@ -1010,6 +1104,39 @@ window.__ModuleLoader__.load({
 			: null,
 		h(ResetRow, { key: "reset", group: "debug", disabled, onReset: resetGroup }),
 				]),
+
+				draftPaths.length === 0
+					? null
+					: h("div", { className: "dsh-nudge-applybar", key: "applybar", role: "status" }, [
+							h(
+								"span",
+								{ className: "dsh-nudge-applytext", key: "text" },
+								draftPaths.length + " 项改动还没保存",
+							),
+							h(
+								"button",
+								{
+									key: "apply",
+									type: "button",
+									className: "dsh-nudge-btn",
+									"data-on": "1",
+									disabled,
+									onClick: applyDraft,
+								},
+								"应用",
+							),
+							h(
+								"button",
+								{
+									key: "discard",
+									type: "button",
+									className: "dsh-nudge-btn",
+									disabled,
+									onClick: discardDraft,
+								},
+								"放弃",
+							),
+						]),
 			]);
 		}
 

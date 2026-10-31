@@ -296,6 +296,10 @@ function Resolve-Payload {
 
 $script:CardWidth = 384
 $script:ShadowPad = 14
+# Type scales with the window: base sizes are captured the first time a block
+# is touched, so resizing back and forth never compounds the factor.
+$script:textBase = @{}
+$script:scaleBase = 0
 $script:CardRadius = 12
 $script:FontStack = 'Microsoft YaHei UI, Microsoft YaHei, Segoe UI, Arial'
 $script:IconFont = 'Segoe MDL2 Assets'
@@ -470,6 +474,58 @@ function Measure-Card {
         Width  = [int][Math]::Ceiling($Card.DesiredSize.Width)
         Height = [int][Math]::Ceiling($Card.DesiredSize.Height)
     }
+}
+
+function Set-CardTextScale {
+    param($Root, [double]$Factor)
+    if ($null -eq $Root) { return }
+    # A card dragged much wider than it was drawn for gets bigger type; a card
+    # squeezed narrow stops shrinking at 0.85 so nothing turns unreadable.
+    if ($Factor -lt 0.85) { $Factor = 0.85 }
+    if ($Factor -gt 1.8) { $Factor = 1.8 }
+    $stack = New-Object System.Collections.Stack
+    $stack.Push($Root)
+    while ($stack.Count -gt 0) {
+        $node = $stack.Pop()
+        if ($node -is [System.Windows.Controls.TextBlock]) {
+            if (-not $script:textBase.ContainsKey($node)) {
+                $script:textBase[$node] = @{
+                    Size = [double]$node.FontSize
+                    Line = [double]$node.LineHeight
+                    Max  = [double]$node.MaxHeight
+                }
+            }
+            $base = $script:textBase[$node]
+            $node.FontSize = [double]$base.Size * $Factor
+            if (-not [double]::IsNaN([double]$base.Line)) { $node.LineHeight = [double]$base.Line * $Factor }
+            if (-not [double]::IsInfinity([double]$base.Max) -and [double]$base.Max -gt 0) {
+                $node.MaxHeight = [double]$base.Max * $Factor
+            }
+        }
+        $count = 0
+        try { $count = [System.Windows.Media.VisualTreeHelper]::GetChildrenCount($node) } catch { $count = 0 }
+        for ($i = 0; $i -lt $count; $i++) {
+            $child = $null
+            try { $child = [System.Windows.Media.VisualTreeHelper]::GetChild($node, $i) } catch { $child = $null }
+            if ($null -ne $child) { $stack.Push($child) }
+        }
+    }
+}
+
+function Update-CardScale {
+    param($Window, $Card)
+    if ($null -eq $Window -or $null -eq $Card) { return }
+    $base = [double]$script:scaleBase
+    if ($base -le 0) { return }
+    Set-CardTextScale -Root $Card -Factor ([double]$Window.ActualWidth / $base)
+    # Measure at the width we are about to have: DesiredSize still describes the
+    # previous layout pass, so trusting it lags one resize step and clips.
+    $probeWidth = [Math]::Max(120, [double]$Window.ActualWidth - (2 * $script:ShadowPad))
+    $Card.Measure([System.Windows.Size]::new($probeWidth, [double]::PositiveInfinity))
+    $needed = $Card.DesiredSize.Height
+    # Always re-derive the floor from the current width: only raising it would
+    # leave the window stuck tall after a narrow-then-wide drag.
+    if ($needed -gt 0) { $Window.MinHeight = [Math]::Max(90, $needed) }
 }
 
 function New-VerticalGradient {
@@ -1223,6 +1279,8 @@ if ($null -ne $payload) {
     Write-Trace 'card'
     $size = Measure-Card $card
     Write-Trace 'measure'
+    # The type is laid out for this width; every other width is a ratio of it.
+    $script:scaleBase = [double]$size.Width
 
     $window = New-Object System.Windows.Window
     $window.WindowStyle = 'None'
@@ -1525,17 +1583,7 @@ if ($null -ne $payload) {
             if (-not [bool]$script:cardReady) { return }
             # Widen/narrow reflows the text, so the card may need more height than
             # the window has. Lift MinHeight instead of clipping or scrolling.
-            try {
-                # Measure at the width we are about to have: DesiredSize still
-                # describes the previous layout pass, so trusting it lags one
-                # resize step and can leave the card clipped.
-                $probeWidth = [Math]::Max(120, $window.ActualWidth - (2 * $script:ShadowPad))
-                $card.Measure([System.Windows.Size]::new($probeWidth, [double]::PositiveInfinity))
-                $needed = $card.DesiredSize.Height
-                # Always re-derive the floor from the current width: only raising it
-                # would leave the window stuck tall after a narrow-then-wide drag.
-                if ($needed -gt 0) { $window.MinHeight = [Math]::Max(90, $needed) }
-            } catch { }
+            try { Update-CardScale -Window $window -Card $card } catch { }
             try {
                 if ($script:autoClose) { $timer.Stop(); $timer.Start() }
             } catch { }
@@ -1543,6 +1591,10 @@ if ($null -ne $payload) {
 
     $window.Add_Loaded({
             Show-CardWindow -Window $window
+            # A remembered size can be wider or narrower than the natural one:
+            # scale the type before the final placement is computed, so the
+            # height used for the bottom-right pin is already right.
+            try { Update-CardScale -Window $window -Card $card } catch { }
             # Final placement in physical pixels. WPF positioned the window through
             # DIPs, which can disagree with the monitor's work area once scaling is in
             # play; re-pin it to the chosen area's bottom-right corner and let the

@@ -1149,13 +1149,25 @@ vm.runInContext(clientSource, clientContext, { filename: "client.js" });
 check("设置页用 __ModuleLoader__.load 注册", clientDefinition !== undefined);
 check("设置页 bundle id 是包名", clientDefinition?.id === "dsh-nudge", String(clientDefinition?.id));
 
-/** 假 React：足够跑函数组件，不实现更新循环。 */
+/** 假 React：够跑函数组件；useState 真存值，重渲染靠再调一次组件。 */
+const clientHooks = { cursor: 0, states: [] };
 const fakeReact = {
 	createElement: (type, props, ...children) => ({
 		type,
 		props: { ...(props ?? {}), children: children.length === 0 ? props?.children : children.length === 1 ? children[0] : children },
 	}),
-	useState: (init) => [typeof init === "function" ? init() : init, () => {}],
+	useState: (init) => {
+		const index = clientHooks.cursor;
+		clientHooks.cursor += 1;
+		if (index >= clientHooks.states.length) {
+			clientHooks.states[index] = typeof init === "function" ? init() : init;
+		}
+		const set = (next) => {
+			const current = clientHooks.states[index];
+			clientHooks.states[index] = typeof next === "function" ? next(current) : next;
+		};
+		return [clientHooks.states[index], set];
+	},
 	useEffect: () => {},
 	useMemo: (build) => build(),
 	useRef: (init) => ({ current: init }),
@@ -1258,18 +1270,28 @@ check("设置页控件数量", clientControls.length >= 14, "controls=" + client
 			&& !readmeSource.includes("/plugins/dsh-nudge/client.js"),
 		"readme",
 	);
+	check(
+		"设置页的改动先进草稿、点应用才写回",
+		clientSource.includes("dsh-nudge-applybar")
+			&& clientSource.includes("const applyDraft =")
+			&& clientSource.includes("const discardDraft =")
+			&& clientSource.includes("sameField("),
+		"applybar",
+	);
+	check(
+		"卡片文字跟着窗口缩放",
+		popupSource.includes("function Set-CardTextScale")
+			&& popupSource.includes("function Update-CardScale")
+			&& popupSource.includes("$script:textBase")
+			&& popupSource.includes("if ($Factor -gt 1.8) { $Factor = 1.8 }")
+			&& popupSource.includes("Update-CardScale -Window $window -Card $card"),
+		"scale",
+	);
 check("配色是三个选项的下拉", clientControls.some((node) => node.type === "select") && clientNodes.filter((node) => node.type === "option").length === 3);
-const clientSwitch = clientControls.find((node) => node.props["aria-label"] === "任务完成");
-clientSwitch.props.onChange({ target: { checked: false } });
-await Promise.resolve();
-check(
-	"设置页写嵌套配置带 revision",
-	JSON.stringify(clientMutations) === JSON.stringify([{ ops: [{ op: "set", path: ["kinds", "completed"], value: false }], revision: 7 }]),
-	JSON.stringify(clientMutations),
-);
 
 /** 再渲染一次设置页：改完 clientConfig 就能看到开关的影响（假表单每次 getSnapshot 都读最新值）。 */
 const renderClientPage = () => {
+	clientHooks.cursor = 0;
 	const tree = clientRegistration.Component({ ...clientRegistration.options.inject() });
 	const nodes = [];
 	const components = [];
@@ -1283,6 +1305,32 @@ const renderClientPage = () => {
 	walk(tree);
 	return { nodes, components };
 };
+
+const clientSwitch = clientControls.find((node) => node.props["aria-label"] === "任务完成");
+/** 底部那条「还没保存」的提示，以及它上面的按钮。 */
+const applyBarOf = (nodes) => nodes.find((node) => node.type === "div" && node.props.className === "dsh-nudge-applybar");
+const buttonByText = (nodes, text) => nodes.find((node) => node.type === "button" && node.props.children === text);
+clientMutations.length = 0;
+clientSwitch.props.onChange({ target: { checked: false } });
+await Promise.resolve();
+const stagedPage = renderClientPage();
+check(
+	"改一项只进草稿，不立刻写回",
+	clientMutations.length === 0
+		&& applyBarOf(stagedPage.nodes) !== undefined
+		&& stagedPage.nodes.some((node) => node.props.children === "1 项改动还没保存"),
+	"writes=" + clientMutations.length + " bar=" + (applyBarOf(stagedPage.nodes) !== undefined),
+);
+clientMutations.length = 0;
+buttonByText(stagedPage.nodes, "应用").props.onClick();
+await Promise.resolve();
+const appliedPage = renderClientPage();
+check(
+	"点应用把草稿一次写回并带 revision",
+	JSON.stringify(clientMutations) === JSON.stringify([{ ops: [{ op: "set", path: ["kinds", "completed"], value: false }], revision: 7 }])
+		&& applyBarOf(appliedPage.nodes) === undefined,
+	JSON.stringify(clientMutations),
+);
 /** 样卡里可点的行、角色按钮、预设按钮。 */
 const cardHits = (nodes) => nodes.filter((node) => node.type === "span" && node.props["data-role"] !== undefined);
 const roleButtons = (nodes) => nodes.filter((node) => node.type === "button" && node.props["data-role"] !== undefined);
@@ -1314,22 +1362,63 @@ check("字体行带写法说明与默认字号",
 clientMutations.length = 0;
 presetButtons(clientNodes)[0].props.onClick();
 await Promise.resolve();
+const presetPage = renderClientPage();
 check(
-	"预设一次写一组字段并带 revision",
+	"预设也是先填草稿",
+	clientMutations.length === 0
+		&& presetPage.nodes.some((node) => node.props.children === "9 项改动还没保存"),
+	"writes=" + clientMutations.length,
+);
+clientMutations.length = 0;
+buttonByText(presetPage.nodes, "应用").props.onClick();
+await Promise.resolve();
+check(
+	"预设一次写一组字段，和现状相同的不重复写",
 	clientMutations.length === 1
-	&& clientMutations[0].ops.length === 9
+	&& clientMutations[0].ops.length === 6
 	&& clientMutations[0].revision === 7
-	&& JSON.stringify(clientMutations[0].ops[5]) === JSON.stringify({ op: "set", path: ["staySeconds"], value: 8 })
-	&& JSON.stringify(clientMutations[0].ops[8]) === JSON.stringify({ op: "set", path: ["muteRanges"], value: ["22:00-08:00"] }),
-	JSON.stringify(clientMutations[0]?.ops?.length) + "/" + JSON.stringify(clientMutations[0]?.ops?.[5]),
+	&& JSON.stringify(clientMutations[0].ops[3]) === JSON.stringify({ op: "set", path: ["staySeconds"], value: 8 })
+	&& !clientMutations[0].ops.some((op) => op.path[0] === "muteRanges"),
+	JSON.stringify(clientMutations[0]?.ops?.length) + "/" + JSON.stringify(clientMutations[0]?.ops?.[3]),
 );
 
 clientMutations.length = 0;
 fontColorRow.props.onCommit("#FFFF0000");
 await Promise.resolve();
+const colorPage = renderClientPage();
+check(
+	"字体改动先落草稿",
+	clientMutations.length === 0
+		&& colorPage.nodes.some((node) => node.props.children === "1 项改动还没保存"),
+	"writes=" + clientMutations.length,
+);
+buttonByText(colorPage.nodes, "应用").props.onClick();
+await Promise.resolve();
 check("字体改动写成三段路径并带 revision",
 	JSON.stringify(clientMutations) === JSON.stringify([{ ops: [{ op: "set", path: ["typography", "project", "color"], value: "#FFFF0000" }], revision: 7 }]),
 	JSON.stringify(clientMutations));
+clientMutations.length = 0;
+buttonByText(renderClientPage().nodes, "逐行设字号（8 行一起看）").props.onClick();
+const sizePage = renderClientPage();
+const sizeRows = sizePage.components.filter((item) => item.type.name === "NumberRow");
+const roleLabels = ["标题", "项目名", "任务名", "原因", "状态词", "时间", "展开提示", "底部提示"];
+check(
+	"逐行设字号展开后八类各有自己的输入框",
+	sizeRows.length === 13 && roleLabels.every((label) => sizeRows.some((item) => item.props.label === label)),
+	"rows=" + sizeRows.length,
+);
+clientMutations.length = 0;
+sizeRows.find((item) => item.props.label === "任务名").props.onCommit(13);
+await Promise.resolve();
+const abandonPage = renderClientPage();
+buttonByText(abandonPage.nodes, "放弃").props.onClick();
+await Promise.resolve();
+const clearedPage = renderClientPage();
+check(
+	"放弃丢掉草稿、不写回",
+	clientMutations.length === 0 && applyBarOf(clearedPage.nodes) === undefined,
+	"writes=" + clientMutations.length,
+);
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 check("package.json 声明了浏览器半身", pkg.exports["./client"] === "./client.js" && pkg.dsh.client?.platform === "web", JSON.stringify(pkg.dsh.client));
 const hostSource = readFileSync(join(root, "lib", "index.js"), "utf8");
