@@ -972,6 +972,13 @@ check("弹窗脚本能打阶段耗时：-Trace 写 stderr",
 		&& popupSource.includes("function Write-Trace")
 		&& popupSource.includes("[Console]::Error.WriteLine"),
 	"stage trace");
+// 卡片进程如果继承宿主的当前目录，只要它活着，那个目录在 Windows 上就删不掉
+// （实测 Remove-Item 报「正由另一进程使用」）：DSH 升级、装/卸脚本动 profile 都会失败。
+check("helper 进程不继承宿主工作目录，卡片活着时那些目录才删得掉",
+	indexSource.includes("function helperCwd()")
+		&& (indexSource.match(/cwd: helperCwd\(\)/g) || []).length === 2
+		&& indexSource.includes('return dir !== "" && existsSync(dir) ? dir : undefined;'),
+	"popup + taskkill");
 
 // 装/卸脚本的 node + pnpm 发现逻辑经历过一次回归：旧实现只认
 // %DSH_HOME%\dsh-runtimes\...，桌面版把运行时放在 <安装目录>\resources\runtime\...，
@@ -1043,6 +1050,16 @@ check("pnpm 失败或自检没通过时回滚 package.json，不做半装",
 		&& pnpmFailBlock.includes("package.json restored from backup")
 		&& !installSource.includes("package.json is already updated"),
 	`rollbacks ${rollbacks}`);
+
+// 旧版脚本手工建的 junction 不在 pnpm 的账上：`pnpm install` 不会清、插件管理器也看不见，
+// 卸载后它会一直指着源码目录。所以卸载要自己拆链接，而且只拆链接（不递归、不碰目标）。
+check("卸载会拆掉 pnpm 不认的手工 junction，且只删链接不碰目标目录",
+	uninstallSource.includes("ReparsePoint")
+		&& uninstallSource.includes("[System.IO.Directory]::Delete($linkItem.FullName, $false)")
+		&& uninstallSource.includes("manual junction removed")
+		&& uninstallSource.includes("real directory left alone")
+		&& !uninstallSource.includes("Remove-Item -LiteralPath $linkItem"),
+	"junction sweep");
 
 /**
  * 7. 单卡互斥与 payload 落盘（--no-live 时跳过）----

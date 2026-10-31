@@ -11,6 +11,10 @@
     is written before any change and restored automatically if the update fails.
     The script never restarts DSH.
 
+    It also removes a node_modules\dsh-nudge junction left behind by the old
+    install script: pnpm never recorded that entry, so `pnpm install` and the
+    plugin manager both leave it pointing at the source directory.
+
 .PARAMETER ProfileDir
     DSH profile directory. Defaults to %DSH_HOME%\profiles\desktop.
 
@@ -135,6 +139,40 @@ if ($SkipPnpm) {
         }
         else {
             Write-Step 'node_modules pruned'
+        }
+    }
+}
+
+# ---- drop the junction pnpm never knew about ----
+# The old install script linked node_modules\dsh-nudge straight at the source
+# checkout. pnpm has no record of that entry (not in pnpm-lock.yaml, not in
+# .modules.yaml), so `pnpm install` ignores it and the plugin manager cannot
+# see it either -- the link stays behind pointing at the repo. Remove the link
+# only: [System.IO.Directory]::Delete without recursion never touches the target.
+if ($SkipPnpm) {
+    Write-Step 'node_modules left alone (-SkipPnpm)'
+}
+else {
+    $modulesDir = Join-Path $ProfileDir 'node_modules'
+    $linkItem = $null
+    if (Test-Path -LiteralPath $modulesDir) {
+        $linkItem = @(Get-ChildItem -LiteralPath $modulesDir -Filter $packageName -Force -ErrorAction SilentlyContinue) |
+            Select-Object -First 1
+    }
+    if ($null -eq $linkItem) {
+        Write-Step 'node_modules: no leftover entry'
+    }
+    elseif (($linkItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) {
+        Write-Step 'node_modules: real directory left alone'
+    }
+    else {
+        try {
+            [System.IO.Directory]::Delete($linkItem.FullName, $false)
+            Write-Step 'node_modules: manual junction removed'
+        }
+        catch {
+            Write-Host "Could not remove $($linkItem.FullName): $($_.Exception.Message)"
+            Write-Host 'Delete that link by hand if DSH complains -- it points at the plugin source.'
         }
     }
 }

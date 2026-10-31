@@ -10,7 +10,7 @@
   `size` 0–48，`color` 接受 `#RRGGBB` / `#AARRGGBB`，写错在加载时报错而不是静默失效。
   设置页新增「每一项的字号和颜色」一组，**只在「预览弹窗」打开时出现**——没有常驻的卡片当靶子，调字号只能靠猜；
   改完对**所有**卡片生效，预览卡会当场重画一次（重画跳过 3 秒冷却）。
-- 自测 188 项（`--no-live` 165；设 `DSH_NUDGE_SCHEMASTERY` 时 195）：字体配置校验 5 条、schema volatile 1 条、
+- 自测 190 项（`--no-live` 167；设 `DSH_NUDGE_SCHEMASTERY` 时 197）：字体配置校验 5 条、schema volatile 1 条、
   源码约束 2 条、设置页字体组 4 条、字体快照 A/B 2 条（标题 22 号纯红：高度 174→182、红像素 0→861）。
   设置页的控件数从 17 涨到 33（多了 8 个颜色框与 8 个字号框）。
 
@@ -38,7 +38,7 @@
 - CI 补两道：`scripts/dsh-deps.ps1` 进「PowerShell 脚本能解析」的列表；新增「装/卸脚本 dry-run」一步——
   临时 profile 跑 `install.ps1 -DryRun` 与 `uninstall.ps1 -DryRun`，断言退出码 0、`package.json` 一字未改、
   没建 `node_modules`，这两个脚本以后再退化 CI 会直接红。
-- 自测加 9 条静态断言钉住装/卸脚本的 pnpm 发现：共用 `dsh-deps.ps1`、桌面版与便携版两种布局都试、
+- 自测加 11 条静态断言钉住装/卸脚本的 pnpm 发现：共用 `dsh-deps.ps1`、桌面版与便携版两种布局都试、
   进程名带空格只能按前缀正则匹配、一个 pnpm 都找不到时回滚并 `exit 1`、`$ErrorActionPreference` 只在调用期间
   放宽、CI 覆盖到、文档不再写死旧路径、`install.ps1` 装到一半必回滚。
 - `scripts/install.ps1` 原本**不是原子的**：它先改 `package.json`、再跑 `pnpm install`，而 pnpm 失败
@@ -46,6 +46,13 @@
   名字留着，`node_modules` 里却没有对应目录。下次启动 DSH 解析不到这个包，插件管理器里它还显示成一个
   报了错的包（不重装、不卸载都消不掉）。现在这两处失败都会**先把 `package.json` 还原成备份再报错**，
   做到要么装好、要么像没装过。
+- 卡片进程（helper）不再继承宿主的当前工作目录。Windows 上「进程的当前目录」就是那个目录的一个句柄：
+  只要卡片还在显示，那个目录就删不掉、也换不了名（实测删目录直接报「正由另一进程使用」）。DSH 升级要替换
+  安装目录里的文件、装/卸脚本要动 profile 里的 `node_modules`，只要那一刻正好有卡片在，就会失败——表现成
+  「偶尔」出问题，事后还查不到原因。现在 helper 从系统临时目录启动；弹窗脚本本来就用绝对路径，不受影响。
+- `scripts/uninstall.ps1` 会顺手拆掉旧版脚本手工建的 `node_modules\dsh-nudge` 链接。那是个 junction，
+  pnpm 的 lockfile 里没有它，所以 `pnpm install` 不认、插件管理器也看不见，卸载后会一直留着指向源码目录。
+  现在只拆链接本身（不递归，绝不碰目标目录里的任何文件）；真正的目录留给 pnpm 自己收敛。
 - 「已经装过」的判定不再只看 `node_modules\dsh-nudge` 在不在。旧版脚本是手工架 junction 装的，pnpm 的
   lockfile 里根本没有这个包：profile 里下一次 pnpm 操作会把这个目录当杂物删掉（插件凭空消失），插件管理器
   里的 `pnpm remove` 也清不掉它（manifest 改了、目录还在）。现在要求 `package.json`、`node_modules`、
