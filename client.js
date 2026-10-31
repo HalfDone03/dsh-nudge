@@ -48,6 +48,10 @@ window.__ModuleLoader__.load({
 			".dsh-nudge-areas{width:260px;flex:none;font:inherit;font-size:13px;line-height:20px;padding:6px 8px;border-radius:7px;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l2);color:var(--dsw-alias-label-primary);resize:vertical;min-height:64px}",
 			".dsh-nudge-switch{flex:none;width:36px;height:20px;margin:0;cursor:pointer;accent-color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-warn{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}",
+	".dsh-nudge-group-toggle{margin:10px 0 2px;padding:0;border:0;background:none;font:inherit;font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--dsw-alias-label-tertiary);cursor:pointer;text-align:left}",
+	".dsh-nudge-group-toggle:hover{color:var(--dsw-alias-label-primary)}",
+	".dsh-nudge-group-toggle[data-on=\"1\"]{color:var(--dsw-alias-label-primary)}",
+	".dsh-nudge-error{margin:0;font-size:12px;line-height:18px;color:#d9534f}",
 			".dsh-nudge-error{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary)}",
 			".dsh-nudge-card{display:flex;flex-direction:column;gap:2px;border-radius:12px;padding:12px 14px;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l1)}",
 			".dsh-nudge-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}",
@@ -345,6 +349,129 @@ window.__ModuleLoader__.load({
 		];
 
 		/**
+		 * 每一组「恢复默认」写回去的值。必须和 `lib/index.js` 的 `DEFAULTS` 一致，
+		 * 自测会拿这份逐项比对（`exports.groupDefaults` 就是给它看的）。
+		 */
+		const GROUP_DEFAULTS = [
+			["master", [["enabled", true]]],
+			[
+				"kinds",
+				[
+					["kinds.completed", true],
+					["kinds.needs_choice", true],
+					["kinds.failed", true],
+				],
+			],
+			[
+				"when",
+				[
+					["showWhenFocused", true],
+					["suppressWhenFullscreen", true],
+					["alertOnToolError", true],
+				],
+			],
+			[
+				"look",
+				[
+					["theme", "auto"],
+					["staySeconds", 15],
+					["margin", 16],
+					["rememberPosition", true],
+				],
+			],
+			[
+				"merge",
+				[
+					["mergeWindowMs", 1200],
+					["maxItems", 8],
+					["muteRanges", []],
+				],
+			],
+			["type", []],
+			[
+				"debug",
+				[
+					["debugPreview", false],
+					["debugPayload", false],
+					["debugFile", ""],
+				],
+			],
+		];
+		for (const [role] of FONT_ROLES) {
+			GROUP_DEFAULTS[5][1].push(["typography." + role + ".color", ""], ["typography." + role + ".size", 0]);
+		}
+
+		/** 静音时段的写法：小时 0–23、分钟 0–59，中间允许空格。 */
+		const RANGE_PATTERN = /^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/u;
+
+		/**
+		 * 把静音时段拆成「能用的」和「写法不对的」两堆。
+		 * @param {string[]} ranges 原始行
+		 * @returns {{bad: string[], slots: {from: number, to: number}[]}} 结果
+		 */
+		function splitRanges(ranges) {
+			const bad = [];
+			const slots = [];
+			for (const raw of ranges) {
+				const line = String(raw).trim();
+				if (line === "") continue;
+				const match = RANGE_PATTERN.exec(line);
+				if (match === null) {
+					bad.push(line);
+					continue;
+				}
+				const from = Number(match[1]) * 60 + Number(match[2]);
+				const to = Number(match[3]) * 60 + Number(match[4]);
+				if (from > 1439 || to > 1439) {
+					bad.push(line);
+					continue;
+				}
+				if (from === to) continue;
+				slots.push({ from, to });
+			}
+			return { bad, slots };
+		}
+
+		/**
+		 * 某一刻在不在静音里；规则和 `lib/index.js` 的 `inMuteRange` 一样（跨零点也算）。
+		 * @param {{from: number, to: number}[]} slots 时间段
+		 * @param {number} minutes 当天第几分钟
+		 * @returns {boolean} 是否静音
+		 */
+		function insideSlots(slots, minutes) {
+			for (const slot of slots) {
+				const hit = slot.from < slot.to ? minutes >= slot.from && minutes < slot.to : minutes >= slot.from || minutes < slot.to;
+				if (hit) return true;
+			}
+			return false;
+		}
+
+		/**
+		 * 一组底下的「恢复默认」按钮。
+		 * @param {{group: string, disabled: boolean, onReset: (entries: [string, unknown][]) => void}} props 行属性
+		 * @returns {import("react").ReactElement} 一行按钮
+		 */
+		function ResetRow(props) {
+			return h("div", { className: "dsh-nudge-actions" }, [
+				h(
+					"button",
+					{
+						key: "reset",
+						type: "button",
+						className: "dsh-nudge-btn",
+						"data-group": props.group,
+						disabled: props.disabled,
+						onClick: () => {
+							const found = GROUP_DEFAULTS.find((item) => item[0] === props.group);
+							if (found !== undefined) props.onReset(found[1]);
+						},
+					},
+					"恢复默认",
+				),
+			]);
+		}
+
+		/**
 		 * 「设置 → 提醒弹窗」页面。
 		 * @param {{configForm: object}} props slot 注入的属性
 		 * @returns {import("react").ReactElement} 页面元素
@@ -355,6 +482,17 @@ window.__ModuleLoader__.load({
 			const [failure, setFailure] = React.useState("");
 			/** 正在调字号和颜色的那一类文字；点样卡上的行会换。 */
 			const [fontRole, setFontRole] = React.useState("project");
+			/** 调试那组默认收着，一屏别全是排查用的开关。 */
+			const [debugOpen, setDebugOpen] = React.useState(false);
+			/** 导出 / 导入框里的文本。 */
+			const [dump, setDump] = React.useState("");
+			/** 每分钟加一，让「现在是否静音」跟着时间走。 */
+			const [clock, setClock] = React.useState(0);
+			React.useEffect(() => {
+				const timer = setInterval(() => setClock((count) => count + 1), 60000);
+				if (typeof timer.unref === "function") timer.unref();
+				return () => clearInterval(timer);
+			}, []);
 			const value = snapshot.value === undefined ? {} : snapshot.value;
 			const ready = snapshot.status === "ready";
 			const disabled = !ready || snapshot.writable !== true;
@@ -407,6 +545,65 @@ window.__ModuleLoader__.load({
 			const lines = (key) => {
 				const current = readField(value, key);
 				return Array.isArray(current) ? current.map((item) => String(item)) : [];
+			};
+			const mute = splitRanges(lines("muteRanges"));
+			const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+			const muted = insideSlots(mute.slots, nowMinutes);
+
+			/** 一组的「恢复默认」：把该组的默认值一次写回去。 */
+			const resetGroup = (entries) => writeMany(entries.map(([path, next]) => ({ path, value: next })));
+
+			/** 能导出、也能导入的配置项。 */
+			const CONFIG_KEYS = [
+				"enabled",
+				"staySeconds",
+				"showWhenFocused",
+				"suppressWhenFullscreen",
+				"margin",
+				"mergeWindowMs",
+				"maxItems",
+				"alertOnToolError",
+				"muteRanges",
+				"kinds",
+				"theme",
+				"typography",
+				"debugPreview",
+				"debugPayload",
+				"debugFile",
+				"rememberPosition",
+				"placementFile",
+			];
+
+			/** 把当前配置变成一段文本，塞进下面的框里。 */
+			const exportText = () => {
+				setFailure("");
+				const picked = {};
+				for (const key of CONFIG_KEYS) {
+					if (value[key] !== undefined) picked[key] = value[key];
+				}
+				setDump(JSON.stringify(picked, null, 2));
+			};
+
+			/** 把框里的文本整段写回去。 */
+			const importText = () => {
+				setFailure("");
+				let parsed;
+				try {
+					parsed = JSON.parse(dump);
+				} catch (error) {
+					setFailure("这段文本不是合法 JSON：" + (error instanceof Error ? error.message : String(error)));
+					return;
+				}
+				if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+					setFailure("最外层得是一个对象，里面按设置名写值。");
+					return;
+				}
+				const keys = Object.keys(parsed).filter((key) => CONFIG_KEYS.includes(key));
+				if (keys.length === 0) {
+					setFailure("没认出任何一项能导入的设置。");
+					return;
+				}
+				writeMany(keys.map((key) => ({ path: key, value: parsed[key] })));
 			};
 
 			const roleLabel = (role) => {
@@ -532,6 +729,7 @@ window.__ModuleLoader__.load({
 						disabled,
 						onChange: (next) => write("enabled", next),
 					}),
+					h(ResetRow, { key: "reset", group: "master", disabled, onReset: resetGroup }),
 				]),
 
 				h("div", { className: "dsh-nudge-group", key: "kinds" }, [
@@ -560,6 +758,7 @@ window.__ModuleLoader__.load({
 						disabled,
 						onChange: (next) => write("kinds.failed", next),
 					}),
+					h(ResetRow, { key: "reset", group: "kinds", disabled, onReset: resetGroup }),
 				]),
 
 				h("div", { className: "dsh-nudge-group", key: "when" }, [
@@ -588,6 +787,7 @@ window.__ModuleLoader__.load({
 						disabled,
 						onChange: (next) => write("alertOnToolError", next),
 					}),
+					h(ResetRow, { key: "reset", group: "when", disabled, onReset: resetGroup }),
 				]),
 
 				h("div", { className: "dsh-nudge-group", key: "look" }, [
@@ -633,6 +833,7 @@ window.__ModuleLoader__.load({
 						disabled,
 						onChange: (next) => write("rememberPosition", next),
 					}),
+					h(ResetRow, { key: "reset", group: "look", disabled, onReset: resetGroup }),
 				]),
 
 				h("div", { className: "dsh-nudge-group", key: "merge" }, [
@@ -667,6 +868,21 @@ window.__ModuleLoader__.load({
 						disabled,
 						onCommit: (next) => write("muteRanges", next),
 					}),
+					mute.bad.length === 0
+						? null
+						: h(
+								"p",
+								{ className: "dsh-nudge-error", key: "mutebad", role: "alert" },
+								"这几行写法不对，会被跳过：" + mute.bad.join("、") + "；写成 22:00-08:00 这样。",
+							),
+					mute.slots.length === 0 && mute.bad.length === 0
+						? null
+						: h(
+								"p",
+								{ className: "dsh-nudge-warn", key: "mutestate" + clock },
+								muted ? "现在正处于静音时段，卡片不会弹。" : "现在不在静音时段。",
+							),
+					h(ResetRow, { key: "reset", group: "merge", disabled, onReset: resetGroup }),
 				]),
 
 				h("div", { className: "dsh-nudge-group", key: "type" }, [
@@ -715,27 +931,39 @@ window.__ModuleLoader__.load({
 						disabled,
 						onCommit: (next) => write("typography." + fontRole + ".size", next),
 					}),
+					h(ResetRow, { key: "reset", group: "type", disabled, onReset: resetGroup }),
 				]),
 
 				h("div", { className: "dsh-nudge-group", key: "debug" }, [
-					h("p", { className: "dsh-nudge-group-title", key: "title" }, "调试"),
-					h(SwitchRow, {
+		h(
+			"button",
+			{
+				key: "title",
+				type: "button",
+				className: "dsh-nudge-group-toggle",
+				"data-on": debugOpen ? "1" : "0",
+				"aria-expanded": debugOpen ? "true" : "false",
+				onClick: () => setDebugOpen(!debugOpen),
+			},
+			debugOpen ? "调试（点一下收起）" : "调试（点一下展开）",
+		),
+				debugOpen ? h(SwitchRow, {
 						key: "debugPreview",
 						label: "预览弹窗（常驻，可拖动缩放）",
 						hint: "打开后立刻弹一张卡片并一直留着；拖动或缩放它，关掉开关时位置和大小会记住。",
 						checked: bool("debugPreview"),
 						disabled,
 						onChange: (next) => write("debugPreview", next),
-					}),
-					h(SwitchRow, {
+					}) : null,
+				debugOpen ? h(SwitchRow, {
 						key: "debugPayload",
 						label: "把每次弹出的内容落盘",
 						hint: "排查「为什么没弹 / 弹得不对」时打开。",
 						checked: bool("debugPayload"),
 						disabled,
 						onChange: (next) => write("debugPayload", next),
-					}),
-					h(TextRow, {
+					}) : null,
+				debugOpen ? h(TextRow, {
 						key: "debugFile",
 						label: "落盘文件",
 						hint: "留空就是 %TEMP%\\dsh-nudge-payloads.jsonl。",
@@ -743,7 +971,45 @@ window.__ModuleLoader__.load({
 						placeholder: "留空使用默认路径",
 						disabled,
 						onCommit: (next) => write("debugFile", next),
+					}) : null,
+		debugOpen
+			? h("div", { className: "dsh-nudge-row", key: "io" }, [
+					h("div", { key: "text" }, [
+						h("span", { className: "dsh-nudge-label", key: "label" }, "导出 / 导入"),
+						h(
+							"div",
+							{ className: "dsh-nudge-hint", key: "hint" },
+							"「导出」把当前配置写成一段文本；把一段配置粘进来点「导入」就整段覆盖。换机器、让别人复现问题都靠它。",
+						),
+					]),
+					h("textarea", {
+						key: "dump",
+						className: "dsh-nudge-areas",
+						"aria-label": "导出或导入的配置文本",
+						value: dump,
+						placeholder: "点「导出」把当前配置写到这里，或者把别处的配置粘进来再点「导入」。",
+						spellCheck: false,
+						onChange: (event) => setDump(event.target.value),
 					}),
+				])
+			: null,
+		debugOpen
+			? h("div", { className: "dsh-nudge-actions", key: "iobtn" }, [
+					h("button", { key: "dumpbtn", type: "button", className: "dsh-nudge-btn", disabled, onClick: exportText }, "导出"),
+					h(
+						"button",
+						{
+							key: "loadbtn",
+							type: "button",
+							className: "dsh-nudge-btn",
+							disabled: disabled || dump.trim() === "",
+							onClick: importText,
+						},
+						"导入",
+					),
+				])
+			: null,
+		h(ResetRow, { key: "reset", group: "debug", disabled, onReset: resetGroup }),
 				]),
 			]);
 		}
@@ -773,6 +1039,8 @@ window.__ModuleLoader__.load({
 
 		exports.apply = apply;
 		exports.inject = inject;
+		/** 给自测比对用的分组默认值。 */
+		exports.groupDefaults = GROUP_DEFAULTS;
 		exports.name = "dsh-nudge";
 		return module.exports;
 	},

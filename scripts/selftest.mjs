@@ -1167,6 +1167,21 @@ const clientExports = clientDefinition.factory((name) => {
 });
 check("设置页导出 name/apply", clientExports.name === "dsh-nudge" && typeof clientExports.apply === "function");
 check("设置页只依赖 slots 与 configForms", clientExports.inject.join(",") === "slots,configForms", JSON.stringify(clientExports.inject));
+const groupDefaults = new Map();
+for (const [, entries] of clientExports.groupDefaults ?? []) {
+	for (const [path, value] of entries) groupDefaults.set(path, value);
+}
+const defaultDrift = [];
+for (const [path, value] of groupDefaults) {
+	let cursor = DEFAULTS;
+	for (const part of path.split(".")) cursor = cursor === undefined || cursor === null ? undefined : cursor[part];
+	if (JSON.stringify(cursor) !== JSON.stringify(value)) defaultDrift.push(path + "=" + JSON.stringify(value) + " 应为 " + JSON.stringify(cursor));
+}
+check(
+	"恢复默认的取值和宿主 DEFAULTS 一致",
+	clientExports.groupDefaults?.length === 7 && groupDefaults.size >= 25 && defaultDrift.length === 0,
+	"groups=" + (clientExports.groupDefaults?.length ?? 0) + " keys=" + groupDefaults.size + " " + defaultDrift.join("; "),
+);
 
 const clientConfig = {
 	...DEFAULTS,
@@ -1208,7 +1223,27 @@ const clientTexts = clientNodes.map((node) => (typeof node.props?.children === "
 const clientControls = clientNodes.filter((node) => ["input", "select", "textarea"].includes(node.type));
 check("设置页有三类提醒与主要分组", ["任务完成", "需要你选择", "执行失败", "配色", "停留秒数", "静音时段"].every((label) => clientTexts.includes(label)));
 check("设置页控件数量", clientControls.length >= 14, "controls=" + clientControls.length);
-check("设置页开关是 checkbox", clientControls.filter((node) => node.props.type === "checkbox").length >= 10);
+	const clientCheckboxes = clientControls.filter((node) => node.props.type === "checkbox");
+	check("设置页开关是 checkbox", clientCheckboxes.length === 8, "boxes=" + clientCheckboxes.length);
+	const clientDebugTitle = clientNodes.find((node) => node.type === "button" && node.props.className === "dsh-nudge-group-toggle");
+	check(
+		"调试那组默认收着，只留一个展开按钮",
+		clientDebugTitle?.props?.children === "调试（点一下展开）"
+			&& clientNodes.every((node) => node.props["aria-label"] !== "预览弹窗（常驻，可拖动缩放）"),
+		String(clientDebugTitle?.props?.children),
+	);
+	const clientResetButtons = clientNodes.filter((node) => node.type === "button" && node.props.children === "恢复默认");
+	check(
+		"每一组都有恢复默认",
+		clientResetButtons.length === 7 && new Set(clientResetButtons.map((node) => node.props["data-group"])).size === 7,
+		"buttons=" + clientResetButtons.length + " groups=" + clientResetButtons.map((node) => node.props["data-group"]).join(","),
+	);
+	const clientMuteState = clientNodes.filter(
+		(node) =>
+			node.type === "p"
+			&& ["现在正处于静音时段，卡片不会弹。", "现在不在静音时段。"].includes(node.props.children),
+	);
+	check("静音时段底下标出现在是否静音", clientMuteState.length === 1, "lines=" + clientMuteState.length);
 check("配色是三个选项的下拉", clientControls.some((node) => node.type === "select") && clientNodes.filter((node) => node.type === "option").length === 3);
 const clientSwitch = clientControls.find((node) => node.props["aria-label"] === "任务完成");
 clientSwitch.props.onChange({ target: { checked: false } });
