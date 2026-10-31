@@ -1234,21 +1234,52 @@ const renderClientPage = () => {
 	walk(tree);
 	return { nodes, components };
 };
-const fontLabels = (nodes) => nodes.filter((node) => node.type === "input" && String(node.props["aria-label"] ?? "").endsWith("颜色"));
-check("预览关着时没有字体组", fontLabels(clientNodes).length === 0, `colors=${fontLabels(clientNodes).length}`);
-clientConfig.debugPreview = true;
+/** 样卡里可点的行、角色按钮、预设按钮。 */
+const cardHits = (nodes) => nodes.filter((node) => node.type === "span" && node.props["data-role"] !== undefined);
+const roleButtons = (nodes) => nodes.filter((node) => node.type === "button" && node.props["data-role"] !== undefined);
+const presetButtons = (nodes) => nodes.filter((node) => node.type === "button" && ["安静", "标准", "话多"].includes(node.props.children));
+const typedInputs = (nodes) => nodes.filter((node) => node.type === "input" && String(node.props["aria-label"] ?? "").startsWith("颜色（"));
+check(
+	"样卡把八类文字都画出来、每行可点",
+	cardHits(clientNodes).length === 8 && cardHits(clientNodes).every((node) => typeof node.props.onClick === "function"),
+	"hits=" + cardHits(clientNodes).length,
+);
+check(
+	"预览关着也有字号与颜色，只给正在调的那一类",
+	typedInputs(clientNodes).length === 1 && typedInputs(clientNodes)[0].props["aria-label"] === "颜色（项目名）",
+	"rows=" + typedInputs(clientNodes).map((node) => node.props["aria-label"]).join("|"),
+);
+check("八类文字都能点着切过去", roleButtons(clientNodes).length === 8, "buttons=" + roleButtons(clientNodes).length);
+check("三个一键预设都在", presetButtons(clientNodes).length === 3, "presets=" + presetButtons(clientNodes).length);
+
 const typingPage = renderClientPage();
-const fontSizes = typingPage.nodes.filter((node) => node.type === "input" && node.props.type === "number" && String(node.props["aria-label"] ?? "").endsWith("字号"));
-check("开着预览时给出每一类文字的颜色与字号",
-	fontLabels(typingPage.nodes).length === 8 && fontSizes.length === 8,
-	`color=${fontLabels(typingPage.nodes).length} size=${fontSizes.length}`);
-const titleColorRow = typingPage.components.find((item) => item.type.name === "TextRow" && item.props.label === "标题颜色");
-check("字体行带写法说明", typeof titleColorRow?.props?.hint === "string" && titleColorRow.props.hint.includes("#RRGGBB"));
+const fontColorRow = typingPage.components.find((item) => item.type.name === "TextRow" && item.props.label === "颜色（项目名）");
+const fontSizeRow = typingPage.components.find((item) => item.type.name === "NumberRow" && item.props.label === "字号（项目名）");
+check("字体行带写法说明与默认字号",
+	typeof fontColorRow?.props?.hint === "string"
+	&& fontColorRow.props.hint.includes("#RRGGBB")
+	&& typeof fontSizeRow?.props?.hint === "string"
+	&& fontSizeRow.props.hint.includes("15.5"),
+	String(fontSizeRow?.props?.hint));
+
 clientMutations.length = 0;
-titleColorRow.props.onCommit("#FFFF0000");
+presetButtons(clientNodes)[0].props.onClick();
+await Promise.resolve();
+check(
+	"预设一次写一组字段并带 revision",
+	clientMutations.length === 1
+	&& clientMutations[0].ops.length === 9
+	&& clientMutations[0].revision === 7
+	&& JSON.stringify(clientMutations[0].ops[5]) === JSON.stringify({ op: "set", path: ["staySeconds"], value: 8 })
+	&& JSON.stringify(clientMutations[0].ops[8]) === JSON.stringify({ op: "set", path: ["muteRanges"], value: ["22:00-08:00"] }),
+	JSON.stringify(clientMutations[0]?.ops?.length) + "/" + JSON.stringify(clientMutations[0]?.ops?.[5]),
+);
+
+clientMutations.length = 0;
+fontColorRow.props.onCommit("#FFFF0000");
 await Promise.resolve();
 check("字体改动写成三段路径并带 revision",
-	JSON.stringify(clientMutations) === JSON.stringify([{ ops: [{ op: "set", path: ["typography", "title", "color"], value: "#FFFF0000" }], revision: 7 }]),
+	JSON.stringify(clientMutations) === JSON.stringify([{ ops: [{ op: "set", path: ["typography", "project", "color"], value: "#FFFF0000" }], revision: 7 }]),
 	JSON.stringify(clientMutations));
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 check("package.json 声明了浏览器半身", pkg.exports["./client"] === "./client.js" && pkg.dsh.client?.platform === "web", JSON.stringify(pkg.dsh.client));

@@ -49,6 +49,17 @@ window.__ModuleLoader__.load({
 			".dsh-nudge-switch{flex:none;width:36px;height:20px;margin:0;cursor:pointer;accent-color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-warn{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}",
 			".dsh-nudge-error{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary)}",
+			".dsh-nudge-card{display:flex;flex-direction:column;gap:2px;border-radius:12px;padding:12px 14px;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l1)}",
+			".dsh-nudge-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}",
+			".dsh-nudge-card-line{display:flex;align-items:baseline;gap:8px;min-width:0}",
+			".dsh-nudge-card-hit{padding:1px 4px;margin:0 -4px;border-radius:6px;cursor:pointer;border:0.5px solid transparent;white-space:pre-wrap}",
+			".dsh-nudge-card-hit:hover{background:var(--dsw-alias-bg-l2)}",
+			".dsh-nudge-card-hit[data-on=\"1\"]{border-color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-bg-l2)}",
+			".dsh-nudge-actions{display:flex;gap:8px;flex-wrap:wrap;padding:6px 0 10px}",
+			".dsh-nudge-btn{font:inherit;font-size:13px;line-height:18px;padding:6px 12px;border-radius:8px;cursor:pointer;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l2);color:var(--dsw-alias-label-primary)}",
+			".dsh-nudge-btn:hover:not(:disabled){border-color:var(--dsw-alias-state-business-primary)}",
+			".dsh-nudge-btn:disabled{opacity:.5;cursor:not-allowed}",
+			".dsh-nudge-btn[data-on=\"1\"]{border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}",
 		].join("");
 
 		/** 把样式挂进 <head>，同一个文档只挂一次。 */
@@ -251,6 +262,88 @@ window.__ModuleLoader__.load({
 			return snapshot;
 		}
 
+		/** 每一类文字的默认字号：和 lib/popup.ps1 里 New-Text 的兜底值一致，样卡才画得像真的。 */
+		const ROLE_SIZE = { title: 14, project: 15.5, task: 12.5, reason: 10.5, status: 10.5, time: 10, more: 10.5, footer: 10 };
+		/** 样卡里每一行的示例文字。 */
+		const ROLE_SAMPLE = {
+			title: "会话提醒",
+			project: "dsh-nudge",
+			task: "把设置页的字体改成点选式",
+			reason: "回合正常结束 · 用时 2 分 13 秒",
+			status: "完成",
+			time: "12:04",
+			more: "还有 2 条未展开",
+			footer: "点击卡片回到 DeepSeekRuntime",
+		};
+		/** 样卡里每一行的浓淡与字重：颜色留空时按这套走，贴近真卡片的层次。 */
+		const ROLE_LOOK = {
+			title: { opacity: 1, weight: 600 },
+			project: { opacity: 1, weight: 600 },
+			task: { opacity: 0.86, weight: 400 },
+			reason: { opacity: 0.6, weight: 400 },
+			status: { opacity: 1, weight: 600 },
+			time: { opacity: 0.45, weight: 400 },
+			more: { opacity: 0.55, weight: 400 },
+			footer: { opacity: 0.45, weight: 400 },
+		};
+		/** 样卡配色：auto 跟着页面主题走，light / dark 强制成对应底色。 */
+		const THEME_SKIN = {
+			auto: null,
+			light: { background: "#ffffff", color: "#1b1b1f", borderColor: "rgba(0,0,0,.12)" },
+			dark: { background: "#1f2124", color: "#f2f3f5", borderColor: "rgba(255,255,255,.14)" },
+		};
+		/** 三个一键预设：一次写一组字段，写完之后还能逐项微调。 */
+		const PRESETS = [
+			{
+				id: "quiet",
+				label: "安静",
+				hint: "只在需要你动手或出错时弹，晚上静音",
+				entries: [
+					{ path: "kinds.completed", value: false },
+					{ path: "kinds.needs_choice", value: true },
+					{ path: "kinds.failed", value: true },
+					{ path: "showWhenFocused", value: false },
+					{ path: "alertOnToolError", value: false },
+					{ path: "staySeconds", value: 8 },
+					{ path: "mergeWindowMs", value: 30000 },
+					{ path: "maxItems", value: 3 },
+					{ path: "muteRanges", value: ["22:00-08:00"] },
+				],
+			},
+			{
+				id: "normal",
+				label: "标准",
+				hint: "三类都提醒，走开一会儿也能叫回来",
+				entries: [
+					{ path: "kinds.completed", value: true },
+					{ path: "kinds.needs_choice", value: true },
+					{ path: "kinds.failed", value: true },
+					{ path: "showWhenFocused", value: false },
+					{ path: "alertOnToolError", value: true },
+					{ path: "staySeconds", value: 15 },
+					{ path: "mergeWindowMs", value: 1200 },
+					{ path: "maxItems", value: 8 },
+					{ path: "muteRanges", value: [] },
+				],
+			},
+			{
+				id: "chatty",
+				label: "话多",
+				hint: "什么都提醒，卡片留久一点，不合并",
+				entries: [
+					{ path: "kinds.completed", value: true },
+					{ path: "kinds.needs_choice", value: true },
+					{ path: "kinds.failed", value: true },
+					{ path: "showWhenFocused", value: true },
+					{ path: "alertOnToolError", value: true },
+					{ path: "staySeconds", value: 25 },
+					{ path: "mergeWindowMs", value: 0 },
+					{ path: "maxItems", value: 20 },
+					{ path: "muteRanges", value: [] },
+				],
+			},
+		];
+
 		/**
 		 * 「设置 → 提醒弹窗」页面。
 		 * @param {{configForm: object}} props slot 注入的属性
@@ -260,6 +353,8 @@ window.__ModuleLoader__.load({
 			const form = props.configForm;
 			const snapshot = useConfigSnapshot(form);
 			const [failure, setFailure] = React.useState("");
+			/** 正在调字号和颜色的那一类文字；点样卡上的行会换。 */
+			const [fontRole, setFontRole] = React.useState("project");
 			const value = snapshot.value === undefined ? {} : snapshot.value;
 			const ready = snapshot.status === "ready";
 			const disabled = !ready || snapshot.writable !== true;
@@ -284,6 +379,22 @@ window.__ModuleLoader__.load({
 					});
 			};
 
+			/**
+			 * 一次写多个字段（预设用）。
+			 * @param {{path: string, value: unknown}[]} entries 字段路径与新值
+			 */
+			const writeMany = (entries) => {
+				setFailure("");
+				const ops = entries.map((entry) => ({ op: "set", path: entry.path.split("."), value: entry.value }));
+				Promise.resolve(form.mutate(ops, snapshot.revision))
+					.then((ok) => {
+						if (ok === false) setFailure("宿主没接受这次修改，已刷新成当前值。");
+					})
+					.catch((error) => {
+						setFailure("写入失败：" + (error instanceof Error ? error.message : String(error)));
+					});
+			};
+
 			const bool = (key) => readField(value, key) === true;
 			const num = (key) => {
 				const current = readField(value, key);
@@ -297,6 +408,52 @@ window.__ModuleLoader__.load({
 				const current = readField(value, key);
 				return Array.isArray(current) ? current.map((item) => String(item)) : [];
 			};
+
+			const roleLabel = (role) => {
+				const found = FONT_ROLES.find((item) => item[0] === role);
+				return found === undefined ? role : found[1];
+			};
+			const roleHint = (role) => {
+				const found = FONT_ROLES.find((item) => item[0] === role);
+				return found === undefined ? "" : found[2];
+			};
+			/** 样卡里这一行实际用的字号：配置是 0 就落回默认。 */
+			const roleSize = (role) => {
+				const size = num("typography." + role + ".size");
+				return size > 0 ? size : ROLE_SIZE[role];
+			};
+			/** 样卡里这一行的内联样式：颜色留空就按 ROLE_LOOK 的浓淡走。 */
+			const cardFont = (role) => {
+				const look = ROLE_LOOK[role];
+				const color = text("typography." + role + ".color");
+				return {
+					fontSize: roleSize(role) + "px",
+					fontWeight: look.weight,
+					opacity: color === "" ? look.opacity : 1,
+					color: color === "" ? undefined : color,
+				};
+			};
+			const themeValue = text("theme") === "" ? "auto" : text("theme");
+			const skin = Object.hasOwn(THEME_SKIN, themeValue) ? THEME_SKIN[themeValue] : null;
+			/**
+			 * 样卡里的一行：点一下就把它设为正在调的那一类。
+			 * @param {string} role 文字类别
+			 * @returns {import("react").ReactElement} 可点的一行
+			 */
+			const cardLine = (role) =>
+				h(
+					"span",
+					{
+						key: role,
+						className: "dsh-nudge-card-hit",
+						"data-role": role,
+						"data-on": fontRole === role ? "1" : "0",
+						style: cardFont(role),
+						onClick: () => setFontRole(role),
+						title: "点一下改「" + roleLabel(role) + "」",
+					},
+					ROLE_SAMPLE[role],
+				);
 
 			return h("div", { className: "dsh-nudge-settings" }, [
 				h("h2", { key: "title" }, "提醒弹窗"),
@@ -312,16 +469,61 @@ window.__ModuleLoader__.load({
 						: null,
 				failure === "" ? null : h("p", { className: "dsh-nudge-error", key: "failure", role: "alert" }, failure),
 
+				h("div", { className: "dsh-nudge-group", key: "peek" }, [
+					h("p", { className: "dsh-nudge-group-title", key: "title" }, "长这样"),
+					h(
+						"p",
+						{ className: "dsh-nudge-intro", key: "hint" },
+						"按现在的配色和字号画的一张样卡：点哪一行，下面就调哪一行。",
+					),
+					h("div", { className: "dsh-nudge-card", key: "card", style: skin === null ? undefined : skin }, [
+						h("div", { className: "dsh-nudge-card-head", key: "head" }, [cardLine("title"), cardLine("time")]),
+						h("div", { className: "dsh-nudge-card-line", key: "project" }, [cardLine("project")]),
+						h("div", { className: "dsh-nudge-card-line", key: "status" }, [cardLine("status"), cardLine("task")]),
+						h("div", { className: "dsh-nudge-card-line", key: "reason" }, [cardLine("reason")]),
+						h("div", { className: "dsh-nudge-card-line", key: "more" }, [cardLine("more")]),
+						h("div", { className: "dsh-nudge-card-line", key: "footer" }, [cardLine("footer")]),
+					]),
+					h("div", { className: "dsh-nudge-actions", key: "act" }, [
+						h(
+							"button",
+							{
+								key: "try",
+								type: "button",
+								className: "dsh-nudge-btn",
+								disabled,
+								onClick: () => write("debugPreview", !bool("debugPreview")),
+							},
+							bool("debugPreview") ? "收起桌面上的卡片" : "在桌面上弹一张看看",
+						),
+					]),
+				]),
+
+				h("div", { className: "dsh-nudge-group", key: "preset" }, [
+					h("p", { className: "dsh-nudge-group-title", key: "title" }, "一键预设"),
+					h("p", { className: "dsh-nudge-intro", key: "hint" }, "先挑一个最接近的，再往下微调；只动下面这些开关，不碰字体。"),
+					h(
+						"div",
+						{ className: "dsh-nudge-actions", key: "row" },
+						PRESETS.map((preset) =>
+							h(
+								"button",
+								{
+									key: preset.id,
+									type: "button",
+									className: "dsh-nudge-btn",
+									disabled,
+									title: preset.hint,
+									onClick: () => writeMany(preset.entries),
+								},
+								preset.label,
+							),
+						),
+					),
+				]),
+
 				h("div", { className: "dsh-nudge-group", key: "master" }, [
 					h("p", { className: "dsh-nudge-group-title", key: "title" }, "总开关"),
-					h(SwitchRow, {
-						key: "debugPreview",
-						label: "预览弹窗（常驻，可拖动缩放）",
-						hint: "打开后立刻弹一张卡片并一直留着；拖动或缩放它，关掉开关时位置和大小会记住。",
-						checked: bool("debugPreview"),
-						disabled,
-						onChange: (next) => write("debugPreview", next),
-					}),
 					h(SwitchRow, {
 						key: "enabled",
 						label: "启用提醒弹窗",
@@ -394,7 +596,7 @@ window.__ModuleLoader__.load({
 						key: "theme",
 						label: "配色",
 						hint: "auto 跟随 Windows 的深浅色设置。",
-						value: text("theme") === "" ? "auto" : text("theme"),
+						value: themeValue,
 						options: [
 							{ value: "auto", label: "跟随系统" },
 							{ value: "light", label: "浅色" },
@@ -467,42 +669,64 @@ window.__ModuleLoader__.load({
 					}),
 				]),
 
-				// 字体只在开着预览时出现：没有常驻卡片当靶子，改字号全靠猜。
-				bool("debugPreview")
-					? h("div", { className: "dsh-nudge-group", key: "type" }, [
-							h("p", { className: "dsh-nudge-group-title", key: "title" }, "每一项的字号和颜色"),
+				h("div", { className: "dsh-nudge-group", key: "type" }, [
+					h("p", { className: "dsh-nudge-group-title", key: "title" }, "字号与颜色"),
+					h(
+						"p",
+						{ className: "dsh-nudge-intro", key: "hint" },
+						"点上面样卡里的某一行（或者下面这些名字）就切到那一行；留空 / 0 表示用默认。",
+					),
+					h(
+						"div",
+						{ className: "dsh-nudge-actions", key: "roles" },
+						FONT_ROLES.map(([role, label]) =>
 							h(
-								"p",
-								{ className: "dsh-nudge-intro", key: "hint" },
-								"只有开着预览弹窗才显示这一组：改一格，卡片会重画一次，能立刻看到效果。留空 / 0 表示用默认。",
+								"button",
+								{
+									key: role,
+									type: "button",
+									className: "dsh-nudge-btn",
+									"data-role": role,
+									"data-on": fontRole === role ? "1" : "0",
+									disabled,
+									onClick: () => setFontRole(role),
+								},
+								label,
 							),
-							...FONT_ROLES.flatMap(([role, label, hint]) => [
-								h(TextRow, {
-									key: role + "-color",
-									label: label + "颜色",
-									hint: hint + "；写 #RRGGBB 或 #AARRGGBB，留空跟随主题。",
-									value: text("typography." + role + ".color"),
-									placeholder: "留空跟随主题",
-									disabled,
-									onCommit: (next) => write("typography." + role + ".color", next),
-								}),
-								h(NumberRow, {
-									key: role + "-size",
-									label: label + "字号",
-									hint: "0 表示默认；常用范围 9–18。",
-									value: num("typography." + role + ".size"),
-									min: 0,
-									max: 48,
-									step: 0.5,
-									disabled,
-									onCommit: (next) => write("typography." + role + ".size", next),
-								}),
-							]),
-						])
-					: null,
+						),
+					),
+					h(TextRow, {
+						key: "color",
+						label: "颜色（" + roleLabel(fontRole) + "）",
+						hint: roleHint(fontRole) + "；写 #RRGGBB 或 #AARRGGBB，留空跟随主题。",
+						value: text("typography." + fontRole + ".color"),
+						placeholder: "留空跟随主题",
+						disabled,
+						onCommit: (next) => write("typography." + fontRole + ".color", next),
+					}),
+					h(NumberRow, {
+						key: "size",
+						label: "字号（" + roleLabel(fontRole) + "）",
+						hint: "0 表示默认（" + roleLabel(fontRole) + "是 " + ROLE_SIZE[fontRole] + "）；常用范围 9–18。",
+						value: num("typography." + fontRole + ".size"),
+						min: 0,
+						max: 48,
+						step: 0.5,
+						disabled,
+						onCommit: (next) => write("typography." + fontRole + ".size", next),
+					}),
+				]),
 
 				h("div", { className: "dsh-nudge-group", key: "debug" }, [
 					h("p", { className: "dsh-nudge-group-title", key: "title" }, "调试"),
+					h(SwitchRow, {
+						key: "debugPreview",
+						label: "预览弹窗（常驻，可拖动缩放）",
+						hint: "打开后立刻弹一张卡片并一直留着；拖动或缩放它，关掉开关时位置和大小会记住。",
+						checked: bool("debugPreview"),
+						disabled,
+						onChange: (next) => write("debugPreview", next),
+					}),
 					h(SwitchRow, {
 						key: "debugPayload",
 						label: "把每次弹出的内容落盘",

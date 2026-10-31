@@ -17,14 +17,14 @@ if (-not $node) { $node = 'node' }          # 便携版/旧结构也找不到时
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs              # 190 项，含真起 helper 与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 167 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 193 项，含真起 helper 与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 170 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (190 checks)`，退出码 0（CI 上是 `167 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 197 条）。
+- selftest 输出 `ALL PASS (193 checks)`，退出码 0（CI 上是 `170 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 200 条）。
 
 证据（实测）：
 
@@ -38,7 +38,7 @@ PASS  位置文件里的点被沿用  --  {"placement":"remembered","placedLeft"
 PASS  越界位置回落到右下角  --  {"placement":"corner","placedLeft":2146,...}
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
 PASS  基线 completed 对得上  --  436x174 色 263/263 暗 72874/72874 亮 933/933 状态 352/352
-ALL PASS (190 checks)
+ALL PASS (193 checks)
 ```
 
 其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 —— 目标不是窗口贴角，
