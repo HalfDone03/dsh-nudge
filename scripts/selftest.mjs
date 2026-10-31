@@ -1265,7 +1265,8 @@ check("设置页控件数量", clientControls.length >= 14, "controls=" + client
 	check(
 		"README 的设置页一节跟得上现在的九组",
 		readmeSource.includes("从上到下九组")
-			&& readmeSource.includes("只出选中那一类的两个框")
+			&& readmeSource.includes("一排现成的色块")
+			&& readmeSource.includes("现在实际用的值")
 			&& !readmeSource.includes("只在预览弹窗打开时出现")
 			&& !readmeSource.includes("/plugins/dsh-nudge/client.js"),
 		"readme",
@@ -1422,6 +1423,28 @@ check(
 	sizeRows.length === 13 && roleLabels.every((label) => sizeRows.some((item) => item.props.label === label)),
 	"rows=" + sizeRows.length,
 );
+const sizeNow = (label) => sizeRows.filter((item) => item.props.label === label).map((item) => item.props.value);
+check(
+	"字号框显示的是现在生效的值，不是 0",
+	sizeNow("任务名")[0] === 12.5 && sizeNow("字号（项目名）")[0] === 15.5,
+	"task=" + sizeNow("任务名")[0] + " project=" + sizeNow("字号（项目名）")[0],
+);
+const swatches = sizePage.nodes.filter((node) => node.type === "button" && node.props["data-color"] !== undefined);
+const redSwatch = swatches.filter((node) => node.props["data-color"] === "#FF6B6B");
+clientMutations.length = 0;
+if (redSwatch.length === 1) { redSwatch[0].props.onClick(); }
+await Promise.resolve();
+const swatchPage = renderClientPage();
+check(
+	"颜色有一排现成的色块，点一下就记到当前角色头上",
+	swatches.length === 11
+		&& swatches.some((node) => node.props["data-color"] === "auto" && node.props["data-on"] === "1")
+		&& clientMutations.length === 0
+		&& swatchPage.nodes.some((node) => node.props.children === "1 项改动还没保存"),
+	"swatches=" + swatches.length + " writes=" + clientMutations.length,
+);
+buttonByText(swatchPage.nodes, "放弃").props.onClick();
+await Promise.resolve();
 clientMutations.length = 0;
 sizeRows.find((item) => item.props.label === "任务名").props.onCommit(13);
 await Promise.resolve();

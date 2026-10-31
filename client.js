@@ -33,7 +33,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-01.1";
+	const PANEL_REVISION = "2026-11-01.2";
 	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
 	const NAV_GROUPS = [
 		["peek", "长这样"],
@@ -87,6 +87,11 @@ window.__ModuleLoader__.load({
 			".dsh-nudge-navbtn:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-status{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}",
 			".dsh-nudge-stamp{margin:0;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);opacity:.75}",
+			".dsh-nudge-swatches{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:2px 0 8px}",
+			".dsh-nudge-swatch{font:inherit;font-size:11px;line-height:16px;padding:3px 9px;border-radius:999px;cursor:pointer;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l2);color:var(--dsw-alias-label-primary);display:inline-flex;align-items:center;gap:6px}",
+			".dsh-nudge-swatch:hover{border-color:var(--dsw-alias-state-business-primary)}",
+			".dsh-nudge-swatch[data-on=\"1\"]{border-color:var(--dsw-alias-state-business-primary);box-shadow:inset 0 0 0 1px var(--dsw-alias-state-business-primary)}",
+			".dsh-nudge-swatchdot{width:10px;height:10px;border-radius:50%;border:0.5px solid var(--dsw-alias-border-l2);flex:none}",
 		].join("");
 
 		/** 把样式挂进 <head>，同一个文档只挂一次。 */
@@ -302,6 +307,7 @@ window.__ModuleLoader__.load({
 
 		/** 每一类文字的默认字号：和 lib/popup.ps1 里 New-Text 的兜底值一致，样卡才画得像真的。 */
 		const ROLE_SIZE = { title: 14, project: 15.5, task: 12.5, reason: 10.5, status: 10.5, time: 10, more: 10.5, footer: 10 };
+		const COLOR_CHOICES = [["", "跟随主题"], ["#FFFFFF", "白"], ["#E6E6E6", "浅灰"], ["#9AA0A6", "灰"], ["#111111", "黑"], ["#FF6B6B", "红"], ["#FFA84D", "橙"], ["#FFD43B", "黄"], ["#51CF66", "绿"], ["#4DABF7", "蓝"], ["#B197FC", "紫"]];
 		/** 样卡里每一行的示例文字。 */
 		const ROLE_SAMPLE = {
 			title: "会话提醒",
@@ -723,6 +729,14 @@ window.__ModuleLoader__.load({
 				const size = num("typography." + role + ".size");
 				return size > 0 ? size : ROLE_SIZE[role];
 			};
+			/** 字号输入框底下那句话：现在是多少、默认是多少。 */
+			const sizeHint = (role) => {
+				const explicit = num("typography." + role + ".size");
+				if (explicit > 0) { return "现在是 " + explicit + "；改成 0 就回到默认 " + ROLE_SIZE[role] + "。"; }
+				return "现在跟着默认走（" + ROLE_SIZE[role] + "）；改了就一直用新值。";
+			};
+			/** 这一类现在用的颜色，留空表示跟随主题。 */
+			const colorNow = (role) => text("typography." + role + ".color");
 			/** 样卡里这一行的内联样式：颜色留空就按 ROLE_LOOK 的浓淡走。 */
 			const cardFont = (role) => {
 				const look = ROLE_LOOK[role];
@@ -1066,8 +1080,8 @@ window.__ModuleLoader__.load({
 									h(NumberRow, {
 										key: role,
 										label: roleLabel(role),
-										hint: "0 表示用默认的 " + ROLE_SIZE[role] + "。",
-										value: num("typography." + role + ".size"),
+										hint: sizeHint(role),
+										value: roleSize(role),
 										min: 0,
 										max: 48,
 										step: 0.5,
@@ -1077,10 +1091,25 @@ window.__ModuleLoader__.load({
 								),
 							)
 						: null,
+					h("div", { className: "dsh-nudge-swatches", key: "colors" }, COLOR_CHOICES.map(([value, name]) =>
+						h("button", {
+							key: value === "" ? "auto" : value,
+							type: "button",
+							className: "dsh-nudge-swatch",
+							"data-color": value === "" ? "auto" : value,
+							"data-on": colorNow(fontRole) === value ? "1" : "0",
+							disabled,
+							onClick: () => write("typography." + fontRole + ".color", value),
+							title: value === "" ? "不指定颜色，跟着主题走" : name + " " + value,
+						}, [
+							h("span", { key: "dot", className: "dsh-nudge-swatchdot", style: { background: value === "" ? "transparent" : value } }),
+							name,
+						]),
+					)),
 					h(TextRow, {
 						key: "color",
 						label: "颜色（" + roleLabel(fontRole) + "）",
-						hint: roleHint(fontRole) + "；写 #RRGGBB 或 #AARRGGBB，留空跟随主题。",
+						hint: roleHint(fontRole) + "；上面点一个现成的，或者自己写 #RRGGBB / #AARRGGBB，留空跟随主题。",
 						value: text("typography." + fontRole + ".color"),
 						placeholder: "留空跟随主题",
 						disabled,
@@ -1089,8 +1118,8 @@ window.__ModuleLoader__.load({
 					h(NumberRow, {
 						key: "size",
 						label: "字号（" + roleLabel(fontRole) + "）",
-						hint: "0 表示默认（" + roleLabel(fontRole) + "是 " + ROLE_SIZE[fontRole] + "）；常用范围 9–18。",
-						value: num("typography." + fontRole + ".size"),
+						hint: sizeHint(fontRole),
+						value: roleSize(fontRole),
 						min: 0,
 						max: 48,
 						step: 0.5,

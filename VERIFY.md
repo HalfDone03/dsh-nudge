@@ -17,14 +17,14 @@ if (-not $node) { $node = 'node' }          # 便携版/旧结构也找不到时
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs              # 210 项，含真起 helper 与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 187 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 212 项，含真起 helper 与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 189 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (210 checks)`，退出码 0（CI 上是 `187 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 217 条）。
+- selftest 输出 `ALL PASS (212 checks)`，退出码 0（CI 上是 `189 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 219 条）。
 
 证据（实测）：
 
@@ -38,7 +38,7 @@ PASS  位置文件里的点被沿用  --  {"placement":"remembered","placedLeft"
 PASS  越界位置回落到右下角  --  {"placement":"corner","placedLeft":2146,...}
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
 PASS  基线 completed 对得上  --  436x174 色 263/263 暗 72874/72874 亮 933/933 状态 352/352
-ALL PASS (210 checks)
+ALL PASS (212 checks)
 ```
 
 其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 —— 目标不是窗口贴角，
@@ -157,9 +157,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
   `-Size (Get-FontSize '<角色>' <默认>) -Color (Get-FontColor '<角色>' <默认>)`；两处主题解析后各执行一次
   `$script:Fonts = Resolve-Typography $payload.typography`。宿主把 `typography` 放进 payload，并在预览期间
   发现字体变了就 `restartPreview()`（`previewRestart` 标记让重画跳过 3 秒冷却）。
-- 设置页：那一组常显，但一次只出选中那一类的两个框（1 个颜色框 + 1 个字号框），另有 8 个角色按钮
+- 设置页：那一组常显，颜色先给一排现成的色块（11 个，含「跟随主题」），点一个就写进当前这一类；下面只出选中那一类的两个框（1 个颜色框 + 1 个字号框），另有 8 个角色按钮
   和一张八行的样卡；颜色行带 `#RRGGBB` 写法提示；点「逐行设字号（8 行一起看）」会把八类的字号框
-  一次列出来（页面上的 `NumberRow` 从 5 个变成 13 个）。
+  一次列出来（页面上的 `NumberRow` 从 5 个变成 13 个）。字号框里填的是**当前实际生效的值**（比如项目名 15.5、任务名 12.5），不是 0；改成 0 才回到默认。
 - 改一格不立刻写回：底部出现「1 项改动还没保存」，点「应用」才写出
   `[{op:"set",path:["typography","title","color"],value:"#FFFF0000"}]`（带当前 revision），点「放弃」则丢掉。
   自测里的假 `useState` 会真存值，所以草稿 → 应用 → 放弃三步都能断言。
