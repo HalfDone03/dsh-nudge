@@ -943,9 +943,9 @@ check("弹窗脚本按 payload.typography 覆盖每一类文字",
 	popupSource.includes("function Resolve-Typography") && popupSource.includes("function Get-FontSize")
 	&& popupSource.includes("function Get-FontColor")
 	&& popupSource.includes("$script:Fonts = Resolve-Typography $payload.typography"));
-check("宿主把字体配置下发，并在预览时改字体就重画卡片",
+check("宿主把字体和配色下发，并在预览卡外观变了就重画",
 	indexSource.includes("typography: this.config.typography") && indexSource.includes("restartPreview()")
-	&& indexSource.includes("previewFonts"));
+		&& indexSource.includes("function styleKeyOf(cfg)") && indexSource.includes("previewStyleKey !== styleKey"));
 check("弹窗脚本会读 rememberPosition / placementFile 并维护位置文件",
 	popupSource.includes("$payload.rememberPosition") && popupSource.includes("$payload.placementFile")
 		&& popupSource.includes("function Read-Placement") && popupSource.includes("function Save-Placement")
@@ -1463,6 +1463,19 @@ const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 check("package.json 声明了浏览器半身", pkg.exports["./client"] === "./client.js" && pkg.dsh.client?.platform === "web", JSON.stringify(pkg.dsh.client));
 const hostSource = readFileSync(join(root, "lib", "index.js"), "utf8");
 check("宿主让设置服务别生成重复表单", hostSource.includes("settings.configure({ auto: false }"));
+check(
+	"预览卡按外观指纹重画",
+	hostSource.includes("function styleKeyOf(cfg)") &&
+		hostSource.includes("this.previewStyleKey = styleKeyOf(this.config);") &&
+		hostSource.includes("center.runner.previewStyleKey !== styleKey") &&
+		!hostSource.includes("previewFonts"),
+	"host",
+);
+check(
+	"设置页的样卡按真卡宽度画",
+	clientSource.includes("width:384px") && clientSource.includes("样卡按桌面卡片的实际宽度 384 画"),
+	"client",
+);
 check("找 schemastery 不只靠一次 import（junction 安装也要能解析到）",
 	indexSource.includes("createRequire(")
 		&& indexSource.includes("schemasteryBases()")

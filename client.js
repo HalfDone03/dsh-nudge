@@ -33,7 +33,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-01.2";
+	const PANEL_REVISION = "2026-11-01.3";
 	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
 	const NAV_GROUPS = [
 		["peek", "长这样"],
@@ -66,7 +66,7 @@ window.__ModuleLoader__.load({
 	".dsh-nudge-group-toggle:hover{color:var(--dsw-alias-label-primary)}",
 	".dsh-nudge-group-toggle[data-on=\"1\"]{color:var(--dsw-alias-label-primary)}",
 			".dsh-nudge-error{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary)}",
-			".dsh-nudge-card{display:flex;flex-direction:column;gap:2px;border-radius:12px;padding:12px 14px;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l1)}",
+			".dsh-nudge-card{display:flex;flex-direction:column;gap:2px;width:384px;max-width:100%;box-sizing:border-box;border-radius:12px;padding:14px 16px 14px 20px;line-height:1.35;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l1)}",
 			".dsh-nudge-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}",
 			".dsh-nudge-card-line{display:flex;align-items:baseline;gap:8px;min-width:0}",
 			".dsh-nudge-card-hit{padding:1px 4px;margin:0 -4px;border-radius:6px;cursor:pointer;border:0.5px solid transparent;white-space:pre-wrap}",
@@ -825,6 +825,11 @@ window.__ModuleLoader__.load({
 						h("div", { className: "dsh-nudge-card-line", key: "more" }, [cardLine("more")]),
 						h("div", { className: "dsh-nudge-card-line", key: "footer" }, [cardLine("footer")]),
 					]),
+					h(
+						"p",
+						{ className: "dsh-nudge-intro", key: "cardhint" },
+						"样卡按桌面卡片的实际宽度 384 画，字号和颜色取的是同一份配置；系统缩放或浏览器缩放下可能差一两像素。",
+					),
 					h("div", { className: "dsh-nudge-actions", key: "act" }, [
 						h(
 							"button",

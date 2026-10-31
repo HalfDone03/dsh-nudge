@@ -17,14 +17,14 @@ if (-not $node) { $node = 'node' }          # 便携版/旧结构也找不到时
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs              # 212 项，含真起 helper 与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 189 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 214 项，含真起 helper 与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 191 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (212 checks)`，退出码 0（CI 上是 `189 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 219 条）。
+- selftest 输出 `ALL PASS (214 checks)`，退出码 0（CI 上是 `191 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 221 条）。
 
 证据（实测）：
 
@@ -38,7 +38,7 @@ PASS  位置文件里的点被沿用  --  {"placement":"remembered","placedLeft"
 PASS  越界位置回落到右下角  --  {"placement":"corner","placedLeft":2146,...}
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
 PASS  基线 completed 对得上  --  436x174 色 263/263 暗 72874/72874 亮 933/933 状态 352/352
-ALL PASS (212 checks)
+ALL PASS (214 checks)
 ```
 
 其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 —— 目标不是窗口贴角，
@@ -155,8 +155,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
 - schema：`typography` 下 8 个角色、每个角色的 `color` 与 `size` 都带 `meta.volatile`（设置页才收这一组）。
 - 源码：`popup.ps1` 有 `Resolve-Typography` / `Get-FontSize` / `Get-FontColor`，14 个文本调用点都改成
   `-Size (Get-FontSize '<角色>' <默认>) -Color (Get-FontColor '<角色>' <默认>)`；两处主题解析后各执行一次
-  `$script:Fonts = Resolve-Typography $payload.typography`。宿主把 `typography` 放进 payload，并在预览期间
-  发现字体变了就 `restartPreview()`（`previewRestart` 标记让重画跳过 3 秒冷却）。
+  `$script:Fonts = Resolve-Typography $payload.typography`。宿主把 `typography` 与 `theme` 放进 payload，
+  预览期间比对「卡片生成时的外观指纹」（`styleKeyOf` = `theme` + `typography`）与当前配置，不一致就
+  `restartPreview()`（`previewRestart` 标记让重画跳过 3 秒冷却）。
 - 设置页：那一组常显，颜色先给一排现成的色块（11 个，含「跟随主题」），点一个就写进当前这一类；下面只出选中那一类的两个框（1 个颜色框 + 1 个字号框），另有 8 个角色按钮
   和一张八行的样卡；颜色行带 `#RRGGBB` 写法提示；点「逐行设字号（8 行一起看）」会把八类的字号框
   一次列出来（页面上的 `NumberRow` 从 5 个变成 13 个）。字号框里填的是**当前实际生效的值**（比如项目名 15.5、任务名 12.5），不是 0；改成 0 才回到默认。
@@ -167,6 +168,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
   写回成功后变「已保存」，两秒后回到常态（断言要等一轮宏任务，`mutate` 返回的是 Promise）。
 - 顶部有 9 个分组按钮（`className === "dsh-nudge-navbtn"`）和一行配置状态
   （`配置状态：<status> · 可写/只读 · 待保存 N 项`），页面最下面一行「提醒弹窗设置页 · 修订 <PANEL_REVISION>」。
+- 预览卡按外观指纹重画：`lib/index.js` 有 `styleKeyOf(cfg)`；构造器有 `previewStyleKey`，`spawnOnce` 的预览
+  分支记下 `styleKeyOf(this.config)`，`exit` 时清空；watch 里只在 `previewStyleKey !== styleKey` 时重画。
+  旧写法（闭包里的 `previewFonts` 跟上一拍比）在插件重新 apply 后会失效，已删掉。
+- 样卡按真卡宽度画：`client.js` 的 `.dsh-nudge-card` 是 `width:384px`（真卡 `$script:CardWidth = 384`），
+  下面一行说明「样卡按桌面卡片的实际宽度 384 画…」。
 - 真的进卡片（A/B 快照，临时目录里画，不污染 `screenshots/`）：`completed` 把标题改成 22 号纯红 →
   卡片高度 **174 → 182**，纯红像素 **0 → 861**。
 
