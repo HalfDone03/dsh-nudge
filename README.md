@@ -163,15 +163,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 
 三个地方都能改，改完都立即生效：
 
-- **插件自己的设置页**（推荐）：`设置 → 提醒弹窗`。这是本包的浏览器半身受（`client.js`），
-  分组摆好了开关、停留、配色、静音与调试项，改一项立刻生效，**不用重启**。
-- **`设置 → 插件 → nudge`**：宿主按 `Config` 里的 `.volatile()` 字段自动生成的表单，和设置页是同一份数据；
-  因为本包自带了设置页，已经用 `configure({ auto: false })` 把这份自动表单关掉了，免得两处重复。
-  （想让它出现，删掉 `lib/index.js` 里那句 `ctx.inject(["settings"], ...)` 即可。）
-  插件的 `Config` 是一份 Schemastery schema，
-  可改的字段都标了 `.volatile()`，宿主会把它们做成表单——改一项立刻生效，**不用重启**。
-  写回的是当前 profile 的 `cordis.patch.yml`，所以加一条 `- id: nudge` 的 YAML 覆盖也没问题，
-  两边看到的是同一份值。
+- **插件自己的设置页**（推荐）：`设置 → 提醒弹窗`。这是本包的浏览器半身（`client.js`）注册的一个分区，
+  开关、停留、配色、静音、字号、调试全在里面，改一项立刻生效，**不用重启**。
+- **`设置 → 插件 → nudge`**：宿主按 `Config` 里的 `.volatile()` 字段自动生成的那张表单，和设置页是同一份数据。
+  本包自带了设置页，所以已经用 `configure({ auto: false })` 把这张关掉了，免得同一份配置出现两次；
+  想让它回来，删掉 `lib/index.js` 里那句 `ctx.inject(["settings"], ...)` 即可。
 - **手改 profile 的 `cordis.patch.yml`**，按 id 覆盖本包的默认值（下面这份就是全部字段）：
 
 ```yaml
@@ -191,7 +187,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
     debugPayload: false    # 调试开关：true 时把每次弹出的 payload 追加落盘
     debugFile: ''          # 落盘文件；留空 = %TEMP%\dsh-nudge-payloads.jsonl
     debugPreview: false    # 预览：true 时卡片常驻，可以拖动缩放，关掉时把位置和大小记住
-    typography:            # 每一类文字的字号与颜色；留空 / 0 用主题默认（设置页里只在预览开着时显示这一组）
+    popupScript: ''        # 自定义弹窗脚本路径；留空用包内的 lib/popup.ps1（这项不 volatile，改了要重启）
+    typography:            # 每一类文字的字号与颜色；留空 / 0 用主题默认（设置页里点样卡上的一行，只改那一行）
       title: { color: '', size: 0 }    # 标题
       project: { color: '', size: 0 }  # 项目名
       task: { color: '', size: 0 }     # 任务名
@@ -214,24 +211,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 
 ### 设置页
 
-`设置 → 提醒弹窗`（排在「插件」页后面，`order: 20`）分了六组：
+`设置 → 提醒弹窗`（排在「插件」页后面，`order: 20`）从上到下九组：
 
-| 分组 | 能改什么 |
+| 分组 | 里面是什么 |
 | --- | --- |
+| 长这样 | 不是开关：按当前配色和字号画一张缩小样卡，八类文字各占一行，点哪一行就只调那一行 |
+| 一键预设 | 安静 / 标准 / 话多，一次写 9 个字段，之后还能逐项微调 |
 | 总开关 | `enabled` |
-| 提醒哪几类 | `kinds.completed` / `needs_choice` / `failed` |
-| 什么时候弹 | `showWhenFocused`、`suppressWhenFullscreen`、`alertOnToolError` |
-| 样子与位置 | `theme`（auto/light/dark 下拉）、`staySeconds`、`margin`、`rememberPosition` |
-| 合并 | `mergeWindowMs`、`maxItems`、`muteRanges`（一行一段） |
-| 每一项字体 | `typography.<角色>.color` 与 `.size`，8 类文字各一组（**只在预览弹窗打开时出现**） |
-| 调试 | `debugPayload`、`debugFile`、`debugPreview`（预览弹窗） |
+| 提醒哪几类 | `kinds.completed` / `kinds.needs_choice` / `kinds.failed` |
+| 什么时候弹 | `showWhenFocused` / `suppressWhenFullscreen` / `alertOnToolError` |
+| 样子与位置 | `theme`（auto / light / dark）、`staySeconds`、`margin`、`rememberPosition` |
+| 合并 | `mergeWindowMs`、`maxItems`、`muteRanges`（一行一段，写错的行当场红字列出来，底下还有一行「现在是否静音」） |
+| 字号与颜色 | 只出选中那一类的两个框：`typography.<角色>.color` 与 `.size`；换类靠点样卡或点这八个角色按钮 |
+| 调试 | 默认收起，点一下展开：`debugPreview`（预览弹窗）、`debugPayload`、`debugFile`，以及配置的导出 / 导入框 |
 
-「每一项字体」这一组只在「预览弹窗」打开时出现：没有一张常驻的卡片当靶子，调字号只能靠猜。
-改完对**所有**卡片生效，预览卡会当场重画一次（重画不加那 3 秒冷却），所以你改一格就能看到效果。
-
-它和插件的 `Config` 是同一份数据，写回 profile 的 `cordis.patch.yml`；页面只在宿主提供
-`slots` 与 `configForms` 两个服务时出现（`dsh.client.inject` 里声明了），浏览器半身在
-`/plugins/dsh-nudge/client.js`。
+除调试组外，每一组末尾都有一颗「恢复默认」，只把这一组写回出厂值。
+改完对所有卡片生效，预览卡会当场重画一次（`previewRestart` 让重画跳过那 3 秒冷却），所以改一格就能看到效果。
+页面只在宿主提供 `slots` 与 `configForms` 两个服务时出现，二者都在 `dsh.client.inject` 里声明。
 
 ## 视觉与排版
 
@@ -334,7 +330,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version 0.3.1
 ```
 
-它按顺序做：挑 node 跑语法检查与 199 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
+它按顺序做：挑 node 跑语法检查与 201 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
 「未发布」换成本版标题 → 更新本文件里的「当前版本」与版本一览表格 → 提交 → 打附注 tag → 把 `index.json`
 的 `versions[0]` 三字段指向这个提交并再提一条
 `chore(release): 索引指向 x.y.z 最终提交 (<hash>)` → `gh release create --latest` → push `main` 与 tag。
@@ -356,7 +352,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs      # 199 项全绿；CI 上跑的是 --no-live（176 项）
+& $node .\scripts\selftest.mjs      # 201 项全绿；CI 上跑的是 --no-live（178 项）
 ```
 
 三条硬要求，少一条装上就是坏的：
@@ -391,11 +387,11 @@ registry 安装是 `saveExact`（精确版本），不改版本号重装拿不�
 . .\scripts\dsh-deps.ps1                    # 和装/卸脚本共用同一套「找 DSH 自带的 node」
 $node = (Find-DshDependencies).Node
 if (-not $node) { $node = 'node' }          # PATH 里已有 node 就直接用
-& $node .\scripts\selftest.mjs              # 199 项，含真起窗口与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 176 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 201 项，含真起窗口与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 178 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
-当前 **199 项全绿**，覆盖：配置校验与默认值、实时配置（设置里改完立即生效）、静音时段（含跨零点）、事件合并计数、
+当前 **201 项全绿**，覆盖：配置校验与默认值、实时配置（设置里改完立即生效）、静音时段（含跨零点）、事件合并计数、
 严重度排序、三类开关、真起弹窗并收到 `{"type":"shown"}` 与右下角坐标、dispose 后无孤儿进程、
 三种状态各渲染一张 436px 宽快照，外加一张 4 条合并的清单快照（`screenshots/multi.png`，尺寸、非空与像素基线比对），以及一组源码静态约束——
 脚本必须纯 ASCII、项目名前不许出现图标字形、字号阶梯必须是「项目 > 任务 > 原因」、
@@ -450,7 +446,7 @@ dsh-nudge/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
 │  ├─ dsh-deps.ps1       两个脚本共用：找 DSH 自带的 node + pnpm
-│  └─ selftest.mjs       199 项自测（`--no-live` 176 项、`--update-baseline` 重写像素基线）
+│  └─ selftest.mjs       201 项自测（`--no-live` 178 项、`--update-baseline` 重写像素基线）
 ├─ tools/
 │  ├─ release.ps1        一条命令发版（自测→版本号→tag→索引指针→Release→push）
 │  └─ snapshot-baseline.json  快照像素基线，改了版式要跟着重生

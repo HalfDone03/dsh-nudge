@@ -1244,6 +1244,20 @@ check("设置页控件数量", clientControls.length >= 14, "controls=" + client
 			&& ["现在正处于静音时段，卡片不会弹。", "现在不在静音时段。"].includes(node.props.children),
 	);
 	check("静音时段底下标出现在是否静音", clientMuteState.length === 1, "lines=" + clientMuteState.length);
+	const errorRule = (clientSource.match(/\.dsh-nudge-error\{/g) ?? []).length;
+	check(
+		"错误色只定义一次，且走主题变量",
+		errorRule === 1 && clientSource.includes(".dsh-nudge-error{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary)}") && !clientSource.includes("#d9534f"),
+		"rules=" + errorRule,
+	);
+	check(
+		"README 的设置页一节跟得上现在的九组",
+		readmeSource.includes("从上到下九组")
+			&& readmeSource.includes("只出选中那一类的两个框")
+			&& !readmeSource.includes("只在预览弹窗打开时出现")
+			&& !readmeSource.includes("/plugins/dsh-nudge/client.js"),
+		"readme",
+	);
 check("配色是三个选项的下拉", clientControls.some((node) => node.type === "select") && clientNodes.filter((node) => node.type === "option").length === 3);
 const clientSwitch = clientControls.find((node) => node.props["aria-label"] === "任务完成");
 clientSwitch.props.onChange({ target: { checked: false } });
