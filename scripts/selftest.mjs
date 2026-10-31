@@ -1320,6 +1320,15 @@ const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 check("package.json 声明了浏览器半身", pkg.exports["./client"] === "./client.js" && pkg.dsh.client?.platform === "web", JSON.stringify(pkg.dsh.client));
 const hostSource = readFileSync(join(root, "lib", "index.js"), "utf8");
 check("宿主让设置服务别生成重复表单", hostSource.includes("settings.configure({ auto: false }"));
+check("找 schemastery 不只靠一次 import（junction 安装也要能解析到）",
+	indexSource.includes("createRequire(")
+		&& indexSource.includes("schemasteryBases()")
+		&& indexSource.includes("pathToFileURL(resolved).href")
+		&& indexSource.includes('await import("@deepseek-ai/schemastery")'),
+	"createRequire + bases");
+check("schemastery 候选目录含命令行参数与 ~/.dsh/profiles",
+	indexSource.includes("...process.argv.slice(1)") && indexSource.includes('join(homedir(), ".dsh", "profiles")'),
+	"bases");
 
 /**
  * 把子进程输出压成一行证据。

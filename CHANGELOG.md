@@ -19,14 +19,15 @@
 - 「调试」一组默认收起来，点一下才展开；原先排在第一行的「预览弹窗」开关也挪了进去。
 - 「调试」里多一个导出 / 导入框：导出把当前配置写成一段 JSON，粘回去点导入就整段覆盖
   （只认本插件认识的键，其余忽略）。
-- 自测 197 项（`--no-live` 174；设 `DSH_NUDGE_SCHEMASTERY` 时 204）：字体配置校验 5 条、schema volatile 1 条、
-  源码约束 2 条、设置页 11 条（样卡 8 行都可点、只渲染选中的那一类、8 个角色按钮、3 个预设、预设一次写 9 条 op、
+- 自测 199 项（`--no-live` 176；设 `DSH_NUDGE_SCHEMASTERY` 时 206）：字体配置校验 5 条、schema volatile 1 条、
+  源码约束 4 条、设置页 11 条（样卡 8 行都可点、只渲染选中的那一类、8 个角色按钮、3 个预设、预设一次写 9 条 op、
   字体改动写三段路径、恢复默认与宿主 `DEFAULTS` 零漂移、调试组默认收着、7 个恢复默认按钮、静音状态行）、
   字体快照 A/B 2 条（标题 22 号纯红：高度 174→182、红像素 0→861）。
   设置页基线控件 16 个、开关 8 个——调试组收着时，调试开关不渲染。
 
 **修复**
 
+- **设置页整页点不动**：插件是以 junction / 符号链接装进 profile 的，那次 `import("@deepseek-ai/schemastery")` 会先把插件解析成真实路径，再顺着真实路径往上找 `node_modules`——找不到，`Config` 就退成没有 `toJSON` 的手写对象；dsh-settings 的 `describe()` 只要 schema 没有 `toJSON` 就把这条直接跳过，命名空间 `nudge` 不上线，页面拿到的快照永远是 `unavailable`，于是每个开关、每个输入框都是 `disabled`，整页点不动。现在 import 失败会再按 CJS 规则，从宿主 cwd、命令行里的 profile 目录、`~/.dsh/profiles` 逐个解析一遍（CJS 不做这层真实路径解析，穿得过链接）。
 - `scripts/install.ps1` 找不到自带 pnpm：原来只认 `%DSH_HOME%\dsh-runtimes\dsh-primary-runtime\dependencies`，
   桌面版（自带运行时在 `<安装目录>\resources\runtime\primary-runtime\dependencies`）一律落空。现在按
   「进程可执行文件所在目录 / 卸载注册项 `InstallLocation`」认安装目录，再拼 4 种运行时布局逐个探测，
