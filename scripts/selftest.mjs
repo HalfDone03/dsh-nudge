@@ -1413,13 +1413,12 @@ await Promise.resolve();
 check("字体改动写成三段路径并带 revision",
 	JSON.stringify(clientMutations) === JSON.stringify([{ ops: [{ op: "set", path: ["typography", "project", "color"], value: "#FFFF0000" }], revision: 7 }]),
 	JSON.stringify(clientMutations));
-clientMutations.length = 0;
-buttonByText(renderClientPage().nodes, "逐行设字号（8 行一起看）").props.onClick();
+	/* 逐行字号现在常显，不用先展开。 */
 const sizePage = renderClientPage();
 const sizeRows = sizePage.components.filter((item) => item.type.name === "NumberRow");
 const roleLabels = ["标题", "项目名", "任务名", "原因", "状态词", "时间", "展开提示", "底部提示"];
 check(
-	"逐行设字号展开后八类各有自己的输入框",
+	"八类文字各有自己的字号输入框",
 	sizeRows.length === 13 && roleLabels.every((label) => sizeRows.some((item) => item.props.label === label)),
 	"rows=" + sizeRows.length,
 );
@@ -1473,7 +1472,7 @@ check(
 );
 check(
 	"设置页的样卡按真卡宽度画",
-	clientSource.includes("width:384px") && clientSource.includes("样卡按桌面卡片的实际宽度 384 画"),
+	clientSource.includes("width:384px") && clientSource.includes("宽 384、内边距 14/16"),
 	"client",
 );
 check(

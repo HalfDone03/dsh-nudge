@@ -33,7 +33,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-01.4";
+	const PANEL_REVISION = "2026-11-01.5";
 	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
 	const NAV_GROUPS = [
 		["peek", "长这样"],
@@ -48,6 +48,14 @@ window.__ModuleLoader__.load({
 	];
 
 		const STYLE = [
+	/* 「哪一类」那一排：贴着样卡放，改哪一类不用来回滚。 */
+	".dsh-nudge-roles{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}",
+	".dsh-nudge-role{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.3));background:transparent;color:inherit;font:inherit;cursor:pointer}",
+	".dsh-nudge-role[data-on=\"1\"]{border-color:var(--dsw-alias-border-l1,#888);background:var(--dsw-alias-bg-l2,rgba(127,127,127,.14))}",
+	".dsh-nudge-role:disabled{opacity:.5;cursor:not-allowed}",
+	".dsh-nudge-rolename{font-size:12px;line-height:1.4}",
+	".dsh-nudge-rolesize{font-size:11px;line-height:1.4;opacity:.65;font-variant-numeric:tabular-nums}",
+	".dsh-nudge-typetable{display:flex;flex-direction:column;gap:6px;margin-top:10px}",
 			".dsh-nudge-settings{max-width:760px;display:flex;flex-direction:column;gap:14px;color:var(--dsw-alias-label-primary)}",
 			".dsh-nudge-settings h2{margin:0;font-size:18px;font-weight:600}",
 			".dsh-nudge-intro{margin:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary)}",
@@ -318,10 +326,11 @@ window.__ModuleLoader__.load({
 		const ROLE_SIZE = { title: 14, project: 15.5, task: 12.5, reason: 10.5, status: 10.5, time: 10, more: 10.5, footer: 10 };
 		const COLOR_CHOICES = [["", "跟随主题"], ["#FFFFFF", "白"], ["#E6E6E6", "浅灰"], ["#9AA0A6", "灰"], ["#111111", "黑"], ["#FF6B6B", "红"], ["#FFA84D", "橙"], ["#FFD43B", "黄"], ["#51CF66", "绿"], ["#4DABF7", "蓝"], ["#B197FC", "紫"]];
 		/** 样卡里每一行的示例文字。 */
+		/** 样卡里每一行的示例文字：照「在桌面上弹一张看看」那张卡的正文写，短词的版式是假的。 */
 		const ROLE_SAMPLE = {
-			title: "会话提醒",
+			title: "调试预览",
 			project: "dsh-nudge",
-			task: "把设置页的字体改成点选式",
+			task: "拖动或缩放这张卡，关掉开关后位置会记住",
 			reason: "回合正常结束 · 用时 2 分 13 秒",
 			status: "完成",
 			time: "12:04",
@@ -747,15 +756,27 @@ const ROLE_LOOK = {
 			};
 			/** 这一类现在用的颜色，留空表示跟随主题。 */
 			const colorNow = (role) => text("typography." + role + ".color");
-			/** 样卡里这一行的内联样式：颜色留空就按 ROLE_LOOK 的浓淡走。 */
+			/**
+			 * 样卡里这一行的内联样式。
+			 * 真卡用的是半透明颜色（正文 #F0FFFFFF 就是 94% 的白），不是给整块加 opacity——
+			 * opacity 会把边框和底色一起压淡，所以之前样卡看着比真卡淡。
+			 * @param {string} role 文字类别
+			 * @returns {Record<string, string|number>} 可直接给 CSS 的样式
+			 */
 			const cardFont = (role) => {
 				const look = ROLE_LOOK[role];
-				const color = text("typography." + role + ".color");
+				const own = text("typography." + role + ".color");
+				const accent = typeof look.accent === "string" ? look.accent : null;
+				const tint =
+					own !== ""
+						? own
+						: accent !== null
+							? accent
+							: "color-mix(in srgb, currentColor " + Math.round(look.opacity * 100) + "%, transparent)";
 				return {
 					fontSize: roleSize(role) + "px",
 					fontWeight: look.weight,
-					opacity: color === "" ? look.opacity : 1,
-					color: color === "" ? undefined : color,
+					color: tint,
 				};
 			};
 			const themeValue = text("theme") === "" ? "auto" : text("theme");
@@ -825,7 +846,7 @@ const ROLE_LOOK = {
 					h(
 						"p",
 						{ className: "dsh-nudge-intro", key: "hint" },
-						"按真卡的尺寸和排版画的一张样卡：点哪一行，下面就调哪一行。",
+						"这张样卡和桌面上那张卡用的是同一份配置、同一套尺寸；点哪一行就调哪一行。",
 					),
 					h(
 						"div",
@@ -849,7 +870,34 @@ const ROLE_LOOK = {
 					h(
 						"p",
 						{ className: "dsh-nudge-intro", key: "cardhint" },
-						"样卡按桌面卡片的实际宽度 384 画：内边距 14/16、左侧 3px 竖条、任务名行高 18、结论框圆角 6 内边距 6/9、分隔线 11/1、底部 12，都和真卡对齐；字号与颜色取的是同一份配置。浏览器与桌面渲染字体略有差异，可能差一两像素。",
+						"宽 384、内边距 14/16、左侧 3px 竖条、任务名行高 18、结论框圆角 6 内边距 6/9、分隔线 11/1、底部 12，都和真卡对齐；字号与颜色取的是同一份配置。改完点「应用」，桌面上的卡会当场重画。",
+					),
+					h(
+						"div",
+						{ className: "dsh-nudge-roles", key: "chips" },
+						FONT_ROLES.map(([role, label]) =>
+							h(
+								"button",
+								{
+									key: role,
+									type: "button",
+									className: "dsh-nudge-role",
+									"data-role": role,
+									"data-on": fontRole === role ? "1" : "0",
+									disabled,
+									title: roleHint(role),
+									onClick: () => setFontRole(role),
+								},
+								[
+									h("span", { key: "n", className: "dsh-nudge-rolename" }, label),
+									h(
+										"span",
+										{ key: "s", className: "dsh-nudge-rolesize" },
+										roleSize(role) + "px",
+									),
+								],
+							),
+						),
 					),
 					h("div", { className: "dsh-nudge-actions", key: "act" }, [
 						h(
@@ -1060,63 +1108,25 @@ const ROLE_LOOK = {
 					h(
 						"p",
 						{ className: "dsh-nudge-intro", key: "hint" },
-						"点上面样卡里的某一行（或者下面这些名字）就切到那一行；留空 / 0 表示用默认。",
+						"点样卡里的某一行，或者样卡下面那排名字，就切到那一类；字号留空 / 0 表示用默认，颜色留空跟随主题。",
 					),
 					h(
 						"div",
-						{ className: "dsh-nudge-actions", key: "roles" },
-						FONT_ROLES.map(([role, label]) =>
-							h(
-								"button",
-								{
-									key: role,
-									type: "button",
-									className: "dsh-nudge-btn",
-									"data-role": role,
-									"data-on": fontRole === role ? "1" : "0",
-									disabled,
-									onClick: () => setFontRole(role),
-								},
-								label,
-							),
-						),
-					),
-					h(
-						"div",
-						{ className: "dsh-nudge-actions", key: "alltoggle" },
-						h(
-							"button",
-							{
-								key: "all",
-								type: "button",
-								className: "dsh-nudge-btn",
-								"data-on": allSizes ? "1" : "0",
-								"aria-expanded": allSizes ? "true" : "false",
+						{ className: "dsh-nudge-typetable", key: "sizes" },
+						FONT_ROLES.map(([role]) =>
+							h(NumberRow, {
+								key: role,
+								label: roleLabel(role),
+								hint: sizeHint(role),
+								value: roleSize(role),
+								min: 0,
+								max: 48,
+								step: 0.5,
 								disabled,
-								onClick: () => setAllSizes(!allSizes),
-							},
-							allSizes ? "收起逐行字号" : "逐行设字号（8 行一起看）",
+								onCommit: (next) => write("typography." + role + ".size", next),
+							}),
 						),
 					),
-					allSizes
-						? h(
-								"div",
-								{ className: "dsh-nudge-sizerows", key: "sizes" },
-								FONT_ROLES.map(([role]) =>
-									h(NumberRow, {
-										key: role,
-										label: roleLabel(role),
-										hint: sizeHint(role),
-										value: roleSize(role),
-										min: 0,
-										max: 48,
-										step: 0.5,
-										disabled,
-										onCommit: (next) => write("typography." + role + ".size", next),
-									}),
-								),
-							)
-						: null,
 					h("div", { className: "dsh-nudge-swatches", key: "colors" }, COLOR_CHOICES.map(([value, name]) =>
 						h("button", {
 							key: value === "" ? "auto" : value,

@@ -158,9 +158,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
   `$script:Fonts = Resolve-Typography $payload.typography`。宿主把 `typography` 与 `theme` 放进 payload，
   预览期间比对「卡片生成时的外观指纹」（`styleKeyOf` = `theme` + `typography`）与当前配置，不一致就
   `restartPreview()`（`previewRestart` 标记让重画跳过 3 秒冷却）。
-- 设置页：那一组常显，颜色先给一排现成的色块（11 个，含「跟随主题」），点一个就写进当前这一类；下面只出选中那一类的两个框（1 个颜色框 + 1 个字号框），另有 8 个角色按钮
-  和一张八行的样卡；颜色行带 `#RRGGBB` 写法提示；点「逐行设字号（8 行一起看）」会把八类的字号框
-  一次列出来（页面上的 `NumberRow` 从 5 个变成 13 个）。字号框里填的是**当前实际生效的值**（比如项目名 15.5、任务名 12.5），不是 0；改成 0 才回到默认。
+- 设置页：样卡下面是一排 8 个名字按钮（`className === "dsh-nudge-role"`，每格写着类名与当前字号，
+  `data-role` 各一），点样卡上的一行、或者这排名字，都切到那一类；颜色再给一排现成的色块（11 个，
+  含「跟随主题」），点一个就写进当前这一类；下面只出选中那一类的两个框（1 个颜色框 + 1 个字号框），
+  颜色行带 `#RRGGBB` 写法提示。八类的字号框**常显**在 `.dsh-nudge-typetable` 里，不用先展开
+  （页面上的 `NumberRow` 从 5 个变成 13 个）。字号框里填的是**当前实际生效的值**（比如项目名 15.5、
+  任务名 12.5），不是 0；改成 0 才回到默认。
 - 改一格不立刻写回：底部出现「1 项改动还没保存」，点「应用」才写出
   `[{op:"set",path:["typography","title","color"],value:"#FFFF0000"}]`（带当前 revision），点「放弃」则丢掉。
   自测里的假 `useState` 会真存值，所以草稿 → 应用 → 放弃三步都能断言。
@@ -172,14 +175,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
   分支记下 `styleKeyOf(this.config)`，`exit` 时清空；watch 里只在 `previewStyleKey !== styleKey` 时重画。
   旧写法（闭包里的 `previewFonts` 跟上一拍比）在插件重新 apply 后会失效，已删掉。
 - 样卡按真卡宽度画：`client.js` 的 `.dsh-nudge-card` 是 `width:384px`（真卡 `$script:CardWidth = 384`），
-  下面一行说明「样卡按桌面卡片的实际宽度 384 画…」。
+  下面一行说明开头是「宽 384、内边距 14/16…」。
 - 样卡按真卡的结构画：`.dsh-nudge-card-strip`（左侧 3px 竖条，`top/bottom:13px`，圆角 1.5）、
   `.dsh-nudge-card-verdict`（结论框，圆角 6、内边距 6/9）、`.dsh-nudge-card-rule`（分隔线，`margin:11px 0 1px`）、
   内容区 `padding:14px 16px 14px 20px`、任务名 `line-height:18px`、原因 `line-height:15px` —— 逐项对应 `popup.ps1` 的
   `$strip` / `$verdictFrame` / `$divider` / `$body.Margin` / `$headlineBlock.LineHeight` / `$verdictBody.LineHeight`。
 - 样卡的字体栈与浓淡对齐真卡：`font-family` 首位是 `Microsoft YaHei UI`（同 `$script:FontStack`）；
   `ROLE_LOOK` 的透明度取真卡的 alpha —— 任务名 `#F0FFFFFF`(0.94)、原因 `#DCFFFFFF`(0.86)、
-  时间 `#5CFFFFFF`(0.36)、更多 `#75FFFFFF`(0.46)、底部 `#59FFFFFF`(0.35)。
+  时间 `#5CFFFFFF`(0.36)、更多 `#75FFFFFF`(0.46)、底部 `#59FFFFFF`(0.35)。浓淡**不用整块 `opacity`**
+  （那会把描边和底色一起压淡），改成 `color-mix(in srgb, currentColor <alpha>%, transparent)`；
+  结论状态那一类的兜底色是 `#2ECC71`（真卡 `Get-KindAccent` 的完成绿），不是白色。
+- 样卡的示例文字用预览卡正文：任务名是「拖动或缩放这张卡，关掉开关后位置会记住」这样的长句，
+  在 384 宽里会折成两行 —— 短词撑不出真卡的版式，改了也看不出差异。
 - 真的进卡片（A/B 快照，临时目录里画，不污染 `screenshots/`）：`completed` 把标题改成 22 号纯红 →
   卡片高度 **174 → 182**，纯红像素 **0 → 861**。
 
