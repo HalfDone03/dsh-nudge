@@ -43,7 +43,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-01.11";
+	const PANEL_REVISION = "2026-11-01.12";
 	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
 	const NAV_GROUPS = [
 		["peek", "长这样"],
@@ -98,6 +98,13 @@ window.__ModuleLoader__.load({
 			".dsh-nudge-card-rule{height:1px;margin:11px 0 1px;background:var(--dsw-alias-border-l2)}",
 			".dsh-nudge-card-more{display:flex;align-items:baseline;margin-top:8px}",
 			".dsh-nudge-card-footer{display:flex;align-items:baseline;margin-top:12px}",
+				".dsh-nudge-card-bar{display:flex;align-items:center;gap:10px;padding:9px 0 2px;margin-top:10px;border-top:0.5px solid color-mix(in srgb,currentColor 16%,transparent)}",
+				".dsh-nudge-card-bar .dsh-nudge-check{display:flex;align-items:center;gap:5px;font-size:10.5px;cursor:pointer;white-space:nowrap}",
+				".dsh-nudge-card-bar .dsh-nudge-check input{width:13px;height:13px;accent-color:var(--dsw-alias-fg-strong)}",
+				".dsh-nudge-card-bar-space{flex:1}",
+				".dsh-nudge-card-bar .dsh-nudge-btn{font-size:10.5px;padding:3px 8px;border-radius:6px;border:0.5px solid color-mix(in srgb,currentColor 20%,transparent);background:transparent;color:inherit;cursor:pointer;white-space:nowrap}",
+				".dsh-nudge-card-bar .dsh-nudge-btn:hover:not(:disabled){background:color-mix(in srgb,currentColor 8%,transparent)}",
+				".dsh-nudge-card-bar .dsh-nudge-btn:disabled{opacity:.45;cursor:not-allowed}",
 			".dsh-nudge-card-hit{padding:0 2px;margin:0 -2px;border-radius:4px;cursor:pointer;border:0.5px solid transparent;white-space:pre-wrap}",
 			".dsh-nudge-card-hit:hover{background:var(--dsw-alias-bg-l2)}",
 			".dsh-nudge-card-hit[data-on=\"1\"]{border-color:var(--dsw-alias-state-business-primary)}",
@@ -921,12 +928,12 @@ const ROLE_LOOK = {
 					h(
 						"p",
 						{ className: "dsh-nudge-hint", key: "draghint" },
-						"开着预览卡时，左键拖某一块换位置，按住右键横拖改它的宽度；松手就存下来，卡片上所有文字都能这么摆。",
+						"开着预览卡时：左键拖文字块换位置，右键横拖改宽度，松手即存。",
 					),
 					h(
 						"p",
 						{ className: "dsh-nudge-intro", key: "intro" },
-						"桌面卡片的全部外观都在这一组里：点样卡某一行、或者下面那排名字，就切到那一类；再往下是宽度、落点和配色。",
+						"点样卡某一行、或下面那排名字可切换类别；往下还有宽度、落点、配色。",
 					),
 					h(
 						"div",
@@ -945,6 +952,49 @@ const ROLE_LOOK = {
 								h("div", { className: "dsh-nudge-card-more", key: "more" }, [cardLine("more")]),
 								h("div", { className: "dsh-nudge-card-footer", key: "footer" }, [cardLine("footer")]),
 							]),
+							h(
+								"div",
+								{ className: "dsh-nudge-card-bar", key: "bar" },
+								[
+									h(
+										"label",
+										{ className: "dsh-nudge-check", key: "remember", title: "拖过之后下次还在那儿。" },
+										[
+											h("input", {
+												type: "checkbox",
+												checked: bool("rememberPosition") === true,
+												disabled,
+												onChange: (ev) => write("rememberPosition", ev.target.checked),
+											}),
+											"记住拖过的位置",
+										],
+									),
+									h("div", { className: "dsh-nudge-card-bar-space", key: "sp" }),
+									h(
+										"button",
+										{
+											key: "try",
+											type: "button",
+											className: "dsh-nudge-btn",
+											disabled,
+											onClick: () => writeNow("debugPreview", !bool("debugPreview")),
+										},
+										bool("debugPreview") ? "收起桌面上的卡片" : "在桌面上弹一张看看",
+									),
+									h(
+										"button",
+										{
+											key: "reset-layout",
+											type: "button",
+											className: "dsh-nudge-btn",
+											title: "把七块文字都摆回原位，宽度也还原",
+											disabled,
+											onClick: () => writeMany(BLOCK_DEFAULTS()),
+										},
+										"摆回原位",
+									),
+								],
+							),
 						],
 					),
 					h(
@@ -1081,39 +1131,7 @@ const ROLE_LOOK = {
 						disabled,
 						onCommit: (next) => write("margin", next),
 					}),
-					h(SwitchRow, {
-						key: "rememberPosition",
-						label: "记住拖过的位置",
-						hint: "拖过之后下次还在那儿。",
-						checked: bool("rememberPosition"),
-						disabled,
-						onChange: (next) => write("rememberPosition", next),
-					}),
-					h("div", { className: "dsh-nudge-actions", key: "act" }, [
-						h(
-							"button",
-							{
-								key: "try",
-								type: "button",
-								className: "dsh-nudge-btn",
-								disabled,
-								onClick: () => writeNow("debugPreview", !bool("debugPreview")),
-							},
-							bool("debugPreview") ? "收起桌面上的卡片" : "在桌面上弹一张看看",
-						),
-						h(
-							"button",
-							{
-								key: "reset-layout",
-								type: "button",
-								className: "dsh-nudge-btn",
-								title: "把七块文字都摆回原位，宽度也还原",
-								disabled,
-								onClick: () => writeMany(BLOCK_DEFAULTS()),
-							},
-							"摆回原位",
-						),
-					]),
+
 				]),
 
 				h("div", { className: "dsh-nudge-group", key: "basic", id: "dsh-nudge-g-basic", "data-dirty": groupDirty("basic") > 0 ? "1" : "0" }, [

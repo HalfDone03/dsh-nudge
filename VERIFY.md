@@ -165,9 +165,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
   页面上的 `NumberRow` 因此只有 6 个（另 5 个是停留秒数 / 边距 / 卡片宽度 / 合并窗口 / 折叠条数）。
   字号框里填的是**当前实际生效的值**（比如项目名 15.5、任务名 12.5），不是 0；改成 0 才回到默认。
 - 外观只有一处入口：`peek` 组同时装样卡、8 个名字按钮、单行的字号与颜色、11 颗 `data-color` 色块、
-  卡片宽度、落点九宫格、底色与竖条两排 `data-swatch` 色块、`theme` / `staySeconds` / `margin` /
-  `rememberPosition`，以及「在桌面上弹一张看看」。全页只剩五组（长这样 / 提醒 / 时机 / 合并 / 调试），
-  导航按钮 5 颗；「提醒」组把总开关和三类提醒合成一组。
+  卡片宽度、落点九宫格、底色与竖条两排 `data-swatch` 色块、`theme` / `staySeconds` / `margin`。
+  样卡底边自带一行操作条（`.dsh-nudge-card-bar`）：`rememberPosition` 开关（「记住拖过的位置」）、
+  「在桌面上弹一张看看」和「摆回原位」（`key: "reset-layout"`）都收进卡里，不再散在下面。全页只剩五组
+  （长这样 / 提醒 / 时机 / 合并 / 调试），导航按钮 5 颗；「提醒」组把总开关和三类提醒合成一组。
 - 改一格不立刻写回：底部出现「1 项改动还没保存」，点「应用」才写出
   `[{op:"set",path:["typography","title","color"],value:"#FFFF0000"}]`（带当前 revision），点「放弃」则丢掉。
   自测里的假 `useState` 会真存值，所以草稿 → 应用 → 放弃三步都能断言。
