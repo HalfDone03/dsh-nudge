@@ -1191,7 +1191,7 @@ for (const [path, value] of groupDefaults) {
 }
 check(
 	"恢复默认的取值和宿主 DEFAULTS 一致",
-	clientExports.groupDefaults?.length === 7 && groupDefaults.size >= 25 && defaultDrift.length === 0,
+	clientExports.groupDefaults?.length === 5 && groupDefaults.size >= 30 && defaultDrift.length === 0,
 	"groups=" + (clientExports.groupDefaults?.length ?? 0) + " keys=" + groupDefaults.size + " " + defaultDrift.join("; "),
 );
 
@@ -1247,7 +1247,7 @@ check("设置页控件数量", clientControls.length >= 14, "controls=" + client
 	const clientResetButtons = clientNodes.filter((node) => node.type === "button" && node.props.children === "恢复默认");
 	check(
 		"每一组都有恢复默认",
-		clientResetButtons.length === 7 && new Set(clientResetButtons.map((node) => node.props["data-group"])).size === 7,
+		clientResetButtons.length === 5 && new Set(clientResetButtons.map((node) => node.props["data-group"])).size === 5,
 		"buttons=" + clientResetButtons.length + " groups=" + clientResetButtons.map((node) => node.props["data-group"]).join(","),
 	);
 	const clientMuteState = clientNodes.filter(
@@ -1263,8 +1263,8 @@ check("设置页控件数量", clientControls.length >= 14, "controls=" + client
 		"rules=" + errorRule,
 	);
 	check(
-		"README 的设置页一节跟得上现在的八组",
-		readmeSource.includes("从上到下八组")
+		"README 的设置页一节跟得上现在的五组",
+		readmeSource.includes("从上到下五组")
 			&& readmeSource.includes("一排现成的色块")
 			&& readmeSource.includes("现在实际用的值")
 			&& !readmeSource.includes("只在预览弹窗打开时出现")
@@ -1321,7 +1321,7 @@ check(
 );
 check(
 	"顶部有分组导航和修订标记",
-	clientNodes.filter((node) => node.type === "button" && String(node.props.className ?? "") === "dsh-nudge-navbtn").length === 8
+	clientNodes.filter((node) => node.type === "button" && String(node.props.className ?? "") === "dsh-nudge-navbtn").length === 5
 		&& clientNodes.some((node) => typeof node.props.children === "string" && node.props.children.startsWith("提醒弹窗设置页 · 修订 ")),
 	"nav=" + clientNodes.filter((node) => node.type === "button" && String(node.props.className ?? "") === "dsh-nudge-navbtn").length,
 );
@@ -1443,7 +1443,7 @@ check(
 
 const typingPage = renderClientPage();
 const fontColorRow = typingPage.components.find((item) => item.type.name === "TextRow" && item.props.label === "颜色（项目名）");
-const fontSizeRow = typingPage.components.find((item) => item.type.name === "NumberRow" && item.props.label === "项目名");
+const fontSizeRow = typingPage.components.find((item) => item.type.name === "NumberRow" && item.props.label === "字号（项目名）");
 check("字体行带写法说明与默认字号",
 	typeof fontColorRow?.props?.hint === "string"
 	&& fontColorRow.props.hint.includes("#RRGGBB")
@@ -1489,21 +1489,35 @@ await Promise.resolve();
 check("字体改动写成三段路径并带 revision",
 	JSON.stringify(clientMutations) === JSON.stringify([{ ops: [{ op: "set", path: ["typography", "project", "color"], value: "#FFFF0000" }], revision: 7 }]),
 	JSON.stringify(clientMutations));
-	/* 逐行字号现在常显，不用先展开。 */
+	/* 字号与颜色只画当前选中的那一类，八类靠样卡和名字按钮切换。 */
 const sizePage = renderClientPage();
 const sizeRows = sizePage.components.filter((item) => item.type.name === "NumberRow");
-const roleLabels = ["标题", "项目名", "任务名", "原因", "状态词", "时间", "展开提示", "底部提示"];
+const sizeLabels = sizeRows.map((item) => item.props.label).filter((label) => typeof label === "string" && label.startsWith("字号（"));
 check(
-	"八类文字各有自己的字号输入框",
-	sizeRows.length === 13 && roleLabels.every((label) => sizeRows.some((item) => item.props.label === label)),
-	"rows=" + sizeRows.length,
+	"字号只画选中的那一类，八类都点得到",
+	sizeRows.length === 6 && roleButtons(sizePage.nodes).length === 8 && sizeLabels.length === 1 && sizeLabels[0] === "字号（项目名）",
+	"rows=" + sizeRows.length + " labels=" + sizeLabels.join("|"),
 );
-const sizeNow = (label) => sizeRows.filter((item) => item.props.label === label).map((item) => item.props.value);
 check(
 	"字号框显示的是现在生效的值，不是 0",
-	sizeNow("任务名")[0] === 12.5 && sizeNow("项目名")[0] === 15.5,
-	"task=" + sizeNow("任务名")[0] + " project=" + sizeNow("项目名")[0],
+	sizeRows.find((item) => item.props.label === "字号（项目名）")?.props.value === 15.5,
+	"project=" + sizeRows.find((item) => item.props.label === "字号（项目名）")?.props.value,
 );
+clientMutations.length = 0;
+const taskChip = roleButtons(sizePage.nodes).find((node) => node.props["data-role"] === "task");
+if (taskChip !== undefined) { taskChip.props.onClick(); }
+await Promise.resolve();
+const taskSizePage = renderClientPage();
+const taskSizeRow = taskSizePage.components.find((item) => item.type.name === "NumberRow" && item.props.label === "字号（任务名）");
+const taskColorRow = taskSizePage.components.find((item) => item.type.name === "TextRow" && item.props.label === "颜色（任务名）");
+check(
+	"点哪一类就改哪一类，字号颜色跟着换",
+	taskSizeRow?.props?.value === 12.5 && typeof taskColorRow?.props?.hint === "string" && clientMutations.length === 0,
+	"task=" + taskSizeRow?.props?.value + " writes=" + clientMutations.length,
+);
+if (taskChip !== undefined) { taskChip.props.onClick(); }
+await Promise.resolve();
+renderClientPage();
 const swatches = sizePage.nodes.filter((node) => node.type === "button" && node.props["data-color"] !== undefined);
 const redSwatch = swatches.filter((node) => node.props["data-color"] === "#FF6B6B");
 clientMutations.length = 0;
@@ -1521,7 +1535,7 @@ check(
 buttonByText(swatchPage.nodes, "放弃").props.onClick();
 await Promise.resolve();
 clientMutations.length = 0;
-sizeRows.find((item) => item.props.label === "任务名").props.onCommit(13);
+sizeRows.find((item) => item.props.label === "字号（项目名）").props.onCommit(13);
 await Promise.resolve();
 const abandonPage = renderClientPage();
 buttonByText(abandonPage.nodes, "放弃").props.onClick();

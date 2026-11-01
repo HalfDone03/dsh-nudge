@@ -33,15 +33,12 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-01.8";
+	const PANEL_REVISION = "2026-11-01.9";
 	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
 	const NAV_GROUPS = [
 		["peek", "长这样"],
-		["preset", "预设"],
-		["master", "开关"],
-		["kinds", "提醒"],
+		["basic", "提醒"],
 		["when", "时机"],
-		["look", "外观"],
 		["merge", "合并"],
 		["debug", "调试"],
 	];
@@ -55,22 +52,22 @@ window.__ModuleLoader__.load({
 	".dsh-nudge-rolename{font-size:12px;line-height:1.4}",
 	".dsh-nudge-rolesize{font-size:11px;line-height:1.4;opacity:.65;font-variant-numeric:tabular-nums}",
 	".dsh-nudge-typetable{display:flex;flex-direction:column;gap:0;margin-top:0}",
-			".dsh-nudge-settings{max-width:820px;display:flex;flex-direction:column;gap:18px;color:var(--dsw-alias-label-primary)}",
+			".dsh-nudge-settings{max-width:820px;display:flex;flex-direction:column;gap:12px;color:var(--dsw-alias-label-primary)}",
 			".dsh-nudge-settings h2{margin:0;font-size:18px;font-weight:600}",
-			".dsh-nudge-intro{margin:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary)}",
+			".dsh-nudge-intro{margin:0;font-size:12.5px;line-height:19px;color:var(--dsw-alias-label-tertiary)}",
 			".dsh-nudge-group{display:flex;flex-direction:column;gap:0;border:0.5px solid var(--dsw-alias-border-l2);border-radius:12px;padding:0 16px 4px;scroll-margin-top:52px}",
 			".dsh-nudge-group-title{margin:0;flex:1;font-size:13px;font-weight:600;line-height:20px;letter-spacing:0;color:var(--dsw-alias-label-primary)}",
-			".dsh-nudge-group-head{display:flex;align-items:center;gap:12px;padding:12px 0 9px;border-bottom:0.5px solid var(--dsw-alias-border-l2)}",
+			".dsh-nudge-group-head{display:flex;align-items:center;gap:12px;padding:10px 0 7px;border-bottom:0.5px solid var(--dsw-alias-border-l2)}",
 			".dsh-nudge-group-head .dsh-nudge-actions{padding:0;margin:0}",
 			".dsh-nudge-group-head .dsh-nudge-btn{font-size:12px;line-height:16px;padding:2px 9px;border-radius:6px;opacity:.8}",
 			".dsh-nudge-group-head .dsh-nudge-btn:hover:not(:disabled){opacity:1}",
 			".dsh-nudge-group-head .dsh-nudge-group-toggle{margin:0;flex:1}",
-			".dsh-nudge-group .dsh-nudge-intro{padding:9px 0 1px}",
-			".dsh-nudge-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:16px;padding:9px 0;border-top:0.5px solid var(--dsw-alias-border-l2)}",
+			".dsh-nudge-group .dsh-nudge-intro{padding:7px 0 1px}",
+			".dsh-nudge-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;padding:6px 0;border-top:0.5px solid var(--dsw-alias-border-l2)}",
 			".dsh-nudge-group-head + .dsh-nudge-row{border-top:0}",
 			".dsh-nudge-text{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}",
 			".dsh-nudge-label{font-size:13px;line-height:20px}",
-			".dsh-nudge-hint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}",
+			".dsh-nudge-hint{font-size:11.5px;line-height:16px;color:var(--dsw-alias-label-tertiary)}",
 			".dsh-nudge-input{width:110px;flex:none;font:inherit;font-size:13px;padding:5px 8px;border-radius:7px;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l2);color:var(--dsw-alias-label-primary)}",
 			".dsh-nudge-areas{width:260px;flex:none;font:inherit;font-size:13px;line-height:20px;padding:6px 8px;border-radius:7px;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l2);color:var(--dsw-alias-label-primary);resize:vertical;min-height:64px}",
 			".dsh-nudge-switch{flex:none;width:36px;height:20px;margin:0;cursor:pointer;accent-color:var(--dsw-alias-state-business-primary)}",
@@ -104,17 +101,19 @@ window.__ModuleLoader__.load({
 			".dsh-nudge-applybar[data-dirty=\"0\"]{border-color:var(--dsw-alias-border-l2);box-shadow:none}",
 			".dsh-nudge-group[data-dirty=\"1\"]{border-color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-group[data-dirty=\"1\"] .dsh-nudge-group-title::after{content:\" ·\";color:var(--dsw-alias-state-business-primary)}",
+	".dsh-nudge-presets{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 0 0}",
+	".dsh-nudge-presets-label{font-size:12px;color:var(--dsw-alias-label-tertiary)}",
 			".dsh-nudge-nav{position:sticky;top:0;z-index:3;display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:6px 0;background:var(--dsw-alias-bg-l1)}",
 			".dsh-nudge-navbtn{font:inherit;font-size:12px;line-height:18px;padding:3px 10px;border-radius:999px;cursor:pointer;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l2);color:var(--dsw-alias-label-tertiary)}",
 			".dsh-nudge-navbtn:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-status{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}",
 			".dsh-nudge-stamp{margin:0;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);opacity:.75}",
-			".dsh-nudge-swatches{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 0 8px}",
-			".dsh-nudge-swatch{font:inherit;font-size:11px;line-height:16px;padding:3px 9px;border-radius:999px;cursor:pointer;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l2);color:var(--dsw-alias-label-primary);display:inline-flex;align-items:center;gap:6px}",
+			".dsh-nudge-swatches{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 0 4px}",
+			".dsh-nudge-swatch{display:inline-flex;align-items:center;padding:3px 4px;border-radius:999px}",
 			".dsh-nudge-swatch:hover{border-color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-swatch[data-on=\"1\"]{border-color:var(--dsw-alias-state-business-primary);box-shadow:inset 0 0 0 1px var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-swatchdot{width:10px;height:10px;border-radius:50%;border:0.5px solid var(--dsw-alias-border-l2);flex:none}",
-	".dsh-nudge-block{display:flex;flex-direction:column;gap:2px;padding:9px 0;border-top:0.5px solid var(--dsw-alias-border-l2)}",
+	".dsh-nudge-block{display:flex;flex-direction:column;gap:0;padding:6px 0;border-top:0.5px solid var(--dsw-alias-border-l2)}",
 	".dsh-nudge-anchors{display:grid;grid-template-columns:repeat(3,58px);gap:6px;margin-top:6px}",
 	".dsh-nudge-anchor{position:relative;height:38px;padding:0;border-radius:8px;cursor:pointer;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l2);color:var(--dsw-alias-label-primary)}",
 	".dsh-nudge-anchor:hover{border-color:var(--dsw-alias-state-business-primary)}",
@@ -224,7 +223,6 @@ function ColorSwatches(props) {
 				},
 				[
 					h("span", { key: "dot", className: "dsh-nudge-swatchdot", style: { background: value === "" ? "transparent" : value } }),
-					name,
 				],
 			),
 		),
@@ -504,57 +502,37 @@ const ROLE_LOOK = {
 		 * 自测会拿这份逐项比对（`exports.groupDefaults` 就是给它看的）。
 		 */
 		const GROUP_DEFAULTS = [
-			[
-				"peek",
-				[
-					["width", 384],
-					["anchor", "bottom-right"],
-					["cardColor", ""],
-					["accentColor", ""],
-				],
-			],
-			["master", [["enabled", true]]],
-			[
-				"kinds",
-				[
-					["kinds.completed", true],
-					["kinds.needs_choice", true],
-					["kinds.failed", true],
-				],
-			],
-			[
-				"when",
-				[
-					["showWhenFocused", true],
-					["suppressWhenFullscreen", true],
-					["alertOnToolError", true],
-				],
-			],
-			[
-				"look",
-				[
-					["theme", "auto"],
-					["staySeconds", 15],
-					["margin", 16],
-					["rememberPosition", true],
-				],
-			],
-			[
-				"merge",
-				[
-					["mergeWindowMs", 1200],
-					["maxItems", 8],
-					["muteRanges", []],
-				],
-			],
-			[
-				"debug",
-				[
-					["debugPreview", false],
-					["debugPayload", false],
-					["debugFile", ""],
-				],
-			],
+			["peek", [
+				["width", 384],
+				["anchor", "bottom-right"],
+				["cardColor", ""],
+				["accentColor", ""],
+				["theme", "auto"],
+				["staySeconds", 15],
+				["margin", 16],
+				["rememberPosition", true],
+			]],
+			["basic", [
+				["enabled", true],
+				["kinds.completed", true],
+				["kinds.needs_choice", true],
+				["kinds.failed", true],
+			]],
+			["when", [
+				["showWhenFocused", true],
+				["suppressWhenFullscreen", true],
+				["alertOnToolError", true],
+			]],
+			["merge", [
+				["mergeWindowMs", 1200],
+				["maxItems", 8],
+				["muteRanges", []],
+			]],
+			["debug", [
+				["debugPreview", false],
+				["debugPayload", false],
+				["debugFile", ""],
+			]],
 		];
 		for (const [role] of FONT_ROLES) {
 			GROUP_DEFAULTS[0][1].push(["typography." + role + ".color", ""], ["typography." + role + ".size", 0]);
@@ -945,6 +923,24 @@ const ROLE_LOOK = {
 						pending +
 						" 项",
 				),
+				h("div", { className: "dsh-nudge-presets", key: "presets" }, [
+					h("span", { className: "dsh-nudge-presets-label", key: "label" }, "一键预设"),
+					...PRESETS.map((preset) =>
+						h(
+							"button",
+							{
+								key: preset.id,
+								type: "button",
+								className: "dsh-nudge-btn",
+								disabled,
+								"data-on": presetOn(preset) ? "1" : "0",
+								title: preset.hint,
+								onClick: () => writeMany(preset.entries),
+							},
+							preset.label,
+						),
+					),
+				]),
 				h(
 					"nav",
 					{ className: "dsh-nudge-nav", key: "nav" },
@@ -980,8 +976,8 @@ const ROLE_LOOK = {
 					]),
 					h(
 						"p",
-						{ className: "dsh-nudge-intro", key: "hint" },
-						"桌面那张卡的全部外观都在这一组里改：点样卡里的某一行，或者下面那排名字，就换到那一类；再往下是宽度、落点和配色。改完点「应用」，桌面上的卡会当场重画。",
+						{ className: "dsh-nudge-intro", key: "intro" },
+						"桌面卡片的全部外观都在这一组里：点样卡某一行、或者下面那排名字，就切到那一类；再往下是宽度、落点和配色。",
 					),
 					h(
 						"div",
@@ -1005,7 +1001,7 @@ const ROLE_LOOK = {
 					h(
 						"p",
 						{ className: "dsh-nudge-intro", key: "cardhint" },
-						"宽 " + cardWidth + "、内边距 14/16、左侧 3px 竖条、任务名行高 18、结论框圆角 6 内边距 6/9、分隔线 11/1、底部 12，都和真卡对齐；字号与颜色取的是同一份配置。改完点「应用」，桌面上的卡会当场重画。",
+						"宽 " + cardWidth + "、内边距 14/16、左侧 3px 竖条；其余按真卡画。",
 					),
 					h(
 						"div",
@@ -1035,23 +1031,17 @@ const ROLE_LOOK = {
 						),
 					),
 					/* 选中的那一类：底下这几行就是它的字号与颜色。 */
-					h(
-						"div",
-						{ className: "dsh-nudge-typetable", key: "sizes" },
-						FONT_ROLES.map(([role]) =>
-							h(NumberRow, {
-								key: role,
-								label: roleLabel(role),
-								hint: sizeHint(role),
-								value: roleSize(role),
-								min: 0,
-								max: 48,
-								step: 0.5,
-								disabled,
-								onCommit: (next) => write("typography." + role + ".size", next),
-							}),
-						),
-					),
+					h(NumberRow, {
+						key: "size",
+						label: "字号（" + roleLabel(fontRole) + "）",
+						hint: "填 0 回到默认 " + ROLE_SIZE[fontRole] + "px。",
+						value: roleSize(fontRole),
+						min: 0,
+						max: 48,
+						step: 0.5,
+						disabled,
+						onCommit: (next) => write("typography." + fontRole + ".size", next),
+					}),
 					h("div", { className: "dsh-nudge-swatches", key: "colors" }, COLOR_CHOICES.map(([value, name]) =>
 						h("button", {
 							key: value === "" ? "auto" : value,
@@ -1064,13 +1054,12 @@ const ROLE_LOOK = {
 							title: value === "" ? "不指定颜色，跟着主题走" : name + " " + value,
 						}, [
 							h("span", { key: "dot", className: "dsh-nudge-swatchdot", style: { background: value === "" ? "transparent" : value } }),
-							name,
 						]),
 					)),
 					h(TextRow, {
 						key: "color",
 						label: "颜色（" + roleLabel(fontRole) + "）",
-						hint: roleHint(fontRole) + "；上面点一个现成的，或者自己写 #RRGGBB / #AARRGGBB，留空跟随主题。",
+						hint: "写 #RRGGBB，留空跟随主题。",
 						value: text("typography." + fontRole + ".color"),
 						placeholder: "留空跟随主题",
 						disabled,
@@ -1079,7 +1068,7 @@ const ROLE_LOOK = {
 					h(NumberRow, {
 						key: "width",
 						label: "卡片宽度",
-						hint: "设备无关像素（260–900）；填 0 用默认 384。拖过边的手动尺寸仍然优先。",
+						hint: "260–900；填 0 用默认 384。",
 						value: num("width"),
 						min: 0,
 						max: 900,
@@ -1090,14 +1079,14 @@ const ROLE_LOOK = {
 					h("div", { className: "dsh-nudge-block", key: "anchor" }, [
 						h("div", { className: "dsh-nudge-text", key: "text" }, [
 							h("span", { className: "dsh-nudge-label", key: "label" }, "卡片落在哪"),
-							h("span", { className: "dsh-nudge-hint", key: "hint" }, "点一格就是那个位置；拖过卡片的话，记住的位置优先。"),
+							h("span", { className: "dsh-nudge-hint", key: "hint" }, "点一格就是那个位置。"),
 						]),
 						h(AnchorGrid, { key: "grid", value: text("anchor") === "" ? "bottom-right" : text("anchor"), disabled, onPick: (next) => write("anchor", next) }),
 					]),
 					h("div", { className: "dsh-nudge-block", key: "cardcolor" }, [
 						h("div", { className: "dsh-nudge-text", key: "text" }, [
 							h("span", { className: "dsh-nudge-label", key: "label" }, "卡片底色"),
-							h("span", { className: "dsh-nudge-hint", key: "hint" }, "留空跟随主题；改了之后样卡和桌面上的卡一起变。"),
+							h("span", { className: "dsh-nudge-hint", key: "hint" }, "留空跟随主题。"),
 						]),
 						h(ColorSwatches, { key: "sw", value: text("cardColor"), disabled, onPick: (next) => write("cardColor", next) }),
 						focusedRow("cardColor", "底色", "#1F2430"),
@@ -1105,11 +1094,52 @@ const ROLE_LOOK = {
 					h("div", { className: "dsh-nudge-block", key: "accentcolor" }, [
 						h("div", { className: "dsh-nudge-text", key: "text" }, [
 							h("span", { className: "dsh-nudge-label", key: "label" }, "左侧竖条"),
-							h("span", { className: "dsh-nudge-hint", key: "hint" }, "留空就按提醒类别走：完成绿、待选橙、失败红。"),
+							h("span", { className: "dsh-nudge-hint", key: "hint" }, "留空按类别：完成绿、待选橙、失败红。"),
 						]),
 						h(ColorSwatches, { key: "sw", value: text("accentColor"), disabled, onPick: (next) => write("accentColor", next) }),
 						focusedRow("accentColor", "竖条", "#4DABF7"),
 					]),
+					h(SelectRow, {
+						key: "theme",
+						label: "配色",
+						hint: "auto 跟随系统深浅色。",
+						value: themeValue,
+						options: [
+							{ value: "auto", label: "跟随系统" },
+							{ value: "light", label: "浅色" },
+							{ value: "dark", label: "深色" },
+						],
+						disabled,
+						onChange: (next) => write("theme", next),
+					}),
+					h(NumberRow, {
+						key: "staySeconds",
+						label: "停留秒数",
+						hint: "1–600 秒。",
+						value: num("staySeconds"),
+						min: 1,
+						max: 600,
+						disabled,
+						onCommit: (next) => write("staySeconds", next),
+					}),
+					h(NumberRow, {
+						key: "margin",
+						label: "距屏幕边缘",
+						hint: "0–400 像素。",
+						value: num("margin"),
+						min: 0,
+						max: 400,
+						disabled,
+						onCommit: (next) => write("margin", next),
+					}),
+					h(SwitchRow, {
+						key: "rememberPosition",
+						label: "记住拖过的位置",
+						hint: "拖过之后下次还在那儿。",
+						checked: bool("rememberPosition"),
+						disabled,
+						onChange: (next) => write("rememberPosition", next),
+					}),
 					h("div", { className: "dsh-nudge-actions", key: "act" }, [
 						h(
 							"button",
@@ -1125,52 +1155,19 @@ const ROLE_LOOK = {
 					]),
 				]),
 
-				h("div", { className: "dsh-nudge-group", key: "preset", id: "dsh-nudge-g-preset" }, [
+				h("div", { className: "dsh-nudge-group", key: "basic", id: "dsh-nudge-g-basic", "data-dirty": groupDirty("basic") > 0 ? "1" : "0" }, [
 					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
-						h("p", { className: "dsh-nudge-group-title", key: "title" }, "一键预设"),
-					]),
-					h("p", { className: "dsh-nudge-intro", key: "hint" }, "先挑一个最接近的，再往下微调；只动下面这些开关，不碰字体。"),
-					h(
-						"div",
-						{ className: "dsh-nudge-actions", key: "row" },
-						PRESETS.map((preset) =>
-							h(
-								"button",
-								{
-									key: preset.id,
-									type: "button",
-									className: "dsh-nudge-btn",
-									disabled,
-									"data-on": presetOn(preset) ? "1" : "0",
-									title: preset.hint,
-									onClick: () => writeMany(preset.entries),
-								},
-								preset.label,
-							),
-						),
-					),
-				]),
-
-				h("div", { className: "dsh-nudge-group", key: "master", id: "dsh-nudge-g-master", "data-dirty": groupDirty("master") > 0 ? "1" : "0" }, [
-					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
-						h("p", { className: "dsh-nudge-group-title", key: "title" }, "总开关"),
-						h(ResetRow, { key: "reset", group: "master", disabled, onReset: resetGroup }),
+						h("p", { className: "dsh-nudge-group-title", key: "title" }, "提醒"),
+						h(ResetRow, { key: "reset", group: "basic", disabled, onReset: resetGroup }),
 					]),
 					h(SwitchRow, {
 						key: "enabled",
 						label: "启用提醒弹窗",
-						hint: "关掉之后不再弹任何卡片，其他设置保持不变。",
+						hint: "关掉就不再弹任何卡片。",
 						checked: bool("enabled"),
 						disabled,
 						onChange: (next) => write("enabled", next),
 					}),
-				]),
-
-				h("div", { className: "dsh-nudge-group", key: "kinds", id: "dsh-nudge-g-kinds", "data-dirty": groupDirty("kinds") > 0 ? "1" : "0" }, [
-					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
-						h("p", { className: "dsh-nudge-group-title", key: "title" }, "提醒哪几类"),
-						h(ResetRow, { key: "reset", group: "kinds", disabled, onReset: resetGroup }),
-					]),
 					h(SwitchRow, {
 						key: "completed",
 						label: "任务完成",
@@ -1182,7 +1179,7 @@ const ROLE_LOOK = {
 					h(SwitchRow, {
 						key: "needs_choice",
 						label: "需要你选择",
-						hint: "回合在等你确认、或者提问时提醒。",
+						hint: "等你确认或者提问时提醒。",
 						checked: bool("kinds.needs_choice"),
 						disabled,
 						onChange: (next) => write("kinds.needs_choice", next),
@@ -1190,7 +1187,7 @@ const ROLE_LOOK = {
 					h(SwitchRow, {
 						key: "failed",
 						label: "执行失败",
-						hint: "回合报错、被策略拦截、工具调用失败时提醒。",
+						hint: "报错、工具失败时提醒。",
 						checked: bool("kinds.failed"),
 						disabled,
 						onChange: (next) => write("kinds.failed", next),
@@ -1225,59 +1222,6 @@ const ROLE_LOOK = {
 						checked: bool("alertOnToolError"),
 						disabled,
 						onChange: (next) => write("alertOnToolError", next),
-					}),
-				]),
-
-				h("div", { className: "dsh-nudge-group", key: "look", id: "dsh-nudge-g-look", "data-dirty": groupDirty("look") > 0 ? "1" : "0" }, [
-					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
-					h("p", { className: "dsh-nudge-group-title", key: "title" }, "停留与边距"),
-					h(ResetRow, { key: "reset", group: "look", disabled, onReset: resetGroup }),
-					]),
-					h(
-						"p",
-						{ className: "dsh-nudge-intro", key: "hint" },
-						"卡片长什么样、落在哪、多大、什么颜色，都在上面「长这样」里改；这一组管它什么时候出现、什么时候自己消失。",
-					),
-					h(SelectRow, {
-						key: "theme",
-						label: "配色",
-						hint: "auto 跟随 Windows 的深浅色设置。",
-						value: themeValue,
-						options: [
-							{ value: "auto", label: "跟随系统" },
-							{ value: "light", label: "浅色" },
-							{ value: "dark", label: "深色" },
-						],
-						disabled,
-						onChange: (next) => write("theme", next),
-					}),
-					h(NumberRow, {
-						key: "staySeconds",
-						label: "停留秒数",
-						hint: "卡片自己消失前显示多久（1–600 秒）。",
-						value: num("staySeconds"),
-						min: 1,
-						max: 600,
-						disabled,
-						onCommit: (next) => write("staySeconds", next),
-					}),
-					h(NumberRow, {
-						key: "margin",
-						label: "距屏幕边缘",
-						hint: "可见卡片边框离所选边或角的像素数（0–400）。",
-						value: num("margin"),
-						min: 0,
-						max: 400,
-						disabled,
-						onCommit: (next) => write("margin", next),
-					}),
-					h(SwitchRow, {
-						key: "rememberPosition",
-						label: "记住拖过的位置",
-						hint: "拖过或缩过之后，下次还出现在那儿；删掉位置文件就回到右下角。",
-						checked: bool("rememberPosition"),
-						disabled,
-						onChange: (next) => write("rememberPosition", next),
 					}),
 				]),
 
