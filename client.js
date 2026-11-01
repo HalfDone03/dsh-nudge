@@ -33,7 +33,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-01.7";
+	const PANEL_REVISION = "2026-11-01.8";
 	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
 	const NAV_GROUPS = [
 		["peek", "长这样"],
@@ -43,7 +43,6 @@ window.__ModuleLoader__.load({
 		["when", "时机"],
 		["look", "外观"],
 		["merge", "合并"],
-		["type", "字号"],
 		["debug", "调试"],
 	];
 
@@ -505,6 +504,15 @@ const ROLE_LOOK = {
 		 * 自测会拿这份逐项比对（`exports.groupDefaults` 就是给它看的）。
 		 */
 		const GROUP_DEFAULTS = [
+			[
+				"peek",
+				[
+					["width", 384],
+					["anchor", "bottom-right"],
+					["cardColor", ""],
+					["accentColor", ""],
+				],
+			],
 			["master", [["enabled", true]]],
 			[
 				"kinds",
@@ -528,10 +536,6 @@ const ROLE_LOOK = {
 					["theme", "auto"],
 					["staySeconds", 15],
 					["margin", 16],
-					["anchor", "bottom-right"],
-					["width", 384],
-					["cardColor", ""],
-					["accentColor", ""],
 					["rememberPosition", true],
 				],
 			],
@@ -543,7 +547,6 @@ const ROLE_LOOK = {
 					["muteRanges", []],
 				],
 			],
-			["type", []],
 			[
 				"debug",
 				[
@@ -554,7 +557,7 @@ const ROLE_LOOK = {
 			],
 		];
 		for (const [role] of FONT_ROLES) {
-			GROUP_DEFAULTS[5][1].push(["typography." + role + ".color", ""], ["typography." + role + ".size", 0]);
+			GROUP_DEFAULTS[0][1].push(["typography." + role + ".color", ""], ["typography." + role + ".size", 0]);
 		}
 
 		/** 静音时段的写法：小时 0–23、分钟 0–59，中间允许空格。 */
@@ -970,14 +973,15 @@ const ROLE_LOOK = {
 						: null,
 				failure === "" ? null : h("p", { className: "dsh-nudge-error", key: "failure", role: "alert" }, failure),
 
-				h("div", { className: "dsh-nudge-group", key: "peek", id: "dsh-nudge-g-peek" }, [
+				h("div", { className: "dsh-nudge-group", key: "peek", id: "dsh-nudge-g-peek", "data-dirty": groupDirty("peek") > 0 ? "1" : "0" }, [
 					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
 						h("p", { className: "dsh-nudge-group-title", key: "title" }, "长这样"),
+						h(ResetRow, { key: "reset", group: "peek", disabled, onReset: resetGroup }),
 					]),
 					h(
 						"p",
 						{ className: "dsh-nudge-intro", key: "hint" },
-						"这张样卡和桌面上那张卡用的是同一份配置、同一套尺寸；点哪一行就调哪一行。",
+						"桌面那张卡的全部外观都在这一组里改：点样卡里的某一行，或者下面那排名字，就换到那一类；再往下是宽度、落点和配色。改完点「应用」，桌面上的卡会当场重画。",
 					),
 					h(
 						"div",
@@ -1030,6 +1034,82 @@ const ROLE_LOOK = {
 							),
 						),
 					),
+					/* 选中的那一类：底下这几行就是它的字号与颜色。 */
+					h(
+						"div",
+						{ className: "dsh-nudge-typetable", key: "sizes" },
+						FONT_ROLES.map(([role]) =>
+							h(NumberRow, {
+								key: role,
+								label: roleLabel(role),
+								hint: sizeHint(role),
+								value: roleSize(role),
+								min: 0,
+								max: 48,
+								step: 0.5,
+								disabled,
+								onCommit: (next) => write("typography." + role + ".size", next),
+							}),
+						),
+					),
+					h("div", { className: "dsh-nudge-swatches", key: "colors" }, COLOR_CHOICES.map(([value, name]) =>
+						h("button", {
+							key: value === "" ? "auto" : value,
+							type: "button",
+							className: "dsh-nudge-swatch",
+							"data-color": value === "" ? "auto" : value,
+							"data-on": colorNow(fontRole) === value ? "1" : "0",
+							disabled,
+							onClick: () => write("typography." + fontRole + ".color", value),
+							title: value === "" ? "不指定颜色，跟着主题走" : name + " " + value,
+						}, [
+							h("span", { key: "dot", className: "dsh-nudge-swatchdot", style: { background: value === "" ? "transparent" : value } }),
+							name,
+						]),
+					)),
+					h(TextRow, {
+						key: "color",
+						label: "颜色（" + roleLabel(fontRole) + "）",
+						hint: roleHint(fontRole) + "；上面点一个现成的，或者自己写 #RRGGBB / #AARRGGBB，留空跟随主题。",
+						value: text("typography." + fontRole + ".color"),
+						placeholder: "留空跟随主题",
+						disabled,
+						onCommit: (next) => write("typography." + fontRole + ".color", next),
+					}),
+					h(NumberRow, {
+						key: "width",
+						label: "卡片宽度",
+						hint: "设备无关像素（260–900）；填 0 用默认 384。拖过边的手动尺寸仍然优先。",
+						value: num("width"),
+						min: 0,
+						max: 900,
+						step: 4,
+						disabled,
+						onCommit: (next) => write("width", next),
+					}),
+					h("div", { className: "dsh-nudge-block", key: "anchor" }, [
+						h("div", { className: "dsh-nudge-text", key: "text" }, [
+							h("span", { className: "dsh-nudge-label", key: "label" }, "卡片落在哪"),
+							h("span", { className: "dsh-nudge-hint", key: "hint" }, "点一格就是那个位置；拖过卡片的话，记住的位置优先。"),
+						]),
+						h(AnchorGrid, { key: "grid", value: text("anchor") === "" ? "bottom-right" : text("anchor"), disabled, onPick: (next) => write("anchor", next) }),
+					]),
+					h("div", { className: "dsh-nudge-block", key: "cardcolor" }, [
+						h("div", { className: "dsh-nudge-text", key: "text" }, [
+							h("span", { className: "dsh-nudge-label", key: "label" }, "卡片底色"),
+							h("span", { className: "dsh-nudge-hint", key: "hint" }, "留空跟随主题；改了之后样卡和桌面上的卡一起变。"),
+						]),
+						h(ColorSwatches, { key: "sw", value: text("cardColor"), disabled, onPick: (next) => write("cardColor", next) }),
+						focusedRow("cardColor", "底色", "#1F2430"),
+					]),
+					h("div", { className: "dsh-nudge-block", key: "accentcolor" }, [
+						h("div", { className: "dsh-nudge-text", key: "text" }, [
+							h("span", { className: "dsh-nudge-label", key: "label" }, "左侧竖条"),
+							h("span", { className: "dsh-nudge-hint", key: "hint" }, "留空就按提醒类别走：完成绿、待选橙、失败红。"),
+						]),
+						h(ColorSwatches, { key: "sw", value: text("accentColor"), disabled, onPick: (next) => write("accentColor", next) }),
+						focusedRow("accentColor", "竖条", "#4DABF7"),
+					]),
 					h("div", { className: "dsh-nudge-actions", key: "act" }, [
 						h(
 							"button",
@@ -1150,9 +1230,14 @@ const ROLE_LOOK = {
 
 				h("div", { className: "dsh-nudge-group", key: "look", id: "dsh-nudge-g-look", "data-dirty": groupDirty("look") > 0 ? "1" : "0" }, [
 					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
-						h("p", { className: "dsh-nudge-group-title", key: "title" }, "样子与位置"),
-						h(ResetRow, { key: "reset", group: "look", disabled, onReset: resetGroup }),
+					h("p", { className: "dsh-nudge-group-title", key: "title" }, "停留与边距"),
+					h(ResetRow, { key: "reset", group: "look", disabled, onReset: resetGroup }),
 					]),
+					h(
+						"p",
+						{ className: "dsh-nudge-intro", key: "hint" },
+						"卡片长什么样、落在哪、多大、什么颜色，都在上面「长这样」里改；这一组管它什么时候出现、什么时候自己消失。",
+					),
 					h(SelectRow, {
 						key: "theme",
 						label: "配色",
@@ -1186,40 +1271,6 @@ const ROLE_LOOK = {
 						disabled,
 						onCommit: (next) => write("margin", next),
 					}),
-					h(NumberRow, {
-						key: "width",
-						label: "卡片宽度",
-						hint: "设备无关像素（260–900）；填 0 用默认 384。拖过边的手动尺寸仍然优先。",
-						value: num("width"),
-						min: 0,
-						max: 900,
-						step: 4,
-						disabled,
-						onCommit: (next) => write("width", next),
-					}),
-					h("div", { className: "dsh-nudge-block", key: "anchor" }, [
-						h("div", { className: "dsh-nudge-text", key: "text" }, [
-							h("span", { className: "dsh-nudge-label", key: "label" }, "卡片落在哪"),
-							h("span", { className: "dsh-nudge-hint", key: "hint" }, "点一格就是那个位置；拖过卡片的话，记住的位置优先。"),
-						]),
-						h(AnchorGrid, { key: "grid", value: text("anchor") === "" ? "bottom-right" : text("anchor"), disabled, onPick: (next) => write("anchor", next) }),
-					]),
-					h("div", { className: "dsh-nudge-block", key: "cardcolor" }, [
-						h("div", { className: "dsh-nudge-text", key: "text" }, [
-							h("span", { className: "dsh-nudge-label", key: "label" }, "卡片底色"),
-							h("span", { className: "dsh-nudge-hint", key: "hint" }, "留空跟随主题；改了之后样卡和桌面上的卡一起变。"),
-						]),
-						h(ColorSwatches, { key: "sw", value: text("cardColor"), disabled, onPick: (next) => write("cardColor", next) }),
-						focusedRow("cardColor", "底色", "#1F2430"),
-					]),
-					h("div", { className: "dsh-nudge-block", key: "accentcolor" }, [
-						h("div", { className: "dsh-nudge-text", key: "text" }, [
-							h("span", { className: "dsh-nudge-label", key: "label" }, "左侧竖条"),
-							h("span", { className: "dsh-nudge-hint", key: "hint" }, "留空就按提醒类别走：完成绿、待选橙、失败红。"),
-						]),
-						h(ColorSwatches, { key: "sw", value: text("accentColor"), disabled, onPick: (next) => write("accentColor", next) }),
-						focusedRow("accentColor", "竖条", "#4DABF7"),
-					]),
 					h(SwitchRow, {
 						key: "rememberPosition",
 						label: "记住拖过的位置",
@@ -1281,58 +1332,6 @@ const ROLE_LOOK = {
 							),
 				]),
 
-				h("div", { className: "dsh-nudge-group", key: "type", id: "dsh-nudge-g-type", "data-dirty": groupDirty("type") > 0 ? "1" : "0" }, [
-					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
-						h("p", { className: "dsh-nudge-group-title", key: "title" }, "字号与颜色"),
-						h(ResetRow, { key: "reset", group: "type", disabled, onReset: resetGroup }),
-					]),
-					h(
-						"p",
-						{ className: "dsh-nudge-intro", key: "hint" },
-						"点样卡里的某一行，或者样卡下面那排名字，就切到那一类；字号留空 / 0 表示用默认，颜色留空跟随主题。",
-					),
-					h(
-						"div",
-						{ className: "dsh-nudge-typetable", key: "sizes" },
-						FONT_ROLES.map(([role]) =>
-							h(NumberRow, {
-								key: role,
-								label: roleLabel(role),
-								hint: sizeHint(role),
-								value: roleSize(role),
-								min: 0,
-								max: 48,
-								step: 0.5,
-								disabled,
-								onCommit: (next) => write("typography." + role + ".size", next),
-							}),
-						),
-					),
-					h("div", { className: "dsh-nudge-swatches", key: "colors" }, COLOR_CHOICES.map(([value, name]) =>
-						h("button", {
-							key: value === "" ? "auto" : value,
-							type: "button",
-							className: "dsh-nudge-swatch",
-							"data-color": value === "" ? "auto" : value,
-							"data-on": colorNow(fontRole) === value ? "1" : "0",
-							disabled,
-							onClick: () => write("typography." + fontRole + ".color", value),
-							title: value === "" ? "不指定颜色，跟着主题走" : name + " " + value,
-						}, [
-							h("span", { key: "dot", className: "dsh-nudge-swatchdot", style: { background: value === "" ? "transparent" : value } }),
-							name,
-						]),
-					)),
-					h(TextRow, {
-						key: "color",
-						label: "颜色（" + roleLabel(fontRole) + "）",
-						hint: roleHint(fontRole) + "；上面点一个现成的，或者自己写 #RRGGBB / #AARRGGBB，留空跟随主题。",
-						value: text("typography." + fontRole + ".color"),
-						placeholder: "留空跟随主题",
-						disabled,
-						onCommit: (next) => write("typography." + fontRole + ".color", next),
-					}),
-				]),
 
 				h("div", { className: "dsh-nudge-group", key: "debug", id: "dsh-nudge-g-debug", "data-dirty": groupDirty("debug") > 0 ? "1" : "0" }, [
 					h("div", { className: "dsh-nudge-group-head", key: "head" }, [

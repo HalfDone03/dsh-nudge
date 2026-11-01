@@ -161,7 +161,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
 - 设置页：样卡下面是一排 8 个名字按钮（`className === "dsh-nudge-role"`，每格写着类名与当前字号，
   `data-role` 各一），点样卡上的一行、或者这排名字，都切到那一类；颜色再给一排现成的色块（11 个，
   含「跟随主题」），点一个就写进当前这一类；下面只出选中那一类的两个框（1 个颜色框 + 1 个字号框），
-  颜色行带 `#RRGGBB` 写法提示。八类的字号框**常显**在 `.dsh-nudge-typetable` 里，不用先展开
+  颜色行带 `#RRGGBB` 写法提示（这些控件都在「长这样」这一组里，外观只有这一个入口）。八类的字号框**常显**在 `.dsh-nudge-typetable` 里，不用先展开
+- 外观只有一处入口：`peek` 组同时装样卡、8 个名字按钮、八行字号表、字号那排 11 颗 `data-color` 色块、卡片宽度、落点九宫格、底色与竖条两排 `data-swatch` 色块，以及「在桌面上弹一张看看」；`look` 组只剩 `theme` / `staySeconds` / `margin` / `rememberPosition`（标题「停留与边距」），原「字号与颜色」组已删除，导航按钮从 9 颗变 8 颗。
   （页面上的 `NumberRow` 从 5 个变成 13 个）。字号框里填的是**当前实际生效的值**（比如项目名 15.5、
   任务名 12.5），不是 0；改成 0 才回到默认。
 - 改一格不立刻写回：底部出现「1 项改动还没保存」，点「应用」才写出
@@ -169,12 +170,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
   自测里的假 `useState` 会真存值，所以草稿 → 应用 → 放弃三步都能断言。
 - 应用栏常显：什么都没改时它也在，文案「没有未保存的改动」、「应用」「放弃」都是 `disabled`；
   写回成功后变「已保存」，两秒后回到常态（断言要等一轮宏任务，`mutate` 返回的是 Promise）。
-- 顶部有 9 个分组按钮（`className === "dsh-nudge-navbtn"`）和一行配置状态
+- 顶部有 8 个分组按钮（`className === "dsh-nudge-navbtn"`）和一行配置状态
   （`配置状态：<status> · 可写/只读 · 待保存 N 项`），页面最下面一行「提醒弹窗设置页 · 修订 <PANEL_REVISION>」。
 - 预览卡按外观指纹重画：`lib/index.js` 有 `styleKeyOf(cfg)`；构造器有 `previewStyleKey`，`spawnOnce` 的预览
   分支记下 `styleKeyOf(this.config)`，`exit` 时清空；watch 里只在 `previewStyleKey !== styleKey` 时重画。
   旧写法（闭包里的 `previewFonts` 跟上一拍比）在插件重新 apply 后会失效，已删掉。
-- 设置页是一叠卡片：每个 `.dsh-nudge-group` 的第一个子节点是 `.dsh-nudge-group-head`（共 9 个），
+- 设置页是一叠卡片：每个 `.dsh-nudge-group` 的第一个子节点是 `.dsh-nudge-group-head`（共 8 个），
   标题在左、`ResetRow` 在右；组尾不再有「恢复默认」，7 颗按钮全在头行里（`data-group` 各一）。
 - 行是两栏网格：`.dsh-nudge-row` 用 `grid-template-columns:minmax(0,1fr) auto`，说明在左、控件在右；
   窄屏（`max-width:680px`）退回单栏，`textarea` 占满宽度。
@@ -185,7 +186,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
 - 样卡按真卡宽度画：`.dsh-nudge-card` 的 CSS 兜底是 `width:384px`（真卡 `$script:CardWidth = 384`），
   实际宽度由内联样式 `base.width = cardWidth + "px"` 覆盖（`cardWidth` 取 `width`，0 时回落 384），
   下面一行说明开头是「宽 <当前宽度>、内边距 14/16…」。
-- 位置能选：`look` 组里一张九宫格（`.dsh-nudge-anchors`，9 个 `button.dsh-nudge-anchor`，`data-anchor` 各一，
+- 位置能选：「长这样」组里一张九宫格（`.dsh-nudge-anchors`，9 个 `button.dsh-nudge-anchor`，`data-anchor` 各一，
   格子里的小条 `.dsh-nudge-anchorbar` 靠 `data-anchor` 的前后缀定位），点一格写 `anchor`；`popup.ps1` 据
   `$payload.anchor` 算 `$script:anchorV` / `$script:anchorH`（裸 `center` 单独算），首次摆放与「窗口被系统挪动后
   再钉回去」两处用同一套锚点，不会又拽回右下角。

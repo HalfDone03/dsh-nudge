@@ -1263,8 +1263,8 @@ check("设置页控件数量", clientControls.length >= 14, "controls=" + client
 		"rules=" + errorRule,
 	);
 	check(
-		"README 的设置页一节跟得上现在的九组",
-		readmeSource.includes("从上到下九组")
+		"README 的设置页一节跟得上现在的八组",
+		readmeSource.includes("从上到下八组")
 			&& readmeSource.includes("一排现成的色块")
 			&& readmeSource.includes("现在实际用的值")
 			&& !readmeSource.includes("只在预览弹窗打开时出现")
@@ -1321,7 +1321,7 @@ check(
 );
 check(
 	"顶部有分组导航和修订标记",
-	clientNodes.filter((node) => node.type === "button" && String(node.props.className ?? "") === "dsh-nudge-navbtn").length === 9
+	clientNodes.filter((node) => node.type === "button" && String(node.props.className ?? "") === "dsh-nudge-navbtn").length === 8
 		&& clientNodes.some((node) => typeof node.props.children === "string" && node.props.children.startsWith("提醒弹窗设置页 · 修订 ")),
 	"nav=" + clientNodes.filter((node) => node.type === "button" && String(node.props.className ?? "") === "dsh-nudge-navbtn").length,
 );
