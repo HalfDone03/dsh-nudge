@@ -1476,6 +1476,26 @@ check(
 	clientSource.includes("width:384px") && clientSource.includes("样卡按桌面卡片的实际宽度 384 画"),
 	"client",
 );
+check(
+	"样卡按真卡的结构画，不是几行挤在一起",
+	clientSource.includes(".dsh-nudge-card-strip")
+		&& clientSource.includes(".dsh-nudge-card-verdict")
+		&& clientSource.includes(".dsh-nudge-card-rule")
+		&& clientSource.includes("padding:14px 16px 14px 20px")
+		&& clientSource.includes("line-height:18px")
+		&& clientSource.includes("line-height:15px")
+		&& clientSource.includes("border-radius:12px"),
+	"strip + verdict + rule",
+);
+check(
+	"样卡的字体栈与浓淡对齐真卡",
+	clientSource.includes("Microsoft YaHei UI")
+		&& clientSource.includes("Arial,sans-serif")
+		&& /time: \{ opacity: 0\.36/.test(clientSource)
+		&& /more: \{ opacity: 0\.46/.test(clientSource)
+		&& /footer: \{ opacity: 0\.35/.test(clientSource),
+	"font stack + opacity",
+  );
 check("找 schemastery 不只靠一次 import（junction 安装也要能解析到）",
 	indexSource.includes("createRequire(")
 		&& indexSource.includes("schemasteryBases()")

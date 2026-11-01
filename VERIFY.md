@@ -17,14 +17,14 @@ if (-not $node) { $node = 'node' }          # 便携版/旧结构也找不到时
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs              # 214 项，含真起 helper 与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 191 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 216 项，含真起 helper 与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 193 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (214 checks)`，退出码 0（CI 上是 `191 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 221 条）。
+- selftest 输出 `ALL PASS (216 checks)`，退出码 0（CI 上是 `193 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 223 条）。
 
 证据（实测）：
 
@@ -38,7 +38,7 @@ PASS  位置文件里的点被沿用  --  {"placement":"remembered","placedLeft"
 PASS  越界位置回落到右下角  --  {"placement":"corner","placedLeft":2146,...}
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
 PASS  基线 completed 对得上  --  436x174 色 263/263 暗 72874/72874 亮 933/933 状态 352/352
-ALL PASS (214 checks)
+ALL PASS (216 checks)
 ```
 
 其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 —— 目标不是窗口贴角，
@@ -173,6 +173,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
   旧写法（闭包里的 `previewFonts` 跟上一拍比）在插件重新 apply 后会失效，已删掉。
 - 样卡按真卡宽度画：`client.js` 的 `.dsh-nudge-card` 是 `width:384px`（真卡 `$script:CardWidth = 384`），
   下面一行说明「样卡按桌面卡片的实际宽度 384 画…」。
+- 样卡按真卡的结构画：`.dsh-nudge-card-strip`（左侧 3px 竖条，`top/bottom:13px`，圆角 1.5）、
+  `.dsh-nudge-card-verdict`（结论框，圆角 6、内边距 6/9）、`.dsh-nudge-card-rule`（分隔线，`margin:11px 0 1px`）、
+  内容区 `padding:14px 16px 14px 20px`、任务名 `line-height:18px`、原因 `line-height:15px` —— 逐项对应 `popup.ps1` 的
+  `$strip` / `$verdictFrame` / `$divider` / `$body.Margin` / `$headlineBlock.LineHeight` / `$verdictBody.LineHeight`。
+- 样卡的字体栈与浓淡对齐真卡：`font-family` 首位是 `Microsoft YaHei UI`（同 `$script:FontStack`）；
+  `ROLE_LOOK` 的透明度取真卡的 alpha —— 任务名 `#F0FFFFFF`(0.94)、原因 `#DCFFFFFF`(0.86)、
+  时间 `#5CFFFFFF`(0.36)、更多 `#75FFFFFF`(0.46)、底部 `#59FFFFFF`(0.35)。
 - 真的进卡片（A/B 快照，临时目录里画，不污染 `screenshots/`）：`completed` 把标题改成 22 号纯红 →
   卡片高度 **174 → 182**，纯红像素 **0 → 861**。
 

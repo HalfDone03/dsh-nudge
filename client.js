@@ -33,7 +33,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-01.3";
+	const PANEL_REVISION = "2026-11-01.4";
 	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
 	const NAV_GROUPS = [
 		["peek", "长这样"],
@@ -66,12 +66,21 @@ window.__ModuleLoader__.load({
 	".dsh-nudge-group-toggle:hover{color:var(--dsw-alias-label-primary)}",
 	".dsh-nudge-group-toggle[data-on=\"1\"]{color:var(--dsw-alias-label-primary)}",
 			".dsh-nudge-error{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary)}",
-			".dsh-nudge-card{display:flex;flex-direction:column;gap:2px;width:384px;max-width:100%;box-sizing:border-box;border-radius:12px;padding:14px 16px 14px 20px;line-height:1.35;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l1)}",
-			".dsh-nudge-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}",
-			".dsh-nudge-card-line{display:flex;align-items:baseline;gap:8px;min-width:0}",
-			".dsh-nudge-card-hit{padding:1px 4px;margin:0 -4px;border-radius:6px;cursor:pointer;border:0.5px solid transparent;white-space:pre-wrap}",
+			".dsh-nudge-card{position:relative;display:block;width:384px;max-width:100%;box-sizing:border-box;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l1);font-family:\"Microsoft YaHei UI\",\"Microsoft YaHei\",\"Segoe UI\",Arial,sans-serif;line-height:1.25;padding:0}",
+			".dsh-nudge-card-strip{position:absolute;left:1px;top:13px;bottom:13px;width:3px;border-radius:1.5px;background:var(--dsw-alias-state-business-primary)}",
+			".dsh-nudge-card-body{display:flex;flex-direction:column;padding:14px 16px 14px 20px;min-width:0}",
+			".dsh-nudge-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:2px}",
+			".dsh-nudge-card-ctx{display:flex;align-items:baseline;margin-top:7px}",
+			".dsh-nudge-card-task{display:flex;align-items:baseline;margin-top:2px;line-height:18px}",
+			".dsh-nudge-card-verdict{margin-top:8px;border-radius:6px;padding:6px 9px;background:var(--dsw-alias-bg-l2);display:flex;flex-direction:column}",
+			".dsh-nudge-card-verdictrow{display:flex;align-items:baseline;gap:6px}",
+			".dsh-nudge-card-reason{display:flex;align-items:baseline;margin-top:6px;line-height:15px}",
+			".dsh-nudge-card-rule{height:1px;margin:11px 0 1px;background:var(--dsw-alias-border-l2)}",
+			".dsh-nudge-card-more{display:flex;align-items:baseline;margin-top:8px}",
+			".dsh-nudge-card-footer{display:flex;align-items:baseline;margin-top:12px}",
+			".dsh-nudge-card-hit{padding:0 2px;margin:0 -2px;border-radius:4px;cursor:pointer;border:0.5px solid transparent;white-space:pre-wrap}",
 			".dsh-nudge-card-hit:hover{background:var(--dsw-alias-bg-l2)}",
-			".dsh-nudge-card-hit[data-on=\"1\"]{border-color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-bg-l2)}",
+			".dsh-nudge-card-hit[data-on=\"1\"]{border-color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-actions{display:flex;gap:8px;flex-wrap:wrap;padding:6px 0 10px}",
 			".dsh-nudge-btn{font:inherit;font-size:13px;line-height:18px;padding:6px 12px;border-radius:8px;cursor:pointer;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l2);color:var(--dsw-alias-label-primary)}",
 			".dsh-nudge-btn:hover:not(:disabled){border-color:var(--dsw-alias-state-business-primary)}",
@@ -320,16 +329,17 @@ window.__ModuleLoader__.load({
 			footer: "点击卡片回到 DeepSeekRuntime",
 		};
 		/** 样卡里每一行的浓淡与字重：颜色留空时按这套走，贴近真卡片的层次。 */
-		const ROLE_LOOK = {
-			title: { opacity: 1, weight: 600 },
-			project: { opacity: 1, weight: 600 },
-			task: { opacity: 0.86, weight: 400 },
-			reason: { opacity: 0.6, weight: 400 },
-			status: { opacity: 1, weight: 600 },
-			time: { opacity: 0.45, weight: 400 },
-			more: { opacity: 0.55, weight: 400 },
-			footer: { opacity: 0.45, weight: 400 },
-		};
+		/** 每一类文字在真卡里的浓淡：颜色留空时按这个透明度走（对齐 popup.ps1 的 TextPrimary / TextBody / TextMuted 等）。 */
+const ROLE_LOOK = {
+	title: { opacity: 1, weight: 600 },
+	project: { opacity: 1, weight: 600 },
+	task: { opacity: 0.94, weight: 400 },
+	reason: { opacity: 0.86, weight: 400 },
+	status: { opacity: 1, weight: 600 },
+	time: { opacity: 0.36, weight: 400 },
+	more: { opacity: 0.46, weight: 400 },
+	footer: { opacity: 0.35, weight: 400 },
+};
 		/** 样卡配色：auto 跟着页面主题走，light / dark 强制成对应底色。 */
 		const THEME_SKIN = {
 			auto: null,
@@ -815,20 +825,31 @@ window.__ModuleLoader__.load({
 					h(
 						"p",
 						{ className: "dsh-nudge-intro", key: "hint" },
-						"按现在的配色和字号画的一张样卡：点哪一行，下面就调哪一行。",
+						"按真卡的尺寸和排版画的一张样卡：点哪一行，下面就调哪一行。",
 					),
-					h("div", { className: "dsh-nudge-card", key: "card", style: skin === null ? undefined : skin }, [
-						h("div", { className: "dsh-nudge-card-head", key: "head" }, [cardLine("title"), cardLine("time")]),
-						h("div", { className: "dsh-nudge-card-line", key: "project" }, [cardLine("project")]),
-						h("div", { className: "dsh-nudge-card-line", key: "status" }, [cardLine("status"), cardLine("task")]),
-						h("div", { className: "dsh-nudge-card-line", key: "reason" }, [cardLine("reason")]),
-						h("div", { className: "dsh-nudge-card-line", key: "more" }, [cardLine("more")]),
-						h("div", { className: "dsh-nudge-card-line", key: "footer" }, [cardLine("footer")]),
-					]),
+					h(
+						"div",
+						{ className: "dsh-nudge-card", key: "card", style: skin === null ? undefined : skin },
+						[
+							h("div", { className: "dsh-nudge-card-strip", key: "strip" }),
+							h("div", { className: "dsh-nudge-card-body", key: "body" }, [
+								h("div", { className: "dsh-nudge-card-head", key: "head" }, [cardLine("title"), cardLine("time")]),
+								h("div", { className: "dsh-nudge-card-ctx", key: "ctx" }, [cardLine("project")]),
+								h("div", { className: "dsh-nudge-card-task", key: "task" }, [cardLine("task")]),
+								h("div", { className: "dsh-nudge-card-verdict", key: "verdict" }, [
+									h("div", { className: "dsh-nudge-card-verdictrow", key: "row" }, [cardLine("status")]),
+									h("div", { className: "dsh-nudge-card-reason", key: "reason" }, [cardLine("reason")]),
+								]),
+								h("div", { className: "dsh-nudge-card-rule", key: "rule" }),
+								h("div", { className: "dsh-nudge-card-more", key: "more" }, [cardLine("more")]),
+								h("div", { className: "dsh-nudge-card-footer", key: "footer" }, [cardLine("footer")]),
+							]),
+						],
+					),
 					h(
 						"p",
 						{ className: "dsh-nudge-intro", key: "cardhint" },
-						"样卡按桌面卡片的实际宽度 384 画，字号和颜色取的是同一份配置；系统缩放或浏览器缩放下可能差一两像素。",
+						"样卡按桌面卡片的实际宽度 384 画：内边距 14/16、左侧 3px 竖条、任务名行高 18、结论框圆角 6 内边距 6/9、分隔线 11/1、底部 12，都和真卡对齐；字号与颜色取的是同一份配置。浏览器与桌面渲染字体略有差异，可能差一两像素。",
 					),
 					h("div", { className: "dsh-nudge-actions", key: "act" }, [
 						h(

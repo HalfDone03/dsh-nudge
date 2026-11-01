@@ -215,7 +215,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 
 | 分组 | 里面是什么 |
 | --- | --- |
-| 长这样 | 不是开关：按当前配色和字号、按桌面真卡的宽度 384 画一张样卡，八类文字各占一行，点哪一行就只调那一行 |
+| 长这样 | 不是开关：照真卡的尺寸与排版画一张样卡（384 宽、左侧 3px 竖条、结论框、分隔线都在），八类文字各占一行，点哪一行就只调那一行 |
 | 一键预设 | 安静 / 标准 / 话多，一次写 9 个字段，之后还能逐项微调 |
 | 总开关 | `enabled` |
 | 提醒哪几类 | `kinds.completed` / `kinds.needs_choice` / `kinds.failed` |
@@ -346,7 +346,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version 0.3.1
 ```
 
-它按顺序做：挑 node 跑语法检查与 214 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
+它按顺序做：挑 node 跑语法检查与 216 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
 「未发布」换成本版标题 → 更新本文件里的「当前版本」与版本一览表格 → 提交 → 打附注 tag → 把 `index.json`
 的 `versions[0]` 三字段指向这个提交并再提一条
 `chore(release): 索引指向 x.y.z 最终提交 (<hash>)` → `gh release create --latest` → push `main` 与 tag。
@@ -368,7 +368,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs      # 214 项全绿；CI 上跑的是 --no-live（191 项）
+& $node .\scripts\selftest.mjs      # 216 项全绿；CI 上跑的是 --no-live（193 项）
 ```
 
 三条硬要求，少一条装上就是坏的：
@@ -403,11 +403,11 @@ registry 安装是 `saveExact`（精确版本），不改版本号重装拿不�
 . .\scripts\dsh-deps.ps1                    # 和装/卸脚本共用同一套「找 DSH 自带的 node」
 $node = (Find-DshDependencies).Node
 if (-not $node) { $node = 'node' }          # PATH 里已有 node 就直接用
-& $node .\scripts\selftest.mjs              # 214 项，含真起窗口与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 191 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 216 项，含真起窗口与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 193 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
-当前 **214 项全绿**，覆盖：配置校验与默认值、实时配置（改完点应用就生效，不用重启）、静音时段（含跨零点）、事件合并计数、
+当前 **216 项全绿**，覆盖：配置校验与默认值、实时配置（改完点应用就生效，不用重启）、静音时段（含跨零点）、事件合并计数、
 严重度排序、三类开关、真起弹窗并收到 `{"type":"shown"}` 与右下角坐标、dispose 后无孤儿进程、
 三种状态各渲染一张 436px 宽快照，外加一张 4 条合并的清单快照（`screenshots/multi.png`，尺寸、非空与像素基线比对），以及一组源码静态约束——
 脚本必须纯 ASCII、项目名前不许出现图标字形、字号阶梯必须是「项目 > 任务 > 原因」、
@@ -462,7 +462,7 @@ dsh-nudge/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
 │  ├─ dsh-deps.ps1       两个脚本共用：找 DSH 自带的 node + pnpm
-│  └─ selftest.mjs       214 项自测（`--no-live` 191 项、`--update-baseline` 重写像素基线）
+│  └─ selftest.mjs       216 项自测（`--no-live` 193 项、`--update-baseline` 重写像素基线）
 ├─ tools/
 │  ├─ release.ps1        一条命令发版（自测→版本号→tag→索引指针→Release→push）
 │  └─ snapshot-baseline.json  快照像素基线，改了版式要跟着重生
