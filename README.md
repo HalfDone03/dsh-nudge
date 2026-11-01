@@ -219,7 +219,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 | 分组 | 里面是什么 |
 | --- | --- |
 | 长这样 | 不是开关：样卡和桌面上那张卡用同一份配置、同一套尺寸（宽度取配置、默认 384，内边距 14/16、左侧 3px 竖条、任务名行高 18、结论框圆角 6、分隔线 11/1），任务名照样会折行。**卡片的外观全部在这一组里改**：点样卡上的一行、或样卡下面那排名字，就切到那一类，底下只剩那两行——那一类的字号（`typography.<角色>.size`，框里显示的是现在实际用的值）和颜色（一排现成的色块（11 颗）：跟随主题 / 白 / 浅灰 / 灰 / 黑 / 红 / 橙 / 黄 / 绿 / 蓝 / 紫，再加一个能自己写 `#RRGGBB` 的框）；再往下是卡片宽度（260–900，0 表示默认 384）、落点九宫格（默认右下角）、卡片底色与左侧竖条各一排色块，以及 `theme`（auto / light / dark）、`staySeconds`、`margin`、`rememberPosition`；最下面「在桌面上弹一张看看」让真卡出现在桌面上，改完点应用它会当场重画 |
-| 提醒 | `enabled` 总开关、`kinds.completed` / `kinds.needs_choice` / `kinds.failed` 三类提醒；顶上那一排是安静 / 标准 / 话多三个一键预设，一次写 9 个字段，之后还能逐项微调 |
+| 提醒 | `enabled` 总开关、`kinds.completed` / `kinds.needs_choice` / `kinds.failed` 三类提醒 |
 | 时机 | `showWhenFocused` / `suppressWhenFullscreen` / `alertOnToolError` |
 | 合并 | `mergeWindowMs`、`maxItems`、`muteRanges`（一行一段，写错的行当场红字列出来，底下还有一行「现在是否静音」） |
 | 调试 | 默认收起，点一下展开：`debugPreview`（预览弹窗）、`debugPayload`、`debugFile`，以及配置的导出 / 导入框 |

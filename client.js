@@ -33,7 +33,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-01.9";
+	const PANEL_REVISION = "2026-11-01.10";
 	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
 	const NAV_GROUPS = [
 		["peek", "长这样"],
@@ -101,8 +101,6 @@ window.__ModuleLoader__.load({
 			".dsh-nudge-applybar[data-dirty=\"0\"]{border-color:var(--dsw-alias-border-l2);box-shadow:none}",
 			".dsh-nudge-group[data-dirty=\"1\"]{border-color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-group[data-dirty=\"1\"] .dsh-nudge-group-title::after{content:\" ·\";color:var(--dsw-alias-state-business-primary)}",
-	".dsh-nudge-presets{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 0 0}",
-	".dsh-nudge-presets-label{font-size:12px;color:var(--dsw-alias-label-tertiary)}",
 			".dsh-nudge-nav{position:sticky;top:0;z-index:3;display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:6px 0;background:var(--dsw-alias-bg-l1)}",
 			".dsh-nudge-navbtn{font:inherit;font-size:12px;line-height:18px;padding:3px 10px;border-radius:999px;cursor:pointer;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l2);color:var(--dsw-alias-label-tertiary)}",
 			".dsh-nudge-navbtn:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-state-business-primary)}",
@@ -445,58 +443,6 @@ const ROLE_LOOK = {
 			light: { background: "#ffffff", color: "#1b1b1f", borderColor: "rgba(0,0,0,.12)" },
 			dark: { background: "#1f2124", color: "#f2f3f5", borderColor: "rgba(255,255,255,.14)" },
 		};
-		/** 三个一键预设：一次写一组字段，写完之后还能逐项微调。 */
-		const PRESETS = [
-			{
-				id: "quiet",
-				label: "安静",
-				hint: "只在需要你动手或出错时弹，晚上静音",
-				entries: [
-					{ path: "kinds.completed", value: false },
-					{ path: "kinds.needs_choice", value: true },
-					{ path: "kinds.failed", value: true },
-					{ path: "showWhenFocused", value: false },
-					{ path: "alertOnToolError", value: false },
-					{ path: "staySeconds", value: 8 },
-					{ path: "mergeWindowMs", value: 30000 },
-					{ path: "maxItems", value: 3 },
-					{ path: "muteRanges", value: ["22:00-08:00"] },
-				],
-			},
-			{
-				id: "normal",
-				label: "标准",
-				hint: "三类都提醒，走开一会儿也能叫回来",
-				entries: [
-					{ path: "kinds.completed", value: true },
-					{ path: "kinds.needs_choice", value: true },
-					{ path: "kinds.failed", value: true },
-					{ path: "showWhenFocused", value: false },
-					{ path: "alertOnToolError", value: true },
-					{ path: "staySeconds", value: 15 },
-					{ path: "mergeWindowMs", value: 1200 },
-					{ path: "maxItems", value: 8 },
-					{ path: "muteRanges", value: [] },
-				],
-			},
-			{
-				id: "chatty",
-				label: "话多",
-				hint: "什么都提醒，卡片留久一点，不合并",
-				entries: [
-					{ path: "kinds.completed", value: true },
-					{ path: "kinds.needs_choice", value: true },
-					{ path: "kinds.failed", value: true },
-					{ path: "showWhenFocused", value: true },
-					{ path: "alertOnToolError", value: true },
-					{ path: "staySeconds", value: 25 },
-					{ path: "mergeWindowMs", value: 0 },
-					{ path: "maxItems", value: 20 },
-					{ path: "muteRanges", value: [] },
-				],
-			},
-		];
-
 		/**
 		 * 每一组「恢复默认」写回去的值。必须和 `lib/index.js` 的 `DEFAULTS` 一致，
 		 * 自测会拿这份逐项比对（`exports.groupDefaults` 就是给它看的）。
@@ -878,7 +824,6 @@ const ROLE_LOOK = {
 				};
 			};
 			/** 这组预设是不是正好等于现在的配置。 */
-			const presetOn = (preset) => preset.entries.every((entry) => sameField(value, entry.path, entry.value));
 			const themeValue = text("theme") === "" ? "auto" : text("theme");
 			/** 卡片现在用的宽度：0 表示用脚本里的默认 384。 */
 			const cardWidth = num("width") > 0 ? num("width") : 384;
@@ -923,24 +868,6 @@ const ROLE_LOOK = {
 						pending +
 						" 项",
 				),
-				h("div", { className: "dsh-nudge-presets", key: "presets" }, [
-					h("span", { className: "dsh-nudge-presets-label", key: "label" }, "一键预设"),
-					...PRESETS.map((preset) =>
-						h(
-							"button",
-							{
-								key: preset.id,
-								type: "button",
-								className: "dsh-nudge-btn",
-								disabled,
-								"data-on": presetOn(preset) ? "1" : "0",
-								title: preset.hint,
-								onClick: () => writeMany(preset.entries),
-							},
-							preset.label,
-						),
-					),
-				]),
 				h(
 					"nav",
 					{ className: "dsh-nudge-nav", key: "nav" },

@@ -1347,10 +1347,9 @@ check(
 		&& appliedPage.nodes.some((node) => node.props.children === "已保存"),
 	JSON.stringify(clientMutations),
 );
-/** 样卡里可点的行、角色按钮、预设按钮。 */
+/** 样卡里可点的行、角色按钮。 */
 const cardHits = (nodes) => nodes.filter((node) => node.type === "span" && node.props["data-role"] !== undefined);
 const roleButtons = (nodes) => nodes.filter((node) => node.type === "button" && node.props["data-role"] !== undefined);
-const presetButtons = (nodes) => nodes.filter((node) => node.type === "button" && ["安静", "标准", "话多"].includes(node.props.children));
 const typedInputs = (nodes) => nodes.filter((node) => node.type === "input" && String(node.props["aria-label"] ?? "").startsWith("颜色（"));
 check(
 	"样卡把八类文字都画出来、每行可点",
@@ -1363,7 +1362,6 @@ check(
 	"rows=" + typedInputs(clientNodes).map((node) => node.props["aria-label"]).join("|"),
 );
 check("八类文字都能点着切过去", roleButtons(clientNodes).length === 8, "buttons=" + roleButtons(clientNodes).length);
-check("三个一键预设都在", presetButtons(clientNodes).length === 3, "presets=" + presetButtons(clientNodes).length);
 
 /* 位置 / 大小 / 颜色：九宫格、宽度、底色与竖条。 */
 const placePage = renderClientPage();
@@ -1450,29 +1448,6 @@ check("字体行带写法说明与默认字号",
 	&& typeof fontSizeRow?.props?.hint === "string"
 	&& fontSizeRow.props.hint.includes("15.5"),
 	String(fontSizeRow?.props?.hint));
-
-clientMutations.length = 0;
-presetButtons(clientNodes)[0].props.onClick();
-await Promise.resolve();
-const presetPage = renderClientPage();
-check(
-	"预设也是先填草稿",
-	clientMutations.length === 0
-		&& presetPage.nodes.some((node) => typeof node.props.children === "string" && /^\d+ 项改动还没保存$/.test(node.props.children)),
-	"writes=" + clientMutations.length,
-);
-clientMutations.length = 0;
-buttonByText(presetPage.nodes, "应用").props.onClick();
-await Promise.resolve();
-check(
-	"预设一次写一组字段，和现状相同的不重复写",
-	clientMutations.length === 1
-	&& clientMutations[0].ops.length === 6
-	&& clientMutations[0].revision === 7
-	&& JSON.stringify(clientMutations[0].ops[3]) === JSON.stringify({ op: "set", path: ["staySeconds"], value: 8 })
-	&& !clientMutations[0].ops.some((op) => op.path[0] === "muteRanges"),
-	JSON.stringify(clientMutations[0]?.ops?.length) + "/" + JSON.stringify(clientMutations[0]?.ops?.[3]),
-);
 
 clientMutations.length = 0;
 fontColorRow.props.onCommit("#FFFF0000");
