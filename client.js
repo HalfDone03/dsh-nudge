@@ -33,7 +33,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-01.5";
+	const PANEL_REVISION = "2026-11-01.6";
 	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
 	const NAV_GROUPS = [
 		["peek", "长这样"],
@@ -55,14 +55,20 @@ window.__ModuleLoader__.load({
 	".dsh-nudge-role:disabled{opacity:.5;cursor:not-allowed}",
 	".dsh-nudge-rolename{font-size:12px;line-height:1.4}",
 	".dsh-nudge-rolesize{font-size:11px;line-height:1.4;opacity:.65;font-variant-numeric:tabular-nums}",
-	".dsh-nudge-typetable{display:flex;flex-direction:column;gap:6px;margin-top:10px}",
-			".dsh-nudge-settings{max-width:760px;display:flex;flex-direction:column;gap:14px;color:var(--dsw-alias-label-primary)}",
+	".dsh-nudge-typetable{display:flex;flex-direction:column;gap:0;margin-top:0}",
+			".dsh-nudge-settings{max-width:820px;display:flex;flex-direction:column;gap:18px;color:var(--dsw-alias-label-primary)}",
 			".dsh-nudge-settings h2{margin:0;font-size:18px;font-weight:600}",
 			".dsh-nudge-intro{margin:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary)}",
-			".dsh-nudge-group{display:flex;flex-direction:column;gap:2px;border:0.5px solid var(--dsw-alias-border-l2);border-radius:10px;padding:4px 14px}",
-			".dsh-nudge-group-title{margin:10px 0 2px;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary)}",
-			".dsh-nudge-row{display:flex;align-items:center;gap:14px;padding:10px 0;border-top:0.5px solid var(--dsw-alias-border-l2)}",
-			".dsh-nudge-row:first-child{border-top:0}",
+			".dsh-nudge-group{display:flex;flex-direction:column;gap:0;border:0.5px solid var(--dsw-alias-border-l2);border-radius:12px;padding:0 16px 4px;scroll-margin-top:52px}",
+			".dsh-nudge-group-title{margin:0;flex:1;font-size:13px;font-weight:600;line-height:20px;letter-spacing:0;color:var(--dsw-alias-label-primary)}",
+			".dsh-nudge-group-head{display:flex;align-items:center;gap:12px;padding:12px 0 9px;border-bottom:0.5px solid var(--dsw-alias-border-l2)}",
+			".dsh-nudge-group-head .dsh-nudge-actions{padding:0;margin:0}",
+			".dsh-nudge-group-head .dsh-nudge-btn{font-size:12px;line-height:16px;padding:2px 9px;border-radius:6px;opacity:.8}",
+			".dsh-nudge-group-head .dsh-nudge-btn:hover:not(:disabled){opacity:1}",
+			".dsh-nudge-group-head .dsh-nudge-group-toggle{margin:0;flex:1}",
+			".dsh-nudge-group .dsh-nudge-intro{padding:9px 0 1px}",
+			".dsh-nudge-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:16px;padding:9px 0;border-top:0.5px solid var(--dsw-alias-border-l2)}",
+			".dsh-nudge-group-head + .dsh-nudge-row{border-top:0}",
 			".dsh-nudge-text{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}",
 			".dsh-nudge-label{font-size:13px;line-height:20px}",
 			".dsh-nudge-hint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}",
@@ -99,16 +105,17 @@ window.__ModuleLoader__.load({
 			".dsh-nudge-applybar[data-dirty=\"0\"]{border-color:var(--dsw-alias-border-l2);box-shadow:none}",
 			".dsh-nudge-group[data-dirty=\"1\"]{border-color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-group[data-dirty=\"1\"] .dsh-nudge-group-title::after{content:\" ·\";color:var(--dsw-alias-state-business-primary)}",
-			".dsh-nudge-nav{display:flex;flex-wrap:wrap;gap:6px;margin:0}",
+			".dsh-nudge-nav{position:sticky;top:0;z-index:3;display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:6px 0;background:var(--dsw-alias-bg-l1)}",
 			".dsh-nudge-navbtn{font:inherit;font-size:12px;line-height:18px;padding:3px 10px;border-radius:999px;cursor:pointer;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l2);color:var(--dsw-alias-label-tertiary)}",
 			".dsh-nudge-navbtn:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-status{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}",
 			".dsh-nudge-stamp{margin:0;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);opacity:.75}",
-			".dsh-nudge-swatches{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:2px 0 8px}",
+			".dsh-nudge-swatches{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 0 8px}",
 			".dsh-nudge-swatch{font:inherit;font-size:11px;line-height:16px;padding:3px 9px;border-radius:999px;cursor:pointer;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l2);color:var(--dsw-alias-label-primary);display:inline-flex;align-items:center;gap:6px}",
 			".dsh-nudge-swatch:hover{border-color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-swatch[data-on=\"1\"]{border-color:var(--dsw-alias-state-business-primary);box-shadow:inset 0 0 0 1px var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-swatchdot{width:10px;height:10px;border-radius:50%;border:0.5px solid var(--dsw-alias-border-l2);flex:none}",
+			"@media (max-width:680px){.dsh-nudge-row{grid-template-columns:minmax(0,1fr);row-gap:6px}.dsh-nudge-areas{width:100%}}",
 		].join("");
 
 		/** 把样式挂进 <head>，同一个文档只挂一次。 */
@@ -550,7 +557,6 @@ const ROLE_LOOK = {
 			/** 还没点「应用」的改动：字段路径 → 新值。空对象表示没有待应用的改动。 */
 			const [draft, setDraft] = React.useState({});
 			/** 字号那组是否展开成「8 行一起看」。 */
-			const [allSizes, setAllSizes] = React.useState(false);
 			/** 刚保存完的提示，两秒后自己消失。 */
 			const [saved, setSaved] = React.useState(false);
 			React.useEffect(() => {
@@ -779,6 +785,8 @@ const ROLE_LOOK = {
 					color: tint,
 				};
 			};
+			/** 这组预设是不是正好等于现在的配置。 */
+			const presetOn = (preset) => preset.entries.every((entry) => sameField(value, entry.path, entry.value));
 			const themeValue = text("theme") === "" ? "auto" : text("theme");
 			const skin = Object.hasOwn(THEME_SKIN, themeValue) ? THEME_SKIN[themeValue] : null;
 			/**
@@ -842,7 +850,9 @@ const ROLE_LOOK = {
 				failure === "" ? null : h("p", { className: "dsh-nudge-error", key: "failure", role: "alert" }, failure),
 
 				h("div", { className: "dsh-nudge-group", key: "peek", id: "dsh-nudge-g-peek" }, [
-					h("p", { className: "dsh-nudge-group-title", key: "title" }, "长这样"),
+					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
+						h("p", { className: "dsh-nudge-group-title", key: "title" }, "长这样"),
+					]),
 					h(
 						"p",
 						{ className: "dsh-nudge-intro", key: "hint" },
@@ -915,7 +925,9 @@ const ROLE_LOOK = {
 				]),
 
 				h("div", { className: "dsh-nudge-group", key: "preset", id: "dsh-nudge-g-preset" }, [
-					h("p", { className: "dsh-nudge-group-title", key: "title" }, "一键预设"),
+					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
+						h("p", { className: "dsh-nudge-group-title", key: "title" }, "一键预设"),
+					]),
 					h("p", { className: "dsh-nudge-intro", key: "hint" }, "先挑一个最接近的，再往下微调；只动下面这些开关，不碰字体。"),
 					h(
 						"div",
@@ -928,6 +940,7 @@ const ROLE_LOOK = {
 									type: "button",
 									className: "dsh-nudge-btn",
 									disabled,
+									"data-on": presetOn(preset) ? "1" : "0",
 									title: preset.hint,
 									onClick: () => writeMany(preset.entries),
 								},
@@ -938,7 +951,10 @@ const ROLE_LOOK = {
 				]),
 
 				h("div", { className: "dsh-nudge-group", key: "master", id: "dsh-nudge-g-master", "data-dirty": groupDirty("master") > 0 ? "1" : "0" }, [
-					h("p", { className: "dsh-nudge-group-title", key: "title" }, "总开关"),
+					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
+						h("p", { className: "dsh-nudge-group-title", key: "title" }, "总开关"),
+						h(ResetRow, { key: "reset", group: "master", disabled, onReset: resetGroup }),
+					]),
 					h(SwitchRow, {
 						key: "enabled",
 						label: "启用提醒弹窗",
@@ -947,11 +963,13 @@ const ROLE_LOOK = {
 						disabled,
 						onChange: (next) => write("enabled", next),
 					}),
-					h(ResetRow, { key: "reset", group: "master", disabled, onReset: resetGroup }),
 				]),
 
 				h("div", { className: "dsh-nudge-group", key: "kinds", id: "dsh-nudge-g-kinds", "data-dirty": groupDirty("kinds") > 0 ? "1" : "0" }, [
-					h("p", { className: "dsh-nudge-group-title", key: "title" }, "提醒哪几类"),
+					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
+						h("p", { className: "dsh-nudge-group-title", key: "title" }, "提醒哪几类"),
+						h(ResetRow, { key: "reset", group: "kinds", disabled, onReset: resetGroup }),
+					]),
 					h(SwitchRow, {
 						key: "completed",
 						label: "任务完成",
@@ -976,11 +994,13 @@ const ROLE_LOOK = {
 						disabled,
 						onChange: (next) => write("kinds.failed", next),
 					}),
-					h(ResetRow, { key: "reset", group: "kinds", disabled, onReset: resetGroup }),
 				]),
 
 				h("div", { className: "dsh-nudge-group", key: "when", id: "dsh-nudge-g-when", "data-dirty": groupDirty("when") > 0 ? "1" : "0" }, [
-					h("p", { className: "dsh-nudge-group-title", key: "title" }, "什么时候弹"),
+					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
+						h("p", { className: "dsh-nudge-group-title", key: "title" }, "什么时候弹"),
+						h(ResetRow, { key: "reset", group: "when", disabled, onReset: resetGroup }),
+					]),
 					h(SwitchRow, {
 						key: "showWhenFocused",
 						label: "DSH 在前台时也弹",
@@ -1005,11 +1025,13 @@ const ROLE_LOOK = {
 						disabled,
 						onChange: (next) => write("alertOnToolError", next),
 					}),
-					h(ResetRow, { key: "reset", group: "when", disabled, onReset: resetGroup }),
 				]),
 
 				h("div", { className: "dsh-nudge-group", key: "look", id: "dsh-nudge-g-look", "data-dirty": groupDirty("look") > 0 ? "1" : "0" }, [
-					h("p", { className: "dsh-nudge-group-title", key: "title" }, "样子与位置"),
+					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
+						h("p", { className: "dsh-nudge-group-title", key: "title" }, "样子与位置"),
+						h(ResetRow, { key: "reset", group: "look", disabled, onReset: resetGroup }),
+					]),
 					h(SelectRow, {
 						key: "theme",
 						label: "配色",
@@ -1051,11 +1073,13 @@ const ROLE_LOOK = {
 						disabled,
 						onChange: (next) => write("rememberPosition", next),
 					}),
-					h(ResetRow, { key: "reset", group: "look", disabled, onReset: resetGroup }),
 				]),
 
 				h("div", { className: "dsh-nudge-group", key: "merge", id: "dsh-nudge-g-merge", "data-dirty": groupDirty("merge") > 0 ? "1" : "0" }, [
-					h("p", { className: "dsh-nudge-group-title", key: "title" }, "合并"),
+					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
+						h("p", { className: "dsh-nudge-group-title", key: "title" }, "合并"),
+						h(ResetRow, { key: "reset", group: "merge", disabled, onReset: resetGroup }),
+					]),
 					h(NumberRow, {
 						key: "mergeWindowMs",
 						label: "合并窗口（毫秒）",
@@ -1100,11 +1124,13 @@ const ROLE_LOOK = {
 								{ className: "dsh-nudge-warn", key: "mutestate" + clock },
 								muted ? "现在正处于静音时段，卡片不会弹。" : "现在不在静音时段。",
 							),
-					h(ResetRow, { key: "reset", group: "merge", disabled, onReset: resetGroup }),
 				]),
 
 				h("div", { className: "dsh-nudge-group", key: "type", id: "dsh-nudge-g-type", "data-dirty": groupDirty("type") > 0 ? "1" : "0" }, [
-					h("p", { className: "dsh-nudge-group-title", key: "title" }, "字号与颜色"),
+					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
+						h("p", { className: "dsh-nudge-group-title", key: "title" }, "字号与颜色"),
+						h(ResetRow, { key: "reset", group: "type", disabled, onReset: resetGroup }),
+					]),
 					h(
 						"p",
 						{ className: "dsh-nudge-intro", key: "hint" },
@@ -1151,34 +1177,25 @@ const ROLE_LOOK = {
 						disabled,
 						onCommit: (next) => write("typography." + fontRole + ".color", next),
 					}),
-					h(NumberRow, {
-						key: "size",
-						label: "字号（" + roleLabel(fontRole) + "）",
-						hint: sizeHint(fontRole),
-						value: roleSize(fontRole),
-						min: 0,
-						max: 48,
-						step: 0.5,
-						disabled,
-						onCommit: (next) => write("typography." + fontRole + ".size", next),
-					}),
-					h(ResetRow, { key: "reset", group: "type", disabled, onReset: resetGroup }),
 				]),
 
 				h("div", { className: "dsh-nudge-group", key: "debug", id: "dsh-nudge-g-debug", "data-dirty": groupDirty("debug") > 0 ? "1" : "0" }, [
-		h(
-			"button",
-			{
-				key: "title",
-				type: "button",
-				className: "dsh-nudge-group-toggle",
-				"data-on": debugOpen ? "1" : "0",
-				"aria-expanded": debugOpen ? "true" : "false",
-				onClick: () => setDebugOpen(!debugOpen),
-			},
-			debugOpen ? "调试（点一下收起）" : "调试（点一下展开）",
-		),
-				debugOpen ? h(SwitchRow, {
+					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
+						h(
+							"button",
+							{
+								key: "title",
+								type: "button",
+								className: "dsh-nudge-group-toggle",
+								"data-on": debugOpen ? "1" : "0",
+								"aria-expanded": debugOpen ? "true" : "false",
+								onClick: () => setDebugOpen(!debugOpen),
+							},
+							debugOpen ? "调试（点一下收起）" : "调试（点一下展开）",
+						),
+						h(ResetRow, { key: "reset", group: "debug", disabled, onReset: resetGroup }),
+					]),
+					debugOpen ? h(SwitchRow, {
 						key: "debugPreview",
 						label: "预览弹窗（常驻，可拖动缩放）",
 						hint: "打开后立刻弹一张卡片并一直留着；拖动或缩放它，关掉开关时位置和大小会记住。",
@@ -1186,7 +1203,7 @@ const ROLE_LOOK = {
 						disabled,
 						onChange: (next) => write("debugPreview", next),
 					}) : null,
-				debugOpen ? h(SwitchRow, {
+					debugOpen ? h(SwitchRow, {
 						key: "debugPayload",
 						label: "把每次弹出的内容落盘",
 						hint: "排查「为什么没弹 / 弹得不对」时打开。",
@@ -1194,7 +1211,7 @@ const ROLE_LOOK = {
 						disabled,
 						onChange: (next) => write("debugPayload", next),
 					}) : null,
-				debugOpen ? h(TextRow, {
+					debugOpen ? h(TextRow, {
 						key: "debugFile",
 						label: "落盘文件",
 						hint: "留空就是 %TEMP%\\dsh-nudge-payloads.jsonl。",
@@ -1203,46 +1220,44 @@ const ROLE_LOOK = {
 						disabled,
 						onCommit: (next) => write("debugFile", next),
 					}) : null,
-		debugOpen
-			? h("div", { className: "dsh-nudge-row", key: "io" }, [
-					h("div", { key: "text" }, [
-						h("span", { className: "dsh-nudge-label", key: "label" }, "导出 / 导入"),
-						h(
-							"div",
-							{ className: "dsh-nudge-hint", key: "hint" },
-							"「导出」把当前配置写成一段文本；把一段配置粘进来点「导入」就整段覆盖。换机器、让别人复现问题都靠它。",
-						),
-					]),
-					h("textarea", {
-						key: "dump",
-						className: "dsh-nudge-areas",
-						"aria-label": "导出或导入的配置文本",
-						value: dump,
-						placeholder: "点「导出」把当前配置写到这里，或者把别处的配置粘进来再点「导入」。",
-						spellCheck: false,
-						onChange: (event) => setDump(event.target.value),
-					}),
-				])
-			: null,
-		debugOpen
-			? h("div", { className: "dsh-nudge-actions", key: "iobtn" }, [
-					h("button", { key: "dumpbtn", type: "button", className: "dsh-nudge-btn", disabled, onClick: exportText }, "导出"),
-					h(
-						"button",
-						{
-							key: "loadbtn",
-							type: "button",
-							className: "dsh-nudge-btn",
-							disabled: disabled || dump.trim() === "",
-							onClick: importText,
-						},
-						"导入",
-					),
-				])
-			: null,
-		h(ResetRow, { key: "reset", group: "debug", disabled, onReset: resetGroup }),
+					debugOpen
+						? h("div", { className: "dsh-nudge-row", key: "io" }, [
+							h("div", { className: "dsh-nudge-text", key: "text" }, [
+								h("span", { className: "dsh-nudge-label", key: "label" }, "导出 / 导入"),
+								h(
+									"div",
+									{ className: "dsh-nudge-hint", key: "hint" },
+									"「导出」把当前配置写成一段文本；把一段配置粘进来点「导入」就整段覆盖。换机器、让别人复现问题都靠它。",
+								),
+							]),
+							h("textarea", {
+								key: "dump",
+								className: "dsh-nudge-areas",
+								"aria-label": "导出或导入的配置文本",
+								value: dump,
+								placeholder: "点「导出」把当前配置写到这里，或者把别处的配置粘进来再点「导入」。",
+								spellCheck: false,
+								onChange: (event) => setDump(event.target.value),
+							}),
+						])
+					: null,
+					debugOpen
+						? h("div", { className: "dsh-nudge-actions", key: "iobtn" }, [
+							h("button", { key: "dumpbtn", type: "button", className: "dsh-nudge-btn", disabled, onClick: exportText }, "导出"),
+							h(
+								"button",
+								{
+									key: "loadbtn",
+									type: "button",
+									className: "dsh-nudge-btn",
+									disabled: disabled || dump.trim() === "",
+									onClick: importText,
+								},
+								"导入",
+							),
+						])
+					: null,
 				]),
-
 				h("div", { className: "dsh-nudge-applybar", key: "applybar", "data-dirty": pending > 0 ? "1" : "0", role: "status" }, [
 					h(
 						"span",

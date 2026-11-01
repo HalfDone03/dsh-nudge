@@ -211,6 +211,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 
 ### 设置页
 
+整页是九张卡片：顶部那条分组导航吸顶，点一下跳到对应的一组；每张卡片第一行是标题加这颗「恢复默认」，
+下面的行左边写说明、右边放控件，控件一列对齐。
+
 `设置 → 提醒弹窗`（排在「插件」页后面，`order: 20`）从上到下九组：
 
 | 分组 | 里面是什么 |
@@ -222,10 +225,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 | 什么时候弹 | `showWhenFocused` / `suppressWhenFullscreen` / `alertOnToolError` |
 | 样子与位置 | `theme`（auto / light / dark）、`staySeconds`、`margin`、`rememberPosition` |
 | 合并 | `mergeWindowMs`、`maxItems`、`muteRanges`（一行一段，写错的行当场红字列出来，底下还有一行「现在是否静音」） |
-| 字号与颜色 | 上面一排现成的色块（跟随主题 / 白 / 浅灰 / 灰 / 黑 / 红 / 橙 / 黄 / 绿 / 蓝 / 紫），点一个就套到当前这一类；下面两个框是 `typography.<角色>.color`（也能自己写 `#RRGGBB`）和 `.size`——字号框里显示的是**现在实际用的值**，不是 0，写 0 才回到默认；换类靠点样卡上的一行、或点样卡下面那排名字；八类的字号框一直列在下面，不用先展开 |
+| 字号与颜色 | 上面一排现成的色块（跟随主题 / 白 / 浅灰 / 灰 / 黑 / 红 / 橙 / 黄 / 绿 / 蓝 / 紫），点一个就套到当前这一类；下面一个框是 `typography.<角色>.color`（也能自己写 `#RRGGBB`）；字号在上面那张八行表里改，表里显示的是**现在实际用的值**，不是 0，写 0 才回到默认；换类靠点样卡上的一行、或点样卡下面那排名字；八类的字号框一直列在下面，不用先展开 |
 | 调试 | 默认收起，点一下展开：`debugPreview`（预览弹窗）、`debugPayload`、`debugFile`，以及配置的导出 / 导入框 |
 
-除调试组外，每一组末尾都有一颗「恢复默认」，只把这一组写回出厂值。
+每组右上角都有一颗「恢复默认」，只把这一组写回出厂值（「长这样」「一键预设」两组没有配置项，所以没有）。
 
 标题底下第一行是配置状态：`配置状态：<status> · 可写/只读 · 待保存 N 项`。`status` 直接来自宿主快照
 （`ready` / `loading` / `unavailable`），所以页面点不动时先看这一行——`unavailable` 说明宿主的设置服务

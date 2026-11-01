@@ -1367,7 +1367,7 @@ check("三个一键预设都在", presetButtons(clientNodes).length === 3, "pres
 
 const typingPage = renderClientPage();
 const fontColorRow = typingPage.components.find((item) => item.type.name === "TextRow" && item.props.label === "颜色（项目名）");
-const fontSizeRow = typingPage.components.find((item) => item.type.name === "NumberRow" && item.props.label === "字号（项目名）");
+const fontSizeRow = typingPage.components.find((item) => item.type.name === "NumberRow" && item.props.label === "项目名");
 check("字体行带写法说明与默认字号",
 	typeof fontColorRow?.props?.hint === "string"
 	&& fontColorRow.props.hint.includes("#RRGGBB")
@@ -1419,14 +1419,14 @@ const sizeRows = sizePage.components.filter((item) => item.type.name === "Number
 const roleLabels = ["标题", "项目名", "任务名", "原因", "状态词", "时间", "展开提示", "底部提示"];
 check(
 	"八类文字各有自己的字号输入框",
-	sizeRows.length === 13 && roleLabels.every((label) => sizeRows.some((item) => item.props.label === label)),
+	sizeRows.length === 12 && roleLabels.every((label) => sizeRows.some((item) => item.props.label === label)),
 	"rows=" + sizeRows.length,
 );
 const sizeNow = (label) => sizeRows.filter((item) => item.props.label === label).map((item) => item.props.value);
 check(
 	"字号框显示的是现在生效的值，不是 0",
-	sizeNow("任务名")[0] === 12.5 && sizeNow("字号（项目名）")[0] === 15.5,
-	"task=" + sizeNow("任务名")[0] + " project=" + sizeNow("字号（项目名）")[0],
+	sizeNow("任务名")[0] === 12.5 && sizeNow("项目名")[0] === 15.5,
+	"task=" + sizeNow("任务名")[0] + " project=" + sizeNow("项目名")[0],
 );
 const swatches = sizePage.nodes.filter((node) => node.type === "button" && node.props["data-color"] !== undefined);
 const redSwatch = swatches.filter((node) => node.props["data-color"] === "#FF6B6B");

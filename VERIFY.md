@@ -174,6 +174,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
 - 预览卡按外观指纹重画：`lib/index.js` 有 `styleKeyOf(cfg)`；构造器有 `previewStyleKey`，`spawnOnce` 的预览
   分支记下 `styleKeyOf(this.config)`，`exit` 时清空；watch 里只在 `previewStyleKey !== styleKey` 时重画。
   旧写法（闭包里的 `previewFonts` 跟上一拍比）在插件重新 apply 后会失效，已删掉。
+- 设置页是一叠卡片：每个 `.dsh-nudge-group` 的第一个子节点是 `.dsh-nudge-group-head`（共 9 个），
+  标题在左、`ResetRow` 在右；组尾不再有「恢复默认」，7 颗按钮全在头行里（`data-group` 各一）。
+- 行是两栏网格：`.dsh-nudge-row` 用 `grid-template-columns:minmax(0,1fr) auto`，说明在左、控件在右；
+  窄屏（`max-width:680px`）退回单栏，`textarea` 占满宽度。
+- 分组导航吸顶：`.dsh-nudge-nav` 是 `position:sticky;top:0`，配合 `.dsh-nudge-group` 的
+  `scroll-margin-top:52px`，跳过去时标题不会被导航压住。
+- 字号只在一处改：八类各一行 `NumberRow`（共 12 个 `NumberRow`，另 4 个是停留秒数 / 边距 /
+  合并窗口 / 折叠条数），底下不再重复一个「字号（某类）」输入框。
 - 样卡按真卡宽度画：`client.js` 的 `.dsh-nudge-card` 是 `width:384px`（真卡 `$script:CardWidth = 384`），
   下面一行说明开头是「宽 384、内边距 14/16…」。
 - 样卡按真卡的结构画：`.dsh-nudge-card-strip`（左侧 3px 竖条，`top/bottom:13px`，圆角 1.5）、
