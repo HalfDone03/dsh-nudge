@@ -24,7 +24,7 @@ if (-not $node) { $node = 'node' }          # 便携版/旧结构也找不到时
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (225 checks)`，退出码 0（CI 上是 `202 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 232 条）。
+- selftest 输出 `ALL PASS (230 checks)`，退出码 0（CI 上是 `207 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 237 条）。
 
 证据（实测）：
 
@@ -38,7 +38,7 @@ PASS  位置文件里的点被沿用  --  {"placement":"remembered","placedLeft"
 PASS  越界位置回落到右下角  --  {"placement":"corner","placedLeft":2146,...}
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
 PASS  基线 completed 对得上  --  436x174 色 263/263 暗 72874/72874 亮 933/933 状态 352/352
-ALL PASS (225 checks)
+ALL PASS (230 checks)
 ```
 
 其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 —— 目标不是窗口贴角，
@@ -198,6 +198,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
   `popup.ps1` 里 `$Payload.cardColor` 覆盖 `$card.Background`、`$Payload.accentColor` 覆盖 `$accent`。
 - 宽度能改：`width` 0–900，`popup.ps1` 只在 260–900 时采用，超出就用 `$script:CardWidth`；
   拖过卡片记住的尺寸仍然优先于这个值。
+- 预览卡上能直接摆位：「在桌面上弹一张看看」弹出的卡片里，七块（`title` / `project` / `task` / `status` /
+  `items` / `more` / `footer`）各自挂着 `Tag = 'block:<角色>'`；左键按下抓住一整块挪位置、右键横拖改宽度
+  （60–900）。拖动用屏幕坐标算位移（`PointToScreen`），所以偏移不受自身 `TranslateTransform` 影响；松手时
+  `Save-BlockLayout` 写一个临时 JSON（`UTF8Encoding $false`，无 BOM），宿主 `readLayout()` 读回后 `mutate` 到
+  `blocks.<角色>.{dx,dy,w}`，真卡按同一份数字排。全部为 0 时仍是原来的自动排布。
 - 样卡按真卡的结构画：`.dsh-nudge-card-strip`（左侧 3px 竖条，`top/bottom:13px`，圆角 1.5）、
   `.dsh-nudge-card-verdict`（结论框，圆角 6、内边距 6/9）、`.dsh-nudge-card-rule`（分隔线，`margin:11px 0 1px`）、
   内容区 `padding:14px 16px 14px 20px`、任务名 `line-height:18px`、原因 `line-height:15px` —— 逐项对应 `popup.ps1` 的

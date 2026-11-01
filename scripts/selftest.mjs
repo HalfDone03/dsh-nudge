@@ -1438,6 +1438,56 @@ check(
 		&& hostText.includes("anchor: cfg.anchor"),
 	"host",
 );
+/* 拖动排版：每块文字的偏移与宽度。0 就是原样，拖了才有值。 */
+const blockRoles = ["title", "project", "task", "status", "items", "more", "footer"];
+check(
+	"七块文字都有偏移与宽度的默认值",
+	blockRoles.every((role) => {
+		const one = DEFAULTS.blocks?.[role];
+		return one !== undefined && one.dx === 0 && one.dy === 0 && one.w === 0;
+	}) && Object.keys(DEFAULTS.blocks).length === blockRoles.length,
+	"roles=" + Object.keys(DEFAULTS.blocks ?? {}).length,
+);
+const dragged = normalizeConfig({ blocks: { task: { dx: 9999, dy: -9999, w: -5 }, title: { dx: 12.6, dy: -3.2, w: 200 } } });
+check(
+	"拖出来的数字越界夹回来、小数取整",
+	dragged.blocks.task.dx === 600 && dragged.blocks.task.dy === -600 && dragged.blocks.task.w === 0
+		&& dragged.blocks.title.dx === 13 && dragged.blocks.title.dy === -3 && dragged.blocks.title.w === 200
+		&& dragged.blocks.footer.dx === 0,
+	JSON.stringify(dragged.blocks.task) + " " + JSON.stringify(dragged.blocks.title),
+);
+checkThrows("blocks 不是对象抛错", () => normalizeConfig({ blocks: ["title"] }));
+checkThrows("单块不是对象抛错", () => normalizeConfig({ blocks: { task: 1 } }));
+check(
+	"弹窗脚本能拖动每一块并记下来",
+	popupSource.includes("[string]$LayoutFile = ''")
+		&& popupSource.includes("$script:BlockRoles")
+		&& popupSource.includes("function Save-BlockLayout")
+		&& popupSource.includes("function Test-BlockSource")
+		&& popupSource.includes("'block:'")
+		&& popupSource.includes("UTF8Encoding")
+		&& popupSource.includes("-LayoutFile $LayoutFile"),
+	"popup",
+);
+check(
+	"宿主把拖出来的布局写回配置",
+	hostText.includes("const BLOCK_ROLES = [")
+		&& hostText.includes("dsh-nudge-layout-")
+		&& hostText.includes("\"-LayoutFile\"")
+		&& hostText.includes("readLayout()")
+		&& hostText.includes("applyLayout")
+		&& hostText.includes("blocks: this.config.blocks")
+		&& /path: \["blocks"\]/.test(hostText),
+	"host",
+);
+check(
+	"设置页有摆回原位的按钮",
+	clientSource.includes("BLOCK_ROLES")
+		&& clientSource.includes("\"blocks.\" + role")
+		&& clientSource.includes("\"reset-layout\"")
+		&& clientSource.includes("摆回原位"),
+	"client",
+);
 
 const typingPage = renderClientPage();
 const fontColorRow = typingPage.components.find((item) => item.type.name === "TextRow" && item.props.label === "颜色（项目名）");

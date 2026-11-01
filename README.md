@@ -218,7 +218,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 
 | 分组 | 里面是什么 |
 | --- | --- |
-| 长这样 | 不是开关：样卡和桌面上那张卡用同一份配置、同一套尺寸（宽度取配置、默认 384，内边距 14/16、左侧 3px 竖条、任务名行高 18、结论框圆角 6、分隔线 11/1），任务名照样会折行。**卡片的外观全部在这一组里改**：点样卡上的一行、或样卡下面那排名字，就切到那一类，底下只剩那两行——那一类的字号（`typography.<角色>.size`，框里显示的是现在实际用的值）和颜色（一排现成的色块（11 颗）：跟随主题 / 白 / 浅灰 / 灰 / 黑 / 红 / 橙 / 黄 / 绿 / 蓝 / 紫，再加一个能自己写 `#RRGGBB` 的框）；再往下是卡片宽度（260–900，0 表示默认 384）、落点九宫格（默认右下角）、卡片底色与左侧竖条各一排色块，以及 `theme`（auto / light / dark）、`staySeconds`、`margin`、`rememberPosition`；最下面「在桌面上弹一张看看」让真卡出现在桌面上，改完点应用它会当场重画 |
+| 长这样 | 不是开关：样卡和桌面上那张卡用同一份配置、同一套尺寸（宽度取配置、默认 384，内边距 14/16、左侧 3px 竖条、任务名行高 18、结论框圆角 6、分隔线 11/1），任务名照样会折行。**卡片的外观全部在这一组里改**：点样卡上的一行、或样卡下面那排名字，就切到那一类，底下只剩那两行——那一类的字号（`typography.<角色>.size`，框里显示的是现在实际用的值）和颜色（一排现成的色块（11 颗）：跟随主题 / 白 / 浅灰 / 灰 / 黑 / 红 / 橙 / 黄 / 绿 / 蓝 / 紫，再加一个能自己写 `#RRGGBB` 的框）；再往下是卡片宽度（260–900，0 表示默认 384）、落点九宫格（默认右下角）、卡片底色与左侧竖条各一排色块，以及 `theme`（auto / light / dark）、`staySeconds`、`margin`、`rememberPosition`；最下面「在桌面上弹一张看看」让真卡出现在桌面上，改完点应用它会当场重画；弹出来的那张卡还能**直接摆位**：左键拖一整块挪位置、右键横拖改宽度，松手就写进 `blocks.<角色>.dx/dy/w`，旁边「摆回原位」一键清零（全为 0 时还是原来的自动排布） |
 | 提醒 | `enabled` 总开关、`kinds.completed` / `kinds.needs_choice` / `kinds.failed` 三类提醒 |
 | 时机 | `showWhenFocused` / `suppressWhenFullscreen` / `alertOnToolError` |
 | 合并 | `mergeWindowMs`、`maxItems`、`muteRanges`（一行一段，写错的行当场红字列出来，底下还有一行「现在是否静音」） |
@@ -345,7 +345,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version 0.3.1
 ```
 
-它按顺序做：挑 node 跑语法检查与 225 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
+它按顺序做：挑 node 跑语法检查与 230 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
 「未发布」换成本版标题 → 更新本文件里的「当前版本」与版本一览表格 → 提交 → 打附注 tag → 把 `index.json`
 的 `versions[0]` 三字段指向这个提交并再提一条
 `chore(release): 索引指向 x.y.z 最终提交 (<hash>)` → `gh release create --latest` → push `main` 与 tag。
@@ -461,7 +461,7 @@ dsh-nudge/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
 │  ├─ dsh-deps.ps1       两个脚本共用：找 DSH 自带的 node + pnpm
-│  └─ selftest.mjs       225 项自测（`--no-live` 202 项、`--update-baseline` 重写像素基线）
+│  └─ selftest.mjs       230 项自测（`--no-live` 207 项、`--update-baseline` 重写像素基线）
 ├─ tools/
 │  ├─ release.ps1        一条命令发版（自测→版本号→tag→索引指针→Release→push）
 │  └─ snapshot-baseline.json  快照像素基线，改了版式要跟着重生

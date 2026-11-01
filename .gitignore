@@ -5,4 +5,6 @@ node_modules/
 *.log
 screenshots/_probe*.png
 Thumbs.db
-.DS_Store.dsh-vision-router/
+.DS_Store
+.dsh-vision-router/
+

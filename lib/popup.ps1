@@ -39,6 +39,7 @@ param(
     [int]$SnapshotWidth = 0,
     [switch]$Preview,
     [string]$StopFile = '',
+    [string]$LayoutFile = '',
     [switch]$Trace
 )
 
@@ -682,8 +683,226 @@ function New-ItemRow {
     return $row
 }
 
+# --- Per-block layout editing -------------------------------------------------
+# A preview card doubles as a layout editor: drag a block with the left button to
+# nudge it, hold the right button and drag sideways to change its width. Every
+# change is written to a small json file that the host folds back into the plugin
+# config, so real cards inherit exactly what was set on the preview card.
+
+$script:BlockRoles = @('title', 'project', 'task', 'status', 'items', 'more', 'footer')
+
+function Get-BlockNumber ($Node, $Name) {
+    if ($null -eq $Node) { return 0.0 }
+    $prop = $Node.PSObject.Properties[$Name]
+    if ($null -eq $prop -or $null -eq $prop.Value) { return 0.0 }
+    try { return [double]$prop.Value } catch { return 0.0 }
+}
+
+function Read-BlockLayout ($Payload) {
+    $map = @{}
+    $source = $null
+    if ($null -ne $Payload) { $source = $Payload.blocks }
+    foreach ($role in $script:BlockRoles) {
+        $entry = @{ dx = 0.0; dy = 0.0; w = 0.0 }
+        if ($null -ne $source) {
+            $block = $source.PSObject.Properties[$role]
+            if ($null -ne $block -and $null -ne $block.Value) {
+                $entry.dx = Get-BlockNumber $block.Value 'dx'
+                $entry.dy = Get-BlockNumber $block.Value 'dy'
+                $entry.w = Get-BlockNumber $block.Value 'w'
+            }
+        }
+        $map[$role] = $entry
+    }
+    return $map
+}
+
+function Save-BlockLayout ($Path, $Geom) {
+    if ([string]::IsNullOrWhiteSpace($Path)) { return }
+    if ($null -eq $Geom) { return }
+    try {
+        $blocks = @{}
+        foreach ($role in $script:BlockRoles) {
+            $entry = $Geom[$role]
+            if ($null -eq $entry) { continue }
+            $blocks[$role] = @{
+                dx = [int][Math]::Round([double]$entry.dx)
+                dy = [int][Math]::Round([double]$entry.dy)
+                w  = [int][Math]::Round([double]$entry.w)
+            }
+        }
+        $json = ConvertTo-Json -InputObject @{ blocks = $blocks } -Depth 6 -Compress
+        $utf8 = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($Path, $json, $utf8)
+    } catch { }
+}
+
+function Set-BlockShift ($Node, $Dx, $Dy) {
+    if ($null -eq $Node) { return }
+    $shift = $Node.RenderTransform
+    if (-not ($shift -is [System.Windows.Media.TranslateTransform])) {
+        $shift = New-Object System.Windows.Media.TranslateTransform 0, 0
+        $Node.RenderTransform = $shift
+    }
+    $shift.X = $Dx
+    $shift.Y = $Dy
+}
+
+# True when the click landed on a block (or on text inside one). The window's own
+# press handler has to stay out of the way or the whole card would start moving.
+function Test-BlockSource ($Source) {
+    $node = $Source
+    $hops = 0
+    while ($null -ne $node -and $hops -lt 64) {
+        $hops = $hops + 1
+        $tag = ''
+        try { $tag = [string]$node.Tag } catch { $tag = '' }
+        if ($tag.StartsWith('block:')) { return $true }
+        try { $node = [System.Windows.Media.VisualTreeHelper]::GetParent($node) } catch { $node = $null }
+    }
+    return $false
+}
+
+function Initialize-BlockEdit ($Body, $Nodes, $Geom, $LayoutFile) {
+    if ($null -eq $Body -or $null -eq $Nodes -or $null -eq $Geom) { return }
+    $editable = ($Preview -and -not [string]::IsNullOrWhiteSpace($LayoutFile))
+
+    # Blocks drift outside the plain stack once they are nudged, so the body
+    # keeps room for the worst offender on each side. Without this a saved
+    # layout would be cut off by the card edge.
+    $padLeft = 0.0; $padTop = 0.0; $padRight = 0.0; $padBottom = 0.0
+    foreach ($role in $script:BlockRoles) {
+        $entry = $Geom[$role]
+        if ($null -eq $entry) { continue }
+        $dx = [double]$entry.dx
+        $dy = [double]$entry.dy
+        if ($dx -lt 0) { if (- $dx -gt $padLeft) { $padLeft = - $dx } } elseif ($dx -gt $padRight) { $padRight = $dx }
+        if ($dy -lt 0) { if (- $dy -gt $padTop) { $padTop = - $dy } } elseif ($dy -gt $padBottom) { $padBottom = $dy }
+    }
+    $Body.Margin = New-Object System.Windows.Thickness -ArgumentList @(
+        [double](16 + $padLeft), [double](14 + $padTop), [double](16 + $padRight), [double](14 + $padBottom))
+
+    $script:blockBody = $Body
+    $script:blockNodes = $Nodes
+    $script:blockGeom = $Geom
+    $script:blockFile = $LayoutFile
+    $script:blockRole = ''
+    $script:blockDrag = ''
+    $script:blockResize = ''
+
+    # A stretched block cannot move sideways (there is no slack), so pin it to the
+    # width it already had. Same pixels, same place, but now it can be dragged.
+    $script:blockApply = {
+        foreach ($role in $script:BlockRoles) {
+            $node = $script:blockNodes[$role]
+            if ($null -eq $node) { continue }
+            $entry = $script:blockGeom[$role]
+            if ($null -eq $entry) { continue }
+            try {
+                if ([double]::IsNaN([double]$node.Width) -and $node.ActualWidth -gt 0) {
+                    $node.HorizontalAlignment = 'Left'
+                    $node.Width = [double]$node.ActualWidth
+                }
+                if ([double]$entry.w -gt 0) {
+                    $node.HorizontalAlignment = 'Left'
+                    $node.Width = [double]$entry.w
+                }
+                Set-BlockShift $node ([double]$entry.dx) ([double]$entry.dy)
+            } catch { }
+        }
+    }
+
+    if (-not $editable) {
+        $Body.Add_Loaded({ & $script:blockApply })
+        return
+    }
+
+    $script:blockBegin = {
+        param($Node, $Event, $Resize)
+        $role = ''
+        try { $role = ([string]$Node.Tag).Substring(6) } catch { $role = '' }
+        if (-not $Geom.ContainsKey($role)) { return }
+        $screen = $Node.PointToScreen($Event.GetPosition($Node))
+        $script:blockRole = $role
+        $script:blockStartX = $screen.X
+        $script:blockStartY = $screen.Y
+        $script:blockBaseDx = [double]$script:blockGeom[$role].dx
+        $script:blockBaseDy = [double]$script:blockGeom[$role].dy
+        $script:blockBaseW = [double]$Node.ActualWidth
+        if ($Resize) { $script:blockResize = $role } else { $script:blockDrag = $role }
+        try { [void]$Node.CaptureMouse() } catch { }
+        $Event.Handled = $true
+    }
+
+    $script:blockFinish = {
+        param($Node, $Event)
+        try { [void]$Node.ReleaseMouseCapture() } catch { }
+        $script:blockRole = ''
+        $script:blockDrag = ''
+        $script:blockResize = ''
+        $Event.Handled = $true
+        Save-BlockLayout $script:blockFile $script:blockGeom
+    }
+
+    $script:blockMove = {
+        param($Node, $Event)
+        try {
+            $role = $script:blockRole
+            if ([string]::IsNullOrEmpty($role)) { return }
+            $entry = $script:blockGeom[$role]
+            if ($null -eq $entry) { return }
+            $screen = $Node.PointToScreen($Event.GetPosition($Node))
+            if ($script:blockResize -eq $role) {
+                $width = [double]$script:blockBaseW + ($screen.X - [double]$script:blockStartX)
+                if ($width -lt 60) { $width = 60 }
+                if ($width -gt 900) { $width = 900 }
+                $Node.HorizontalAlignment = 'Left'
+                $Node.Width = $width
+                $entry.w = [Math]::Round($width)
+                $Event.Handled = $true
+                return
+            }
+            if ($script:blockDrag -ne $role) { return }
+            $position = $Node.TranslatePoint((New-Object System.Windows.Point 0, 0), $script:blockBody)
+            $restX = $position.X - [double]$entry.dx
+            $restY = $position.Y - [double]$entry.dy
+            $minX = - $restX
+            $maxX = [double]$script:blockBody.ActualWidth - $restX - [double]$Node.ActualWidth
+            $minY = - $restY
+            $maxY = [double]$script:blockBody.ActualHeight - $restY - [double]$Node.ActualHeight
+            if ($maxX -lt $minX) { $maxX = $minX }
+            if ($maxY -lt $minY) { $maxY = $minY }
+            $dx = [double]$script:blockBaseDx + ($screen.X - [double]$script:blockStartX)
+            $dy = [double]$script:blockBaseDy + ($screen.Y - [double]$script:blockStartY)
+            if ($dx -lt $minX) { $dx = $minX }
+            if ($dx -gt $maxX) { $dx = $maxX }
+            if ($dy -lt $minY) { $dy = $minY }
+            if ($dy -gt $maxY) { $dy = $maxY }
+            $entry.dx = [Math]::Round($dx)
+            $entry.dy = [Math]::Round($dy)
+            Set-BlockShift $Node ([double]$entry.dx) ([double]$entry.dy)
+            $Event.Handled = $true
+        } catch { }
+    }
+
+    foreach ($role in $script:BlockRoles) {
+        $node = $Nodes[$role]
+        if ($null -eq $node) { continue }
+        $node.Tag = 'block:' + $role
+        $node.Cursor = [System.Windows.Input.Cursors]::SizeAll
+        $node.Add_MouseLeftButtonDown({ param($sender, $eventArgs) & $script:blockBegin $sender $eventArgs $false })
+        $node.Add_MouseRightButtonDown({ param($sender, $eventArgs) & $script:blockBegin $sender $eventArgs $true })
+        $node.Add_MouseMove({ param($sender, $eventArgs) & $script:blockMove $sender $eventArgs })
+        $node.Add_MouseLeftButtonUp({ param($sender, $eventArgs) & $script:blockFinish $sender $eventArgs })
+        $node.Add_MouseRightButtonUp({ param($sender, $eventArgs) & $script:blockFinish $sender $eventArgs })
+    }
+
+    $Body.Add_Loaded({ & $script:blockApply })
+}
+
+
 function New-Card {
-    param($Payload, [int]$Width = $script:CardWidth)
+    param($Payload, [int]$Width = $script:CardWidth, [string]$LayoutFile = '')
     $accent = [string]$Payload.accent
     if ([string]::IsNullOrWhiteSpace($accent)) { $accent = Get-KindAccent ([string]$Payload.kind) }
     if (-not [string]::IsNullOrWhiteSpace([string]$Payload.accentColor)) { $accent = [string]$Payload.accentColor }
@@ -740,6 +959,7 @@ function New-Card {
 
     $body = New-Object System.Windows.Controls.StackPanel
     $body.Margin = New-Object System.Windows.Thickness 16,14,16,14
+    $blockNodes = @{}
     [System.Windows.Controls.Grid]::SetColumn($body, 1)
 
     $header = New-Object System.Windows.Controls.Grid
@@ -792,6 +1012,7 @@ function New-Card {
         [void]$header.Children.Add($headTime)
     }
     [void]$body.Children.Add($header)
+    $blockNodes['title'] = $header
 
     # Reading order, top to bottom: WHERE (the project folder, biggest), then WHICH
     # task, then why it stopped. You triage a reminder by project first: the folder
@@ -806,6 +1027,7 @@ function New-Card {
         $contextLabel.HorizontalAlignment = 'Left'
         $contextLabel.Margin = New-Object System.Windows.Thickness 0,7,0,0
         [void]$body.Children.Add($contextLabel)
+        $blockNodes['project'] = $contextLabel
     }
 
     # One rung down: which task inside that project.
@@ -820,6 +1042,7 @@ function New-Card {
         $headlineBlock.HorizontalAlignment = 'Left'
         $headlineBlock.Margin = New-Object System.Windows.Thickness 0,2,0,0
         [void]$body.Children.Add($headlineBlock)
+        $blockNodes['task'] = $headlineBlock
     }
 
     # Third line, the smallest rung: what was reported. It is read only after the
@@ -859,6 +1082,7 @@ function New-Card {
         if ([string]::IsNullOrWhiteSpace($verdictTint)) {
             $verdictRow.Margin = New-Object System.Windows.Thickness 0,6,0,0
             [void]$body.Children.Add($verdictRow)
+            $blockNodes['status'] = $verdictRow
         } else {
             # Failure and pending decisions get a faint coloured plate so the reason
             # reads as a status, not as more body copy.
@@ -870,6 +1094,7 @@ function New-Card {
             $verdictFrame.SnapsToDevicePixels = $true
             $verdictFrame.Child = $verdictRow
             [void]$body.Children.Add($verdictFrame)
+            $blockNodes['status'] = $verdictFrame
         }
     }
 
@@ -878,20 +1103,23 @@ function New-Card {
     # row, so the shared line would only repeat it.
 
     if ($items.Count -gt 0) {
+        $itemsPanel = New-Object System.Windows.Controls.StackPanel
         $divider = New-Object System.Windows.Controls.Border
         $divider.Height = 1
         $divider.Background = New-Brush $script:RuleColor
         $divider.Margin = New-Object System.Windows.Thickness 0,11,0,1
-        [void]$body.Children.Add($divider)
+        [void]$itemsPanel.Children.Add($divider)
+        foreach ($item in $items) { [void]$itemsPanel.Children.Add((New-ItemRow $item)) }
+        [void]$body.Children.Add($itemsPanel)
+        $blockNodes['items'] = $itemsPanel
     }
-
-    foreach ($item in $items) { [void]$body.Children.Add((New-ItemRow $item)) }
 
     $more = [string]$Payload.more
     if (-not [string]::IsNullOrWhiteSpace($more)) {
         $moreText = New-Text -Text $more -Size (Get-FontSize 'more' 10.5) -Color (Get-FontColor 'more' $script:MoreText)
         $moreText.Margin = New-Object System.Windows.Thickness 0,8,0,0
         [void]$body.Children.Add($moreText)
+        $blockNodes['more'] = $moreText
     }
 
     $footerText = [string]$Payload.footer
@@ -899,6 +1127,7 @@ function New-Card {
         $footer = New-Text -Text $footerText -Size (Get-FontSize 'footer' 10) -Color (Get-FontColor 'footer' $script:FooterText)
         $footer.Margin = New-Object System.Windows.Thickness 0,12,0,0
         [void]$body.Children.Add($footer)
+        $blockNodes['footer'] = $footer
     }
 
     # The window can be dragged smaller than the content: keep every line
@@ -906,6 +1135,9 @@ function New-Card {
     # No scrollbar: the card grows with its content, so nothing is ever cut off.
     [void]$outer.Children.Add($body)
     $card.Child = $outer
+
+    $geom = Read-BlockLayout $Payload
+    Initialize-BlockEdit -Body $body -Nodes $blockNodes -Geom $geom -LayoutFile $LayoutFile
     return $card
 }
 
@@ -1282,7 +1514,7 @@ if ($null -ne $payload) {
         $wantCardWidth = [int]$payload.width
         if ($wantCardWidth -ge 260 -and $wantCardWidth -le 900) { $cardWidth = $wantCardWidth }
     }
-    $card = New-Card $payload -Width $cardWidth
+    $card = New-Card $payload -Width $cardWidth -LayoutFile $LayoutFile
     Write-Trace 'card'
     $size = Measure-Card $card
     Write-Trace 'measure'
@@ -1493,6 +1725,7 @@ if ($null -ne $payload) {
 
     $window.Add_PreviewMouseLeftButtonDown({
             param($sender, $eventArgs)
+            if ($Preview -and (Test-BlockSource $eventArgs.OriginalSource)) { return }
             try {
                 if (([DateTime]::UtcNow - $script:shownAt).TotalMilliseconds -lt $script:pressGrace) {
                     $eventArgs.Handled = $true

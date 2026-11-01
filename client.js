@@ -28,12 +28,22 @@ window.__ModuleLoader__.load({
 			["more", "展开提示", "「还有 N 条未展开」"],
 			["footer", "底部提示", "「点击卡片回到 DeepSeek Harness」"],
 		];
+		/** 卡片上能单独摆放的七块：[配置里的名字, 页面上的名字]。 */
+		const BLOCK_ROLES = [
+			["title", "标题行"],
+			["project", "项目名"],
+			["task", "任务名"],
+			["status", "状态与原因"],
+			["items", "提醒列表"],
+			["more", "展开提示"],
+			["footer", "底部提示"],
+		];
 		/** 设置页注册的 slot 类型。 */
 		const SECTION = "settings.section";
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-01.10";
+	const PANEL_REVISION = "2026-11-01.11";
 	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
 	const NAV_GROUPS = [
 		["peek", "长这样"],
@@ -483,6 +493,13 @@ const ROLE_LOOK = {
 		for (const [role] of FONT_ROLES) {
 			GROUP_DEFAULTS[0][1].push(["typography." + role + ".color", ""], ["typography." + role + ".size", 0]);
 		}
+		/** 七块文字的默认摆放：偏移 0、宽度 0（跟着卡片走）。 */
+		const BLOCK_DEFAULTS = () => BLOCK_ROLES.flatMap(([role]) => [
+			["blocks." + role + ".dx", 0],
+			["blocks." + role + ".dy", 0],
+			["blocks." + role + ".w", 0],
+		]);
+		GROUP_DEFAULTS[0][1].push(...BLOCK_DEFAULTS());
 
 		/** 静音时段的写法：小时 0–23、分钟 0–59，中间允许空格。 */
 		const RANGE_PATTERN = /^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/u;
@@ -903,6 +920,11 @@ const ROLE_LOOK = {
 					]),
 					h(
 						"p",
+						{ className: "dsh-nudge-hint", key: "draghint" },
+						"开着预览卡时，左键拖某一块换位置，按住右键横拖改它的宽度；松手就存下来，卡片上所有文字都能这么摆。",
+					),
+					h(
+						"p",
 						{ className: "dsh-nudge-intro", key: "intro" },
 						"桌面卡片的全部外观都在这一组里：点样卡某一行、或者下面那排名字，就切到那一类；再往下是宽度、落点和配色。",
 					),
@@ -1078,6 +1100,18 @@ const ROLE_LOOK = {
 								onClick: () => writeNow("debugPreview", !bool("debugPreview")),
 							},
 							bool("debugPreview") ? "收起桌面上的卡片" : "在桌面上弹一张看看",
+						),
+						h(
+							"button",
+							{
+								key: "reset-layout",
+								type: "button",
+								className: "dsh-nudge-btn",
+								title: "把七块文字都摆回原位，宽度也还原",
+								disabled,
+								onClick: () => writeMany(BLOCK_DEFAULTS()),
+							},
+							"摆回原位",
 						),
 					]),
 				]),
