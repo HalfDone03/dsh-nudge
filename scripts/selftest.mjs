@@ -273,7 +273,7 @@ if (schemasteryDir) {
 	const rebuilt = new z(schema.toJSON());
 	check("Config 是可重建的 schemastery schema", schema.type === "object" && rebuilt.type === "object", String(schema.type));
 	const volatileKeys = Object.entries(rebuilt.dict).filter(([, node]) => node.meta?.volatile).map(([key]) => key);
-	check("顶层 volatile 字段齐了（15 个，含预览与位置）", volatileKeys.length === 15 && volatileKeys.includes("debugPreview") && volatileKeys.includes("rememberPosition"), volatileKeys.join(","));
+	check("顶层 volatile 字段齐了（19 个，含预览、位置与外观四项）", volatileKeys.length === 19 && volatileKeys.includes("debugPreview") && volatileKeys.includes("rememberPosition") && volatileKeys.includes("anchor") && volatileKeys.includes("cardColor"), volatileKeys.length + "/" + volatileKeys.join(","));
 	check("kinds 子字段各自 volatile", Object.values(rebuilt.dict.kinds.dict).every((node) => node.meta?.volatile === true));
 	check("typography 每类的颜色与字号各自 volatile",
 		Object.keys(rebuilt.dict.typography.dict).length === 8
