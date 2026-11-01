@@ -2,7 +2,7 @@
 
 本插件按语义化版本记录改动。日期为提交到 `main` 的时间。
 
-## 未发布
+## 1.1.0 - 2026-11-02
 **新增**
 
 - 每一项文字的字号与颜色：配置项 `typography`（`title` / `project` / `task` / `reason` / `status` / `time` / `more` / `footer`，
