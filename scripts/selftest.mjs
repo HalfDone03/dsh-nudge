@@ -1365,6 +1365,82 @@ check(
 check("八类文字都能点着切过去", roleButtons(clientNodes).length === 8, "buttons=" + roleButtons(clientNodes).length);
 check("三个一键预设都在", presetButtons(clientNodes).length === 3, "presets=" + presetButtons(clientNodes).length);
 
+/* 位置 / 大小 / 颜色：九宫格、宽度、底色与竖条。 */
+const placePage = renderClientPage();
+const anchorButtons = placePage.nodes.filter((node) => node.type === "button" && node.props["data-anchor"] !== undefined);
+const anchorOn = (nodes) => nodes.filter((node) => node.props["data-on"] === "1").map((node) => node.props["data-anchor"]);
+check(
+	"九宫格九个落点，默认右下角",
+	anchorButtons.length === 9 && anchorOn(anchorButtons).join(",") === "bottom-right",
+	"anchors=" + anchorButtons.length + " on=" + anchorOn(anchorButtons).join("|"),
+);
+clientMutations.length = 0;
+const topLeftCell = anchorButtons.filter((node) => node.props["data-anchor"] === "top-left");
+if (topLeftCell.length === 1) { topLeftCell[0].props.onClick(); }
+await Promise.resolve();
+const anchorDraftPage = renderClientPage();
+check(
+	"点一格先落草稿",
+	clientMutations.length === 0
+		&& anchorOn(anchorDraftPage.nodes.filter((node) => node.props["data-anchor"] !== undefined)).join(",") === "top-left"
+		&& anchorDraftPage.nodes.some((node) => node.props.children === "1 项改动还没保存"),
+	"writes=" + clientMutations.length + " on=" + anchorOn(anchorDraftPage.nodes.filter((node) => node.props["data-anchor"] !== undefined)).join("|"),
+);
+clientMutations.length = 0;
+buttonByText(anchorDraftPage.nodes, "应用").props.onClick();
+await Promise.resolve();
+check(
+	"落点写成 anchor 一项",
+	JSON.stringify(clientMutations) === JSON.stringify([{ ops: [{ op: "set", path: ["anchor"], value: "top-left" }], revision: 7 }]),
+	JSON.stringify(clientMutations),
+);
+const widthRow = renderClientPage().components.find((item) => item.type.name === "NumberRow" && item.props.label === "卡片宽度");
+check(
+	"卡片宽度可以按像素改，0 表示用默认",
+	widthRow !== undefined && widthRow.props.min === 0 && widthRow.props.max === 900 && widthRow.props.value === 384,
+	"width=" + String(widthRow?.props?.value) + " max=" + String(widthRow?.props?.max),
+);
+const bundleSwatches = renderClientPage().nodes.filter((node) => node.type === "button" && node.props["data-swatch"] !== undefined);
+check(
+	"底色与竖条各一排色块",
+	bundleSwatches.length === 22
+		&& bundleSwatches.filter((node) => node.props["data-on"] === "1").length === 2
+		&& bundleSwatches.every((node) => node.props["data-swatch"] === "auto" || /^#[0-9A-F]{6}$/.test(node.props["data-swatch"])),
+	"swatches=" + bundleSwatches.length + " on=" + bundleSwatches.filter((node) => node.props["data-on"] === "1").length,
+);
+const cardColorRow = renderClientPage().components.find((item) => item.type.name === "TextRow" && item.props.label === "底色（十六进制）");
+const accentColorRow = renderClientPage().components.find((item) => item.type.name === "TextRow" && item.props.label === "竖条（十六进制）");
+check(
+	"两项颜色也能手写十六进制",
+	cardColorRow !== undefined && accentColorRow !== undefined
+		&& cardColorRow.props.hint.includes("#RRGGBB") && accentColorRow.props.hint.includes("#RRGGBB"),
+	String(cardColorRow?.props?.label) + "/" + String(accentColorRow?.props?.label),
+);
+check(
+	"样卡跟着宽度和底色一起变",
+	clientSource.includes("base.width = cardWidth + \"px\"") && clientSource.includes("base.background = text(\"cardColor\")"),
+	"client",
+);
+check(
+	"弹窗脚本认落点、宽度与两种颜色",
+	popupSource.includes("$payload.anchor")
+		&& popupSource.includes("$wantCardWidth = [int]$payload.width")
+		&& popupSource.includes("$Payload.cardColor")
+		&& popupSource.includes("$Payload.accentColor")
+		&& popupSource.includes("$script:anchorV")
+		&& popupSource.includes("$script:anchorH"),
+	"popup",
+);
+const hostText = readFileSync(join(root, "lib", "index.js"), "utf8");
+check(
+	"宿主校验落点与两种颜色",
+	hostText.includes("const ANCHORS = [")
+		&& hostText.includes("if (!ANCHORS.includes(merged.anchor))")
+		&& hostText.includes("/^#[0-9a-fA-F]{6}$/u")
+		&& hostText.includes("anchor: cfg.anchor"),
+	"host",
+);
+
 const typingPage = renderClientPage();
 const fontColorRow = typingPage.components.find((item) => item.type.name === "TextRow" && item.props.label === "颜色（项目名）");
 const fontSizeRow = typingPage.components.find((item) => item.type.name === "NumberRow" && item.props.label === "项目名");
@@ -1419,7 +1495,7 @@ const sizeRows = sizePage.components.filter((item) => item.type.name === "Number
 const roleLabels = ["标题", "项目名", "任务名", "原因", "状态词", "时间", "展开提示", "底部提示"];
 check(
 	"八类文字各有自己的字号输入框",
-	sizeRows.length === 12 && roleLabels.every((label) => sizeRows.some((item) => item.props.label === label)),
+	sizeRows.length === 13 && roleLabels.every((label) => sizeRows.some((item) => item.props.label === label)),
 	"rows=" + sizeRows.length,
 );
 const sizeNow = (label) => sizeRows.filter((item) => item.props.label === label).map((item) => item.props.value);
@@ -1472,7 +1548,7 @@ check(
 );
 check(
 	"设置页的样卡按真卡宽度画",
-	clientSource.includes("width:384px") && clientSource.includes("宽 384、内边距 14/16"),
+	clientSource.includes("width:384px") && clientSource.includes("、内边距 14/16") && clientSource.includes('"宽 " + cardWidth + "、内边距 14/16、'),
 	"client",
 );
 check(

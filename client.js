@@ -33,7 +33,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-01.6";
+	const PANEL_REVISION = "2026-11-01.7";
 	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
 	const NAV_GROUPS = [
 		["peek", "长这样"],
@@ -115,6 +115,20 @@ window.__ModuleLoader__.load({
 			".dsh-nudge-swatch:hover{border-color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-swatch[data-on=\"1\"]{border-color:var(--dsw-alias-state-business-primary);box-shadow:inset 0 0 0 1px var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-swatchdot{width:10px;height:10px;border-radius:50%;border:0.5px solid var(--dsw-alias-border-l2);flex:none}",
+	".dsh-nudge-block{display:flex;flex-direction:column;gap:2px;padding:9px 0;border-top:0.5px solid var(--dsw-alias-border-l2)}",
+	".dsh-nudge-anchors{display:grid;grid-template-columns:repeat(3,58px);gap:6px;margin-top:6px}",
+	".dsh-nudge-anchor{position:relative;height:38px;padding:0;border-radius:8px;cursor:pointer;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l2);color:var(--dsw-alias-label-primary)}",
+	".dsh-nudge-anchor:hover{border-color:var(--dsw-alias-state-business-primary)}",
+	".dsh-nudge-anchor[data-on=\"1\"]{border-color:var(--dsw-alias-state-business-primary);box-shadow:inset 0 0 0 1px var(--dsw-alias-state-business-primary)}",
+	".dsh-nudge-anchor:disabled{cursor:default;opacity:.6}",
+	".dsh-nudge-anchorbar{position:absolute;width:18px;height:11px;border-radius:3px;background:currentColor;opacity:.5}",
+	".dsh-nudge-anchor[data-on=\"1\"] .dsh-nudge-anchorbar{background:var(--dsw-alias-state-business-primary);opacity:.9}",
+	".dsh-nudge-anchor[data-anchor$=\"-left\"] .dsh-nudge-anchorbar{left:5px}",
+	".dsh-nudge-anchor[data-anchor$=\"-right\"] .dsh-nudge-anchorbar{right:5px}",
+	".dsh-nudge-anchor[data-anchor$=\"-center\"] .dsh-nudge-anchorbar,.dsh-nudge-anchor[data-anchor=\"center\"] .dsh-nudge-anchorbar{left:50%;margin-left:-9px}",
+	".dsh-nudge-anchor[data-anchor^=\"top\"] .dsh-nudge-anchorbar{top:5px}",
+	".dsh-nudge-anchor[data-anchor^=\"bottom\"] .dsh-nudge-anchorbar{bottom:5px}",
+	".dsh-nudge-anchor[data-anchor^=\"middle\"] .dsh-nudge-anchorbar,.dsh-nudge-anchor[data-anchor=\"center\"] .dsh-nudge-anchorbar{top:50%;margin-top:-5px}",
 			"@media (max-width:680px){.dsh-nudge-row{grid-template-columns:minmax(0,1fr);row-gap:6px}.dsh-nudge-areas{width:100%}}",
 		].join("");
 
@@ -159,7 +173,66 @@ window.__ModuleLoader__.load({
 		 * @param {{label: string, hint?: string, checked: boolean, disabled: boolean, onChange: (next: boolean) => void}} props 行属性
 		 * @returns {import("react").ReactElement} 行元素
 		 */
-		function SwitchRow(props) {
+		/**
+ * 九宫格里挑一个落点：选中的那一格会亮起来，格子里的小条就代表卡片。
+ * @param {object} props 组件属性
+ * @returns {import("react").ReactElement} 九宫格
+ */
+function AnchorGrid(props) {
+	return h(
+		"div",
+		{ className: "dsh-nudge-anchors", role: "group", "aria-label": "卡片落点" },
+		ANCHOR_CELLS.map((cell) =>
+			h(
+				"button",
+				{
+					key: cell.id,
+					type: "button",
+					className: "dsh-nudge-anchor",
+					"data-anchor": cell.id,
+					"data-on": props.value === cell.id ? "1" : "0",
+					disabled: props.disabled,
+					title: cell.hint,
+					onClick: () => props.onPick(cell.id),
+				},
+				[h("span", { key: "bar", className: "dsh-nudge-anchorbar" })],
+			),
+		),
+	);
+}
+
+/**
+ * 一排现成色块，第一颗是「跟随主题」。
+ * @param {object} props 组件属性
+ * @returns {import("react").ReactElement} 色块行
+ */
+function ColorSwatches(props) {
+	return h(
+		"div",
+		{ className: "dsh-nudge-swatches" },
+		COLOR_CHOICES.map(([value, name]) =>
+			h(
+				"button",
+				{
+					key: value === "" ? "auto" : value,
+					type: "button",
+					className: "dsh-nudge-swatch",
+					"data-swatch": value === "" ? "auto" : value,
+					"data-on": props.value === value ? "1" : "0",
+					disabled: props.disabled,
+					onClick: () => props.onPick(value),
+					title: value === "" ? "不指定颜色，跟着主题走" : name + " " + value,
+				},
+				[
+					h("span", { key: "dot", className: "dsh-nudge-swatchdot", style: { background: value === "" ? "transparent" : value } }),
+					name,
+				],
+			),
+		),
+	);
+}
+
+function SwitchRow(props) {
 			return h("div", { className: "dsh-nudge-row" }, [
 				h("div", { className: "dsh-nudge-text", key: "text" }, [
 					h("span", { className: "dsh-nudge-label", key: "label" }, props.label),
@@ -331,7 +404,20 @@ window.__ModuleLoader__.load({
 
 		/** 每一类文字的默认字号：和 lib/popup.ps1 里 New-Text 的兜底值一致，样卡才画得像真的。 */
 		const ROLE_SIZE = { title: 14, project: 15.5, task: 12.5, reason: 10.5, status: 10.5, time: 10, more: 10.5, footer: 10 };
-		const COLOR_CHOICES = [["", "跟随主题"], ["#FFFFFF", "白"], ["#E6E6E6", "浅灰"], ["#9AA0A6", "灰"], ["#111111", "黑"], ["#FF6B6B", "红"], ["#FFA84D", "橙"], ["#FFD43B", "黄"], ["#51CF66", "绿"], ["#4DABF7", "蓝"], ["#B197FC", "紫"]];
+		/** 九宫格：九个位置，按 CSS 网格的顺序排成三行三列。 */
+const ANCHOR_CELLS = [
+	{ id: "top-left", hint: "左上角" },
+	{ id: "top-center", hint: "上边中间" },
+	{ id: "top-right", hint: "右上角" },
+	{ id: "middle-left", hint: "左边中间" },
+	{ id: "center", hint: "正中" },
+	{ id: "middle-right", hint: "右边中间" },
+	{ id: "bottom-left", hint: "左下角" },
+	{ id: "bottom-center", hint: "下边中间" },
+	{ id: "bottom-right", hint: "右下角（默认）" },
+];
+
+const COLOR_CHOICES = [["", "跟随主题"], ["#FFFFFF", "白"], ["#E6E6E6", "浅灰"], ["#9AA0A6", "灰"], ["#111111", "黑"], ["#FF6B6B", "红"], ["#FFA84D", "橙"], ["#FFD43B", "黄"], ["#51CF66", "绿"], ["#4DABF7", "蓝"], ["#B197FC", "紫"]];
 		/** 样卡里每一行的示例文字。 */
 		/** 样卡里每一行的示例文字：照「在桌面上弹一张看看」那张卡的正文写，短词的版式是假的。 */
 		const ROLE_SAMPLE = {
@@ -442,6 +528,10 @@ const ROLE_LOOK = {
 					["theme", "auto"],
 					["staySeconds", 15],
 					["margin", 16],
+					["anchor", "bottom-right"],
+					["width", 384],
+					["cardColor", ""],
+					["accentColor", ""],
 					["rememberPosition", true],
 				],
 			],
@@ -695,6 +785,10 @@ const ROLE_LOOK = {
 				"showWhenFocused",
 				"suppressWhenFullscreen",
 				"margin",
+				"anchor",
+				"width",
+				"cardColor",
+				"accentColor",
 				"mergeWindowMs",
 				"maxItems",
 				"alertOnToolError",
@@ -760,6 +854,23 @@ const ROLE_LOOK = {
 				if (explicit > 0) { return "现在是 " + explicit + "；改成 0 就回到默认 " + ROLE_SIZE[role] + "。"; }
 				return "现在跟着默认走（" + ROLE_SIZE[role] + "）；改了就一直用新值。";
 			};
+			/**
+			 * 一个十六进制输入行：和字号组里那个同一个写法，只是绑定到别的键上。
+			 * @param {string} path 配置键
+			 * @param {string} label 显示名
+			 * @param {string} placeholder 占位示例
+			 * @returns {import("react").ReactElement} 输入行
+			 */
+			const focusedRow = (path, label, placeholder) =>
+				h(TextRow, {
+					key: path,
+					label: label + "（十六进制）",
+					hint: "写 #RRGGBB；留空跟随主题。",
+					value: text(path),
+					placeholder,
+					disabled,
+					onCommit: (next) => write(path, next),
+				});
 			/** 这一类现在用的颜色，留空表示跟随主题。 */
 			const colorNow = (role) => text("typography." + role + ".color");
 			/**
@@ -788,7 +899,17 @@ const ROLE_LOOK = {
 			/** 这组预设是不是正好等于现在的配置。 */
 			const presetOn = (preset) => preset.entries.every((entry) => sameField(value, entry.path, entry.value));
 			const themeValue = text("theme") === "" ? "auto" : text("theme");
-			const skin = Object.hasOwn(THEME_SKIN, themeValue) ? THEME_SKIN[themeValue] : null;
+			/** 卡片现在用的宽度：0 表示用脚本里的默认 384。 */
+			const cardWidth = num("width") > 0 ? num("width") : 384;
+			const skin = (() => {
+				const base = Object.hasOwn(THEME_SKIN, themeValue) ? Object.assign({}, THEME_SKIN[themeValue]) : {};
+				base.width = cardWidth + "px";
+				base.maxWidth = "100%";
+				if (text("cardColor") !== "") base.background = text("cardColor");
+				return Object.keys(base).length === 0 ? null : base;
+			})();
+			/** 竖条的颜色：留空就用 CSS 里那套按主题走的色。 */
+			const stripStyle = text("accentColor") === "" ? undefined : { background: text("accentColor") };
 			/**
 			 * 样卡里的一行：点一下就把它设为正在调的那一类。
 			 * @param {string} role 文字类别
@@ -862,7 +983,7 @@ const ROLE_LOOK = {
 						"div",
 						{ className: "dsh-nudge-card", key: "card", style: skin === null ? undefined : skin },
 						[
-							h("div", { className: "dsh-nudge-card-strip", key: "strip" }),
+							h("div", { className: "dsh-nudge-card-strip", key: "strip", style: stripStyle }),
 							h("div", { className: "dsh-nudge-card-body", key: "body" }, [
 								h("div", { className: "dsh-nudge-card-head", key: "head" }, [cardLine("title"), cardLine("time")]),
 								h("div", { className: "dsh-nudge-card-ctx", key: "ctx" }, [cardLine("project")]),
@@ -880,7 +1001,7 @@ const ROLE_LOOK = {
 					h(
 						"p",
 						{ className: "dsh-nudge-intro", key: "cardhint" },
-						"宽 384、内边距 14/16、左侧 3px 竖条、任务名行高 18、结论框圆角 6 内边距 6/9、分隔线 11/1、底部 12，都和真卡对齐；字号与颜色取的是同一份配置。改完点「应用」，桌面上的卡会当场重画。",
+						"宽 " + cardWidth + "、内边距 14/16、左侧 3px 竖条、任务名行高 18、结论框圆角 6 内边距 6/9、分隔线 11/1、底部 12，都和真卡对齐；字号与颜色取的是同一份配置。改完点「应用」，桌面上的卡会当场重画。",
 					),
 					h(
 						"div",
@@ -1058,13 +1179,47 @@ const ROLE_LOOK = {
 					h(NumberRow, {
 						key: "margin",
 						label: "距屏幕边缘",
-						hint: "可见卡片边框离工作区右下角的像素数（0–400）。",
+						hint: "可见卡片边框离所选边或角的像素数（0–400）。",
 						value: num("margin"),
 						min: 0,
 						max: 400,
 						disabled,
 						onCommit: (next) => write("margin", next),
 					}),
+					h(NumberRow, {
+						key: "width",
+						label: "卡片宽度",
+						hint: "设备无关像素（260–900）；填 0 用默认 384。拖过边的手动尺寸仍然优先。",
+						value: num("width"),
+						min: 0,
+						max: 900,
+						step: 4,
+						disabled,
+						onCommit: (next) => write("width", next),
+					}),
+					h("div", { className: "dsh-nudge-block", key: "anchor" }, [
+						h("div", { className: "dsh-nudge-text", key: "text" }, [
+							h("span", { className: "dsh-nudge-label", key: "label" }, "卡片落在哪"),
+							h("span", { className: "dsh-nudge-hint", key: "hint" }, "点一格就是那个位置；拖过卡片的话，记住的位置优先。"),
+						]),
+						h(AnchorGrid, { key: "grid", value: text("anchor") === "" ? "bottom-right" : text("anchor"), disabled, onPick: (next) => write("anchor", next) }),
+					]),
+					h("div", { className: "dsh-nudge-block", key: "cardcolor" }, [
+						h("div", { className: "dsh-nudge-text", key: "text" }, [
+							h("span", { className: "dsh-nudge-label", key: "label" }, "卡片底色"),
+							h("span", { className: "dsh-nudge-hint", key: "hint" }, "留空跟随主题；改了之后样卡和桌面上的卡一起变。"),
+						]),
+						h(ColorSwatches, { key: "sw", value: text("cardColor"), disabled, onPick: (next) => write("cardColor", next) }),
+						focusedRow("cardColor", "底色", "#1F2430"),
+					]),
+					h("div", { className: "dsh-nudge-block", key: "accentcolor" }, [
+						h("div", { className: "dsh-nudge-text", key: "text" }, [
+							h("span", { className: "dsh-nudge-label", key: "label" }, "左侧竖条"),
+							h("span", { className: "dsh-nudge-hint", key: "hint" }, "留空就按提醒类别走：完成绿、待选橙、失败红。"),
+						]),
+						h(ColorSwatches, { key: "sw", value: text("accentColor"), disabled, onPick: (next) => write("accentColor", next) }),
+						focusedRow("accentColor", "竖条", "#4DABF7"),
+					]),
 					h(SwitchRow, {
 						key: "rememberPosition",
 						label: "记住拖过的位置",

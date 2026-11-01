@@ -218,12 +218,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1
 
 | 分组 | 里面是什么 |
 | --- | --- |
-| 长这样 | 不是开关：和桌面上那张卡同一份配置、同一套尺寸（384 宽、内边距 14/16、左侧 3px 竖条、任务名行高 18、结论框圆角 6、分隔线 11/1），任务名照样会折行；点哪一行就只调那一行，样卡下面还有一排名字按钮，每格写着这类字现在多少号；最下面「在桌面上弹一张看看」是让真卡出现在桌面上，改完点应用它会当场重画 |
+| 长这样 | 不是开关：和桌面上那张卡同一份配置、同一套尺寸（宽度取配置、默认 384，内边距 14/16、左侧 3px 竖条、任务名行高 18、结论框圆角 6、分隔线 11/1），任务名照样会折行；点哪一行就只调那一行，样卡下面还有一排名字按钮，每格写着这类字现在多少号；最下面「在桌面上弹一张看看」是让真卡出现在桌面上，改完点应用它会当场重画 |
 | 一键预设 | 安静 / 标准 / 话多，一次写 9 个字段，之后还能逐项微调 |
 | 总开关 | `enabled` |
 | 提醒哪几类 | `kinds.completed` / `kinds.needs_choice` / `kinds.failed` |
 | 什么时候弹 | `showWhenFocused` / `suppressWhenFullscreen` / `alertOnToolError` |
-| 样子与位置 | `theme`（auto / light / dark）、`staySeconds`、`margin`、`rememberPosition` |
+| 样子与位置 | `theme`（auto / light / dark）、`staySeconds`、`margin`、`rememberPosition`、`width`、`anchor`、`cardColor`、`accentColor`：宽度填像素（260–900，0 表示默认 384）；落点是一张九宫格，点哪一格卡片就停在哪（默认右下角）；底色与左侧竖条各有一排色块，也能自己写 `#RRGGBB`，留空就跟随主题 |
 | 合并 | `mergeWindowMs`、`maxItems`、`muteRanges`（一行一段，写错的行当场红字列出来，底下还有一行「现在是否静音」） |
 | 字号与颜色 | 上面一排现成的色块（跟随主题 / 白 / 浅灰 / 灰 / 黑 / 红 / 橙 / 黄 / 绿 / 蓝 / 紫），点一个就套到当前这一类；下面一个框是 `typography.<角色>.color`（也能自己写 `#RRGGBB`）；字号在上面那张八行表里改，表里显示的是**现在实际用的值**，不是 0，写 0 才回到默认；换类靠点样卡上的一行、或点样卡下面那排名字；八类的字号框一直列在下面，不用先展开 |
 | 调试 | 默认收起，点一下展开：`debugPreview`（预览弹窗）、`debugPayload`、`debugFile`，以及配置的导出 / 导入框 |
@@ -349,7 +349,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version 0.3.1
 ```
 
-它按顺序做：挑 node 跑语法检查与 216 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
+它按顺序做：挑 node 跑语法检查与 225 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
 「未发布」换成本版标题 → 更新本文件里的「当前版本」与版本一览表格 → 提交 → 打附注 tag → 把 `index.json`
 的 `versions[0]` 三字段指向这个提交并再提一条
 `chore(release): 索引指向 x.y.z 最终提交 (<hash>)` → `gh release create --latest` → push `main` 与 tag。
@@ -371,7 +371,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs      # 216 项全绿；CI 上跑的是 --no-live（193 项）
+& $node .\scripts\selftest.mjs      # 225 项全绿；CI 上跑的是 --no-live（202 项）
 ```
 
 三条硬要求，少一条装上就是坏的：
@@ -406,11 +406,11 @@ registry 安装是 `saveExact`（精确版本），不改版本号重装拿不�
 . .\scripts\dsh-deps.ps1                    # 和装/卸脚本共用同一套「找 DSH 自带的 node」
 $node = (Find-DshDependencies).Node
 if (-not $node) { $node = 'node' }          # PATH 里已有 node 就直接用
-& $node .\scripts\selftest.mjs              # 216 项，含真起窗口与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 193 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 225 项，含真起窗口与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 202 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
-当前 **216 项全绿**，覆盖：配置校验与默认值、实时配置（改完点应用就生效，不用重启）、静音时段（含跨零点）、事件合并计数、
+当前 **225 项全绿**，覆盖：配置校验与默认值、实时配置（改完点应用就生效，不用重启）、静音时段（含跨零点）、事件合并计数、
 严重度排序、三类开关、真起弹窗并收到 `{"type":"shown"}` 与右下角坐标、dispose 后无孤儿进程、
 三种状态各渲染一张 436px 宽快照，外加一张 4 条合并的清单快照（`screenshots/multi.png`，尺寸、非空与像素基线比对），以及一组源码静态约束——
 脚本必须纯 ASCII、项目名前不许出现图标字形、字号阶梯必须是「项目 > 任务 > 原因」、
@@ -465,7 +465,7 @@ dsh-nudge/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
 │  ├─ dsh-deps.ps1       两个脚本共用：找 DSH 自带的 node + pnpm
-│  └─ selftest.mjs       216 项自测（`--no-live` 193 项、`--update-baseline` 重写像素基线）
+│  └─ selftest.mjs       225 项自测（`--no-live` 202 项、`--update-baseline` 重写像素基线）
 ├─ tools/
 │  ├─ release.ps1        一条命令发版（自测→版本号→tag→索引指针→Release→push）
 │  └─ snapshot-baseline.json  快照像素基线，改了版式要跟着重生

@@ -17,14 +17,14 @@ if (-not $node) { $node = 'node' }          # 便携版/旧结构也找不到时
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs              # 216 项，含真起 helper 与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 193 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs              # 225 项，含真起 helper 与双卡抢槽位
+& $node .\scripts\selftest.mjs --no-live    # 202 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (216 checks)`，退出码 0（CI 上是 `193 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 223 条）。
+- selftest 输出 `ALL PASS (225 checks)`，退出码 0（CI 上是 `202 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 232 条）。
 
 证据（实测）：
 
@@ -38,7 +38,7 @@ PASS  位置文件里的点被沿用  --  {"placement":"remembered","placedLeft"
 PASS  越界位置回落到右下角  --  {"placement":"corner","placedLeft":2146,...}
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
 PASS  基线 completed 对得上  --  436x174 色 263/263 暗 72874/72874 亮 933/933 状态 352/352
-ALL PASS (216 checks)
+ALL PASS (225 checks)
 ```
 
 其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 —— 目标不是窗口贴角，
@@ -180,10 +180,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
   窄屏（`max-width:680px`）退回单栏，`textarea` 占满宽度。
 - 分组导航吸顶：`.dsh-nudge-nav` 是 `position:sticky;top:0`，配合 `.dsh-nudge-group` 的
   `scroll-margin-top:52px`，跳过去时标题不会被导航压住。
-- 字号只在一处改：八类各一行 `NumberRow`（共 12 个 `NumberRow`，另 4 个是停留秒数 / 边距 /
+- 字号只在一处改：八类各一行 `NumberRow`（共 13 个 `NumberRow`，另 5 个是停留秒数 / 边距 / 卡片宽度 /
   合并窗口 / 折叠条数），底下不再重复一个「字号（某类）」输入框。
-- 样卡按真卡宽度画：`client.js` 的 `.dsh-nudge-card` 是 `width:384px`（真卡 `$script:CardWidth = 384`），
-  下面一行说明开头是「宽 384、内边距 14/16…」。
+- 样卡按真卡宽度画：`.dsh-nudge-card` 的 CSS 兜底是 `width:384px`（真卡 `$script:CardWidth = 384`），
+  实际宽度由内联样式 `base.width = cardWidth + "px"` 覆盖（`cardWidth` 取 `width`，0 时回落 384），
+  下面一行说明开头是「宽 <当前宽度>、内边距 14/16…」。
+- 位置能选：`look` 组里一张九宫格（`.dsh-nudge-anchors`，9 个 `button.dsh-nudge-anchor`，`data-anchor` 各一，
+  格子里的小条 `.dsh-nudge-anchorbar` 靠 `data-anchor` 的前后缀定位），点一格写 `anchor`；`popup.ps1` 据
+  `$payload.anchor` 算 `$script:anchorV` / `$script:anchorH`（裸 `center` 单独算），首次摆放与「窗口被系统挪动后
+  再钉回去」两处用同一套锚点，不会又拽回右下角。
+- 颜色能改：底色（`cardColor`）与左侧竖条（`accentColor`）各一排 11 颗 `button.dsh-nudge-swatch`
+  （属性是 `data-swatch`，与字号组那排 `data-color` 分开），点一颗进草稿，留空跟随主题；
+  `popup.ps1` 里 `$Payload.cardColor` 覆盖 `$card.Background`、`$Payload.accentColor` 覆盖 `$accent`。
+- 宽度能改：`width` 0–900，`popup.ps1` 只在 260–900 时采用，超出就用 `$script:CardWidth`；
+  拖过卡片记住的尺寸仍然优先于这个值。
 - 样卡按真卡的结构画：`.dsh-nudge-card-strip`（左侧 3px 竖条，`top/bottom:13px`，圆角 1.5）、
   `.dsh-nudge-card-verdict`（结论框，圆角 6、内边距 6/9）、`.dsh-nudge-card-rule`（分隔线，`margin:11px 0 1px`）、
   内容区 `padding:14px 16px 14px 20px`、任务名 `line-height:18px`、原因 `line-height:15px` —— 逐项对应 `popup.ps1` 的

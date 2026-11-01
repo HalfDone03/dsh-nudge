@@ -686,6 +686,7 @@ function New-Card {
     param($Payload, [int]$Width = $script:CardWidth)
     $accent = [string]$Payload.accent
     if ([string]::IsNullOrWhiteSpace($accent)) { $accent = Get-KindAccent ([string]$Payload.kind) }
+    if (-not [string]::IsNullOrWhiteSpace([string]$Payload.accentColor)) { $accent = [string]$Payload.accentColor }
     $items = @($Payload.items | Where-Object { $null -ne $_ })
 
     $card = New-Object System.Windows.Controls.Border
@@ -697,6 +698,7 @@ function New-Card {
     }
     $card.CornerRadius = New-Object System.Windows.CornerRadius $script:CardRadius
     $card.Background = New-VerticalGradient -Top $script:CardTop -Bottom $script:CardBottom
+    if (-not [string]::IsNullOrWhiteSpace([string]$Payload.cardColor)) { $card.Background = New-Brush ([string]$Payload.cardColor) }
     # A failed batch tints the whole outline red, so the card reads as "something
     # broke" from the corner of your eye before you parse a single word.
     $script:cardEdgeNow = $script:CardEdge
@@ -1275,7 +1277,12 @@ if ($null -ne $payload) {
 
     Write-Trace 'visible'
     Initialize-UiRuntime
-    $card = New-Card $payload
+    $cardWidth = [int]$script:CardWidth
+    if ($null -ne $payload.width) {
+        $wantCardWidth = [int]$payload.width
+        if ($wantCardWidth -ge 260 -and $wantCardWidth -le 900) { $cardWidth = $wantCardWidth }
+    }
+    $card = New-Card $payload -Width $cardWidth
     Write-Trace 'card'
     $size = Measure-Card $card
     Write-Trace 'measure'
@@ -1346,8 +1353,47 @@ if ($null -ne $payload) {
     # overshoot the corner by ShadowPad for the visible border to land exactly Margin
     # away from the work-area edge.
     $script:padPx = [int][Math]::Round($script:ShadowPad * $scale)
-    $window.Left = ($area[2] / $scale) - $window.Width - $Margin + $script:ShadowPad
-    $window.Top = ($area[3] / $scale) - $window.Height - $Margin + $script:ShadowPad
+    # Which of the nine spots the card lands on. A remembered position (a spot the
+    # user dragged the card to) still wins over this, further down.
+    $anchor = 'bottom-right'
+    if ($null -ne $payload.anchor) {
+        $wantAnchor = ([string]$payload.anchor).Trim().ToLowerInvariant()
+        if (-not [string]::IsNullOrWhiteSpace($wantAnchor)) { $anchor = $wantAnchor }
+    }
+    $script:anchorV = 'bottom'
+    $script:anchorH = 'right'
+    if ($anchor -eq 'center') {
+        $script:anchorV = 'middle'
+        $script:anchorH = 'center'
+    } else {
+        $anchorParts = $anchor.Split('-')
+        if ($anchorParts.Count -eq 2) {
+            if ($anchorParts[0] -eq 'top') { $script:anchorV = 'top' }
+            if ($anchorParts[0] -eq 'middle') { $script:anchorV = 'middle' }
+            if ($anchorParts[1] -eq 'left') { $script:anchorH = 'left' }
+            if ($anchorParts[1] -eq 'center') { $script:anchorH = 'center' }
+        }
+    }
+    $edgeLeft = ($area[0] / $scale) + $Margin - $script:ShadowPad
+    $edgeTop = ($area[1] / $scale) + $Margin - $script:ShadowPad
+    $edgeRight = ($area[2] / $scale) - $window.Width - $Margin + $script:ShadowPad
+    $edgeBottom = ($area[3] / $scale) - $window.Height - $Margin + $script:ShadowPad
+    $middleX = [Math]::Round((($area[0] / $scale) + ($area[2] / $scale) - $window.Width) / 2)
+    $middleY = [Math]::Round((($area[1] / $scale) + ($area[3] / $scale) - $window.Height) / 2)
+    if ($script:anchorH -eq 'left') {
+        $window.Left = $edgeLeft
+    } elseif ($script:anchorH -eq 'center') {
+        $window.Left = $middleX
+    } else {
+        $window.Left = $edgeRight
+    }
+    if ($script:anchorV -eq 'top') {
+        $window.Top = $edgeTop
+    } elseif ($script:anchorV -eq 'middle') {
+        $window.Top = $middleY
+    } else {
+        $window.Top = $edgeBottom
+    }
 
     # A size the user dragged out by hand comes back too. Preview mode exists so the
     # card can be moved and sized until it feels right; remembering only the corner
@@ -1597,8 +1643,8 @@ if ($null -ne $payload) {
             try { Update-CardScale -Window $window -Card $card } catch { }
             # Final placement in physical pixels. WPF positioned the window through
             # DIPs, which can disagree with the monitor's work area once scaling is in
-            # play; re-pin it to the chosen area's bottom-right corner and let the
-            # system do the arithmetic. On a 100% single screen this is a no-op.
+            # play; re-pin it to the spot the anchor picked and let the system do the
+            # arithmetic. On a 100% single screen this is a no-op.
             try {
                 $handle = (New-Object System.Windows.Interop.WindowInteropHelper $window).Handle
                 $rect = New-Object 'Native.Win+RECT'
@@ -1609,8 +1655,20 @@ if ($null -ne $payload) {
                         $targetLeft = [int]$script:placement.left
                         $targetTop = [int]$script:placement.top
                     } else {
-                        $targetLeft = $script:targetArea[2] - ($rect.Right - $rect.Left) - $script:marginPx + $script:padPx
-                        $targetTop = $script:targetArea[3] - ($rect.Bottom - $rect.Top) - $script:marginPx + $script:padPx
+                        $cardWidthPx = $rect.Right - $rect.Left
+                        $cardHeightPx = $rect.Bottom - $rect.Top
+                        $targetLeft = $script:targetArea[2] - $cardWidthPx - $script:marginPx + $script:padPx
+                        $targetTop = $script:targetArea[3] - $cardHeightPx - $script:marginPx + $script:padPx
+                        if ($script:anchorH -eq 'left') {
+                            $targetLeft = $script:targetArea[0] + $script:marginPx - $script:padPx
+                        } elseif ($script:anchorH -eq 'center') {
+                            $targetLeft = [int][Math]::Round((($script:targetArea[0] + $script:targetArea[2] - $cardWidthPx) / 2))
+                        }
+                        if ($script:anchorV -eq 'top') {
+                            $targetTop = $script:targetArea[1] + $script:marginPx - $script:padPx
+                        } elseif ($script:anchorV -eq 'middle') {
+                            $targetTop = [int][Math]::Round((($script:targetArea[1] + $script:targetArea[3] - $cardHeightPx) / 2))
+                        }
                     }
                     $topmost = New-Object IntPtr -ArgumentList (-1)
                     [void][Native.Win]::SetWindowPos($handle, $topmost, $targetLeft, $targetTop, 0, 0, (0x0001 -bor 0x0010 -bor 0x0040))
