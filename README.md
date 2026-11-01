@@ -454,6 +454,9 @@ dsh-nudge/
 ├─ index.json            市场索引（format 1）：版本号 + 钉死的 source.commit
 ├─ cordis.patch.yml      bundle patch：把插件插进 Host 的插件图
 ├─ CHANGELOG.md          逐版改动（版本号以这里为准）
+├─ README.md             这份说明：安装、配置、设置页、发布、自测
+├─ VERIFY.md             验收清单：照着走一遍就知道有没有退步
+├─ LICENSE               MIT
 ├─ lib/
 │  ├─ index.js           插件逻辑：事件钩子、合并去重、配置校验、helper 进程管理
 │  └─ popup.ps1          WPF 弹窗（纯 ASCII 脚本，含快照渲染模式）
@@ -461,7 +464,8 @@ dsh-nudge/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
 │  ├─ dsh-deps.ps1       两个脚本共用：找 DSH 自带的 node + pnpm
-│  └─ selftest.mjs       230 项自测（`--no-live` 207 项、`--update-baseline` 重写像素基线）
+│  ├─ selftest.mjs       230 项自测（`--no-live` 207 项、`--update-baseline` 重写像素基线）
+│  └─ demo.mjs           假会话演示：不起 DSH、不改 profile，直接弹三张示例卡
 ├─ tools/
 │  ├─ release.ps1        一条命令发版（自测→版本号→tag→索引指针→Release→push）
 │  └─ snapshot-baseline.json  快照像素基线，改了版式要跟着重生
