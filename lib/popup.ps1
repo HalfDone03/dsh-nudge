@@ -817,11 +817,38 @@ function Initialize-BlockEdit ($Body, $Nodes, $Geom, $LayoutFile) {
         return
     }
 
+    # Hold to drag: a press only records the start point and arms a 260ms timer.
+    # When the timer fires with the button still down the block is picked up, so a
+    # short click stays a plain click and nothing jumps the moment you touch it.
+    $script:blockArm = {
+        try { $script:blockHold.Stop() } catch { }
+        $role = $script:blockRole
+        if ([string]::IsNullOrEmpty($role)) { return }
+        if ($script:blockResize -eq $role) { return }
+        if ([System.Windows.Input.Mouse]::LeftButton -ne [System.Windows.Input.MouseButtonState]::Pressed) { $script:blockRole = ''; return }
+        $node = $script:blockNodes[$role]
+        if ($null -eq $node) { return }
+        # The hand usually drifts a pixel or two during the hold; re-anchor the
+        # start point to right now so the block does not jump when it is picked up.
+        $screen = $node.PointToScreen([System.Windows.Input.Mouse]::GetPosition($node))
+        $script:blockStartX = $screen.X
+        $script:blockStartY = $screen.Y
+        $script:blockBaseDx = [double]$script:blockGeom[$role].dx
+        $script:blockBaseDy = [double]$script:blockGeom[$role].dy
+        $script:blockDrag = $role
+        try { [void]$node.CaptureMouse() } catch { }
+        try { $node.Opacity = 0.86 } catch { }
+    }
+
+    $script:blockHold = New-Object System.Windows.Threading.DispatcherTimer
+    $script:blockHold.Interval = [TimeSpan]::FromMilliseconds(260)
+    $script:blockHold.Add_Tick({ & $script:blockArm })
+
     $script:blockBegin = {
         param($Node, $Event, $Resize)
         $role = ''
         try { $role = ([string]$Node.Tag).Substring(6) } catch { $role = '' }
-        if (-not $Geom.ContainsKey($role)) { return }
+        if (-not $script:blockGeom.ContainsKey($role)) { return }
         $screen = $Node.PointToScreen($Event.GetPosition($Node))
         $script:blockRole = $role
         $script:blockStartX = $screen.X
@@ -829,21 +856,30 @@ function Initialize-BlockEdit ($Body, $Nodes, $Geom, $LayoutFile) {
         $script:blockBaseDx = [double]$script:blockGeom[$role].dx
         $script:blockBaseDy = [double]$script:blockGeom[$role].dy
         $script:blockBaseW = [double]$Node.ActualWidth
-        if ($Resize) { $script:blockResize = $role } else { $script:blockDrag = $role }
-        try { [void]$Node.CaptureMouse() } catch { }
-        $Event.Handled = $true
+        if ($Resize) {
+            # Resizing needs no hold: right button grabs the block right away.
+            $script:blockResize = $role
+            try { [void]$Node.CaptureMouse() } catch { }
+            $Event.Handled = $true
+            return
+        }
+        $script:blockDrag = ''
+        try { $script:blockHold.Stop() } catch { }
+        try { $script:blockHold.Start() } catch { }
     }
-
     $script:blockFinish = {
         param($Node, $Event)
+        try { $script:blockHold.Stop() } catch { }
+        $touched = ((-not [string]::IsNullOrEmpty($script:blockDrag)) -or (-not [string]::IsNullOrEmpty($script:blockResize)))
         try { [void]$Node.ReleaseMouseCapture() } catch { }
+        try { $Node.Opacity = 1.0 } catch { }
         $script:blockRole = ''
         $script:blockDrag = ''
         $script:blockResize = ''
+        # A plain click (no hold, no resize) never touches the layout file.
+        if ($touched) { Save-BlockLayout $script:blockFile $script:blockGeom }
         $Event.Handled = $true
-        Save-BlockLayout $script:blockFile $script:blockGeom
     }
-
     $script:blockMove = {
         param($Node, $Event)
         try {

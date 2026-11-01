@@ -43,7 +43,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-01.12";
+	const PANEL_REVISION = "2026-11-02.1";
 	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
 	const NAV_GROUPS = [
 		["peek", "长这样"],
@@ -93,8 +93,7 @@ window.__ModuleLoader__.load({
 			".dsh-nudge-card-ctx{display:flex;align-items:baseline;margin-top:7px}",
 			".dsh-nudge-card-task{display:flex;align-items:baseline;margin-top:2px;line-height:18px}",
 			".dsh-nudge-card-verdict{margin-top:8px;border-radius:6px;padding:6px 9px;background:var(--dsw-alias-bg-l2);display:flex;flex-direction:column}",
-			".dsh-nudge-card-verdictrow{display:flex;align-items:baseline;gap:6px}",
-			".dsh-nudge-card-reason{display:flex;align-items:baseline;margin-top:6px;line-height:15px}",
+			".dsh-nudge-card-verdictrow{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;line-height:15px}",
 			".dsh-nudge-card-rule{height:1px;margin:11px 0 1px;background:var(--dsw-alias-border-l2)}",
 			".dsh-nudge-card-more{display:flex;align-items:baseline;margin-top:8px}",
 			".dsh-nudge-card-footer{display:flex;align-items:baseline;margin-top:12px}",
@@ -430,15 +429,17 @@ const ANCHOR_CELLS = [
 ];
 
 const COLOR_CHOICES = [["", "跟随主题"], ["#FFFFFF", "白"], ["#E6E6E6", "浅灰"], ["#9AA0A6", "灰"], ["#111111", "黑"], ["#FF6B6B", "红"], ["#FFA84D", "橙"], ["#FFD43B", "黄"], ["#51CF66", "绿"], ["#4DABF7", "蓝"], ["#B197FC", "紫"]];
-		/** 样卡里每一行的示例文字。 */
-		/** 样卡里每一行的示例文字：照「在桌面上弹一张看看」那张卡的正文写，短词的版式是假的。 */
+		/**
+		 * 样卡里每一行的示例文字：和宿主 `lib/index.js` 的 `PREVIEW_SAMPLE` 逐字一致。
+		 * 自测两边对一遍——样卡上看到的，就是点「在桌面上弹一张看看」拿到的那张卡。
+		 */
 		const ROLE_SAMPLE = {
-			title: "调试预览",
-			project: "dsh-nudge",
-			task: "拖动或缩放这张卡，关掉开关后位置会记住",
-			reason: "回合正常结束 · 用时 2 分 13 秒",
-			status: "完成",
+			title: "完成",
 			time: "12:04",
+			project: "dsh-nudge",
+			task: "把设置页的样卡改成和真卡一样",
+			status: "完成：",
+			reason: "改完自测全过，顺手把提示文案也收了一档",
 			more: "还有 2 条未展开",
 			footer: "点击卡片回到 DeepSeekRuntime",
 		};
@@ -851,6 +852,13 @@ const ROLE_LOOK = {
 			const themeValue = text("theme") === "" ? "auto" : text("theme");
 			/** 卡片现在用的宽度：0 表示用脚本里的默认 384。 */
 			const cardWidth = num("width") > 0 ? num("width") : 384;
+			/** 有没有哪一块被拖过（或者改过宽度）：都没有时「摆回原位」没什么可摆的。 */
+			const layoutMoved = BLOCK_ROLES.some(([role]) => {
+				const dx = num("blocks." + role + ".dx");
+				const dy = num("blocks." + role + ".dy");
+				const wide = num("blocks." + role + ".w");
+				return dx !== 0 || dy !== 0 || wide !== 0;
+			});
 			const skin = (() => {
 				const base = Object.hasOwn(THEME_SKIN, themeValue) ? Object.assign({}, THEME_SKIN[themeValue]) : {};
 				base.width = cardWidth + "px";
@@ -928,7 +936,7 @@ const ROLE_LOOK = {
 					h(
 						"p",
 						{ className: "dsh-nudge-hint", key: "draghint" },
-						"开着预览卡时：左键拖文字块换位置，右键横拖改宽度，松手即存。",
+						"桌面上那张预览卡里：按住某一块不放，它会变淡，这时候拖就换位置；按住右键横拖改宽度，松手即存。",
 					),
 					h(
 						"p",
@@ -945,8 +953,8 @@ const ROLE_LOOK = {
 								h("div", { className: "dsh-nudge-card-ctx", key: "ctx" }, [cardLine("project")]),
 								h("div", { className: "dsh-nudge-card-task", key: "task" }, [cardLine("task")]),
 								h("div", { className: "dsh-nudge-card-verdict", key: "verdict" }, [
-									h("div", { className: "dsh-nudge-card-verdictrow", key: "row" }, [cardLine("status")]),
-									h("div", { className: "dsh-nudge-card-reason", key: "reason" }, [cardLine("reason")]),
+									// 真卡的「完成：」和原因是同一行的左右两列，样卡也照这个排。
+									h("div", { className: "dsh-nudge-card-verdictrow", key: "row" }, [cardLine("status"), cardLine("reason")]),
 								]),
 								h("div", { className: "dsh-nudge-card-rule", key: "rule" }),
 								h("div", { className: "dsh-nudge-card-more", key: "more" }, [cardLine("more")]),
@@ -987,8 +995,8 @@ const ROLE_LOOK = {
 											key: "reset-layout",
 											type: "button",
 											className: "dsh-nudge-btn",
-											title: "把七块文字都摆回原位，宽度也还原",
-											disabled,
+											title: layoutMoved ? "把七块文字都摆回原位，宽度也还原" : "七块文字都在原位，宽度也没改过",
+											disabled: disabled || !layoutMoved,
 											onClick: () => writeMany(BLOCK_DEFAULTS()),
 										},
 										"摆回原位",
@@ -1000,7 +1008,7 @@ const ROLE_LOOK = {
 					h(
 						"p",
 						{ className: "dsh-nudge-intro", key: "cardhint" },
-						"宽 " + cardWidth + "、内边距 14/16、左侧 3px 竖条；其余按真卡画。",
+						"宽 " + cardWidth + "、内边距 14/16、左侧 3px 竖条；其余按真卡画，长按上面任一块就能拖。",
 					),
 					h(
 						"div",

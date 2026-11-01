@@ -1620,6 +1620,24 @@ check("schemastery 候选目录含命令行参数与 ~/.dsh/profiles",
 	indexSource.includes("...process.argv.slice(1)") && indexSource.includes('join(homedir(), ".dsh", "profiles")'),
 	"bases");
 
+check(
+	"样卡的示例文字和预览卡同源",
+	(() => {
+		const grab = (text, key) => {
+			const hit = new RegExp("\\n\\s*" + key + ':\\s*"([^"]*)"').exec(text);
+			return hit === null ? "" : hit[1];
+		};
+		const hostAt = indexSource.slice(indexSource.indexOf("const PREVIEW_SAMPLE"));
+		const pageAt = clientSource.slice(clientSource.indexOf("const ROLE_SAMPLE"));
+		return grab(hostAt, "title") !== ""
+			&& grab(hostAt, "title") === grab(pageAt, "task")
+			&& grab(hostAt, "project") === grab(pageAt, "project")
+			&& grab(hostAt, "detail") === grab(pageAt, "reason")
+			&& grab(pageAt, "status") === "完成：";
+	})(),
+	"PREVIEW_SAMPLE = ROLE_SAMPLE",
+);
+
 /**
  * 把子进程输出压成一行证据。
  * @param {string} text 原始输出

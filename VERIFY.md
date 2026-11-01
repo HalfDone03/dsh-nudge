@@ -24,7 +24,7 @@ if (-not $node) { $node = 'node' }          # 便携版/旧结构也找不到时
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (230 checks)`，退出码 0（CI 上是 `207 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 237 条）。
+- selftest 输出 `ALL PASS (231 checks)`，退出码 0（CI 上是 `208 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 238 条）。
 
 证据（实测）：
 
@@ -38,7 +38,7 @@ PASS  位置文件里的点被沿用  --  {"placement":"remembered","placedLeft"
 PASS  越界位置回落到右下角  --  {"placement":"corner","placedLeft":2146,...}
 PASS  dispose 后 helper 退出（无孤儿）  --  exitCode=null, signalCode=SIGTERM
 PASS  基线 completed 对得上  --  436x174 色 263/263 暗 72874/72874 亮 933/933 状态 352/352
-ALL PASS (230 checks)
+ALL PASS (231 checks)
 ```
 
 其中坐标是硬证据：屏幕 2560×1440、工作区高 1392、卡片 412 宽 —— 目标不是窗口贴角，
@@ -213,8 +213,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
   时间 `#5CFFFFFF`(0.36)、更多 `#75FFFFFF`(0.46)、底部 `#59FFFFFF`(0.35)。浓淡**不用整块 `opacity`**
   （那会把描边和底色一起压淡），改成 `color-mix(in srgb, currentColor <alpha>%, transparent)`；
   结论状态那一类的兜底色是 `#2ECC71`（真卡 `Get-KindAccent` 的完成绿），不是白色。
-- 样卡的示例文字用预览卡正文：任务名是「拖动或缩放这张卡，关掉开关后位置会记住」这样的长句，
-  在 384 宽里会折成两行 —— 短词撑不出真卡的版式，改了也看不出差异。
+- 样卡的示例文字用预览卡正文：任务名是「把设置页的样卡改成和真卡一样」，项目名、原因、时间都和宿主
+  `PREVIEW_SAMPLE` 逐字一致（自测「样卡的示例文字和预览卡同源」两边对一遍）。第一行是「完成」，
+  和真卡的首行同一个字；结论是「完成：」加原因、同一行两列，不是上下两行。
 - 真的进卡片（A/B 快照，临时目录里画，不污染 `screenshots/`）：`completed` 把标题改成 22 号纯红 →
   卡片高度 **174 → 182**，纯红像素 **0 → 861**。
 
