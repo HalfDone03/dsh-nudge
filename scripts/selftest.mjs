@@ -1665,6 +1665,17 @@ check(
 	"layout must be written leaf by leaf and awaited",
 );
 
+check(
+	"预览卡的临时文件不会在临时目录里越攒越多",
+	// 每张预览卡两个文件（停止标记 + 布局），正常关掉时删掉，宿主被强杀时靠
+	// 下次启动的 pruneTempFiles() 按 PID 存活情况收尾。
+	indexSource.includes("const leftovers = [this.previewStopFile, this.layoutFile];")
+		&& indexSource.includes("function pruneTempFiles()")
+		&& indexSource.includes("pruneTempFiles();")
+		&& indexSource.includes("process.kill(pid, 0)"),
+	"preview temp files must be removed on close and pruned on start",
+);
+
 /**
  * 把子进程输出压成一行证据。
  * @param {string} text 原始输出

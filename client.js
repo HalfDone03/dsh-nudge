@@ -61,7 +61,6 @@ window.__ModuleLoader__.load({
 	".dsh-nudge-role:disabled{opacity:.5;cursor:not-allowed}",
 	".dsh-nudge-rolename{font-size:12px;line-height:1.4}",
 	".dsh-nudge-rolesize{font-size:11px;line-height:1.4;opacity:.65;font-variant-numeric:tabular-nums}",
-	".dsh-nudge-typetable{display:flex;flex-direction:column;gap:0;margin-top:0}",
 			".dsh-nudge-settings{max-width:820px;display:flex;flex-direction:column;gap:12px;color:var(--dsw-alias-label-primary)}",
 			".dsh-nudge-settings h2{margin:0;font-size:18px;font-weight:600}",
 			".dsh-nudge-intro{margin:0;font-size:12.5px;line-height:19px;color:var(--dsw-alias-label-tertiary)}",
