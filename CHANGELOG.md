@@ -5,6 +5,7 @@
 ## 未发布
 **修复**
 
+- 预览卡拖动时直接报「需要重启 DSH」：布局写回原来把整个 `blocks` 一起写，而 `blocks` 容器本身不能标 volatile（标了 schemastery 会拒绝），设置服务因此判成「不是 volatile 字段」直接抛错；`mutate` 又是异步的，没 await 就成一条 unhandled rejection，宿主把它当成插件出错。改成逐个叶子写（`blocks.<角色>.dx/dy/w`），并且 `await` 掉、失败只记一条 debug。
 - 「在桌面上弹一张看看」弹出的那张卡和真的提醒卡长得不一样：预览卡没带项目名、也没有右上角的时间，
   正文又都是操作提示，于是少一行、多折一行，看着就不像同一张卡。现在预览卡补上 `project` 和当下的
   `at`，正文换成和设置页样卡一字不差的示例（宿主 `PREVIEW_SAMPLE` 与 `client.js` 的 `ROLE_SAMPLE`

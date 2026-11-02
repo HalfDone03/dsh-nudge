@@ -1477,7 +1477,7 @@ check(
 		&& hostText.includes("readLayout()")
 		&& hostText.includes("applyLayout")
 		&& hostText.includes("blocks: this.config.blocks")
-		&& /path: \["blocks"\]/.test(hostText),
+		&& hostText.includes('path: ["blocks", role, key]'),
 	"host",
 );
 check(
@@ -1651,6 +1651,18 @@ check(
 	clientSource.includes("const movedCount")
 		&& clientSource.includes('"摆回原位（"'),
 	"movedCount",
+);
+
+check(
+	"布局写回走 volatile 叶子路径",
+	// blocks 容器本身不能标 volatile（标了 schemastery 会拒绝），所以整块写会被设置
+	// 服务判成「不是 volatile 字段」并抛错；而 mutate 是异步的，不 await 就成一条
+	// unhandled rejection，宿主会当成插件出错、提示重启 DSH。
+	!indexSource.includes('path: ["blocks"]')
+		&& indexSource.includes('path: ["blocks", role, key]')
+		&& indexSource.includes("await settingsApi.mutate")
+		&& indexSource.includes("void applyLayout(dragged)"),
+	"layout must be written leaf by leaf and awaited",
 );
 
 /**
