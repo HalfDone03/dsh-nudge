@@ -43,7 +43,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-02.1";
+	const PANEL_REVISION = "2026-11-02.2";
 	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
 	const NAV_GROUPS = [
 		["peek", "长这样"],
@@ -852,13 +852,14 @@ const ROLE_LOOK = {
 			const themeValue = text("theme") === "" ? "auto" : text("theme");
 			/** 卡片现在用的宽度：0 表示用脚本里的默认 384。 */
 			const cardWidth = num("width") > 0 ? num("width") : 384;
-			/** 有没有哪一块被拖过（或者改过宽度）：都没有时「摆回原位」没什么可摆的。 */
-			const layoutMoved = BLOCK_ROLES.some(([role]) => {
+			/** 被拖过或改过宽度的块有几个：一个都没有时「摆回原位」没什么可摆的。 */
+			const movedCount = BLOCK_ROLES.filter(([role]) => {
 				const dx = num("blocks." + role + ".dx");
 				const dy = num("blocks." + role + ".dy");
 				const wide = num("blocks." + role + ".w");
 				return dx !== 0 || dy !== 0 || wide !== 0;
-			});
+			}).length;
+			const layoutMoved = movedCount > 0;
 			const skin = (() => {
 				const base = Object.hasOwn(THEME_SKIN, themeValue) ? Object.assign({}, THEME_SKIN[themeValue]) : {};
 				base.width = cardWidth + "px";
@@ -999,7 +1000,7 @@ const ROLE_LOOK = {
 											disabled: disabled || !layoutMoved,
 											onClick: () => writeMany(BLOCK_DEFAULTS()),
 										},
-										"摆回原位",
+										movedCount > 0 ? "摆回原位（" + movedCount + " 块）" : "摆回原位",
 									),
 								],
 							),

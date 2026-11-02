@@ -789,6 +789,7 @@ function Initialize-BlockEdit ($Body, $Nodes, $Geom, $LayoutFile) {
     $script:blockRole = ''
     $script:blockDrag = ''
     $script:blockResize = ''
+    $script:blockMoved = $false
 
     # A stretched block cannot move sideways (there is no slack), so pin it to the
     # width it already had. Same pixels, same place, but now it can be dragged.
@@ -828,6 +829,9 @@ function Initialize-BlockEdit ($Body, $Nodes, $Geom, $LayoutFile) {
         if ([System.Windows.Input.Mouse]::LeftButton -ne [System.Windows.Input.MouseButtonState]::Pressed) { $script:blockRole = ''; return }
         $node = $script:blockNodes[$role]
         if ($null -eq $node) { return }
+        # The hand often slides off the block during the hold. Picking up a block
+        # the pointer is no longer over would move something nobody is watching.
+        if (-not $node.IsMouseOver) { $script:blockRole = ''; return }
         # The hand usually drifts a pixel or two during the hold; re-anchor the
         # start point to right now so the block does not jump when it is picked up.
         $screen = $node.PointToScreen([System.Windows.Input.Mouse]::GetPosition($node))
@@ -859,23 +863,29 @@ function Initialize-BlockEdit ($Body, $Nodes, $Geom, $LayoutFile) {
         if ($Resize) {
             # Resizing needs no hold: right button grabs the block right away.
             $script:blockResize = $role
+            $script:blockDrag = ''
+            $script:blockMoved = $false
             try { [void]$Node.CaptureMouse() } catch { }
             $Event.Handled = $true
             return
         }
         $script:blockDrag = ''
+        $script:blockMoved = $false
         try { $script:blockHold.Stop() } catch { }
         try { $script:blockHold.Start() } catch { }
     }
     $script:blockFinish = {
         param($Node, $Event)
         try { $script:blockHold.Stop() } catch { }
-        $touched = ((-not [string]::IsNullOrEmpty($script:blockDrag)) -or (-not [string]::IsNullOrEmpty($script:blockResize)))
+        # Only a real pull writes the layout file: holding a block and letting go
+        # without moving it must not touch the file or the settings.
+        $touched = $script:blockMoved
         try { [void]$Node.ReleaseMouseCapture() } catch { }
         try { $Node.Opacity = 1.0 } catch { }
         $script:blockRole = ''
         $script:blockDrag = ''
         $script:blockResize = ''
+        $script:blockMoved = $false
         # A plain click (no hold, no resize) never touches the layout file.
         if ($touched) { Save-BlockLayout $script:blockFile $script:blockGeom }
         $Event.Handled = $true
@@ -894,6 +904,7 @@ function Initialize-BlockEdit ($Body, $Nodes, $Geom, $LayoutFile) {
                 if ($width -gt 900) { $width = 900 }
                 $Node.HorizontalAlignment = 'Left'
                 $Node.Width = $width
+                $script:blockMoved = $true
                 $entry.w = [Math]::Round($width)
                 $Event.Handled = $true
                 return
@@ -914,6 +925,7 @@ function Initialize-BlockEdit ($Body, $Nodes, $Geom, $LayoutFile) {
             if ($dx -gt $maxX) { $dx = $maxX }
             if ($dy -lt $minY) { $dy = $minY }
             if ($dy -gt $maxY) { $dy = $maxY }
+            $script:blockMoved = $true
             $entry.dx = [Math]::Round($dx)
             $entry.dy = [Math]::Round($dy)
             Set-BlockShift $Node ([double]$entry.dx) ([double]$entry.dy)

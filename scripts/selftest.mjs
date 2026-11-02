@@ -1638,6 +1638,21 @@ check(
 	"PREVIEW_SAMPLE = ROLE_SAMPLE",
 );
 
+check(
+	"预览卡的拖动只在真动过时保存布局",
+	popupSource.includes("$script:blockMoved")
+		&& popupSource.includes("$touched = $script:blockMoved")
+		&& popupSource.includes("$node.IsMouseOver"),
+	"hold without moving must not write the layout file",
+);
+
+check(
+	"设置页的摆回原位标出移动了几块",
+	clientSource.includes("const movedCount")
+		&& clientSource.includes('"摆回原位（"'),
+	"movedCount",
+);
+
 /**
  * 把子进程输出压成一行证据。
  * @param {string} text 原始输出
