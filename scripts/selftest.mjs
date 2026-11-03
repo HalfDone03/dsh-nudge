@@ -1728,6 +1728,25 @@ check(
 	"tall cards must stay inside the work area",
 );
 
+check(
+	"记住的弹卡尺寸不会因为超范围被丢掉",
+	// 恢复尺寸原来是一道闸门：260-960 宽之外一律不认。存的时候却允许到 1200 物理像素，
+	// 于是把卡拉宽之后，下一次它退回自然宽度，看起来就像从来没记住过。
+	popupBrand.includes("$wantWidth = [Math]::Max(260, [Math]::Min(1200, $wantWidth))")
+		&& popupBrand.includes("$wantHeight = [Math]::Max(118, [Math]::Min(1400, $wantHeight))")
+		&& popupBrand.includes("$spot.width = [Math]::Max(200, [Math]::Min(2000, $savedWidth))")
+		&& !popupBrand.includes("$wantWidth -ge 260 -and $wantWidth -le 960"),
+	"a remembered card size must be clamped, not dropped",
+);
+
+check(
+	"弹卡先定尺寸再算角落位置",
+	// 位置按窗口尺寸算出来的；尺寸后套用会让宽卡按窄卡的坐标摆放，右边顶出屏幕。
+	popupBrand.indexOf("$wantWidth = [double]$script:placement.width") >= 0
+		&& popupBrand.indexOf("$wantWidth = [double]$script:placement.width") < popupBrand.indexOf("$edgeLeft = ($area[0] / $scale)"),
+	"size must be applied before the anchor is computed",
+);
+
 /**
  * 把子进程输出压成一行证据。
  * @param {string} text 原始输出

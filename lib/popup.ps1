@@ -1382,8 +1382,11 @@ function Read-Placement {
         # card to a size they like, so keep whatever they settled on.
         $savedWidth = [int]$data.width
         $savedHeight = [int]$data.height
-        if ($savedWidth -ge 200 -and $savedWidth -le 1200) { $spot.width = $savedWidth }
-        if ($savedHeight -ge 90 -and $savedHeight -le 1400) { $spot.height = $savedHeight }
+        # A size is a preference, not a validity check: clamp a strange number instead of
+        # dropping the whole record. Dropping it meant "no placement at all", so the card
+        # came back at the natural size and looked like it had never remembered anything.
+        if ($savedWidth -gt 0) { $spot.width = [Math]::Max(200, [Math]::Min(2000, $savedWidth)) }
+        if ($savedHeight -gt 0) { $spot.height = [Math]::Max(90, [Math]::Min(2000, $savedHeight)) }
         return $spot
     } catch {
         return $null
@@ -1668,6 +1671,25 @@ if ($null -ne $payload) {
             if ($anchorParts[1] -eq 'center') { $script:anchorH = 'center' }
         }
     }
+    # A size the user dragged out by hand comes back before the anchor is computed: the
+    # corner pin has to use the size the card will actually have, or a widened card is
+    # still placed as if it were the natural width and hangs off the edge of the screen.
+    # Values are physical pixels, so divide by the scale. A number outside the sane range
+    # is clamped, never dropped: dropping it reset the card to its natural size, which is
+    # exactly what "I sized it, and the next one was different again" looked like.
+    if ($null -ne $script:placement) {
+        if ($script:placement.ContainsKey('width')) {
+            $wantWidth = [double]$script:placement.width / $scale
+            $wantWidth = [Math]::Max(260, [Math]::Min(1200, $wantWidth))
+            $window.Width = [Math]::Round($wantWidth)
+        }
+        if ($script:placement.ContainsKey('height')) {
+            $wantHeight = [double]$script:placement.height / $scale
+            $wantHeight = [Math]::Max(118, [Math]::Min(1400, $wantHeight))
+            $window.Height = [Math]::Round($wantHeight)
+        }
+    }
+
     $edgeLeft = ($area[0] / $scale) + $Margin - $script:ShadowPad
     $edgeTop = ($area[1] / $scale) + $Margin - $script:ShadowPad
     $edgeRight = ($area[2] / $scale) - $window.Width - $Margin + $script:ShadowPad
@@ -1687,20 +1709,6 @@ if ($null -ne $payload) {
         $window.Top = $middleY
     } else {
         $window.Top = $edgeBottom
-    }
-
-    # A size the user dragged out by hand comes back too. Preview mode exists so the
-    # card can be moved and sized until it feels right; remembering only the corner
-    # would throw that work away. Values are physical pixels, so divide by the scale.
-    if ($null -ne $script:placement) {
-        if ($script:placement.ContainsKey('width')) {
-            $wantWidth = [double]$script:placement.width / $scale
-            if ($wantWidth -ge 260 -and $wantWidth -le 960) { $window.Width = [Math]::Round($wantWidth) }
-        }
-        if ($script:placement.ContainsKey('height')) {
-            $wantHeight = [double]$script:placement.height / $scale
-            if ($wantHeight -ge 118 -and $wantHeight -le 1100) { $window.Height = [Math]::Round($wantHeight) }
-        }
     }
 
     # Preview cards are the exception to every timer below: they stay until the host
