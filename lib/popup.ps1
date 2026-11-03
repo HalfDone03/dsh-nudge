@@ -432,8 +432,22 @@ function Resolve-Theme {
 }
 
 function New-Brush {
-    param([string]$Hex)
-    $color = [System.Windows.Media.ColorConverter]::ConvertFromString($Hex)
+    param([string]$Hex, [string]$Fallback = '#F2FFFFFF')
+    # A malformed colour string used to kill the whole helper: the window
+    # never appeared and stdout stayed empty, so the host saw nothing.
+    $color = $null
+    try {
+        $color = [System.Windows.Media.ColorConverter]::ConvertFromString($Hex)
+    } catch {
+        $color = $null
+    }
+    if ($null -eq $color) {
+        try {
+            $color = [System.Windows.Media.ColorConverter]::ConvertFromString($Fallback)
+        } catch {
+            $color = [System.Windows.Media.Colors]::White
+        }
+    }
     $brush = New-Object System.Windows.Media.SolidColorBrush $color
     $brush.Freeze()
     return $brush
@@ -1951,6 +1965,13 @@ if ($null -ne $payload) {
                             $targetTop = [int][Math]::Round((($script:targetArea[1] + $script:targetArea[3] - $cardHeightPx) / 2))
                         }
                     }
+                    # Keep the card inside the work area. The card grows with
+                    # its content, so a tall one used to push its own header
+                    # off the top of the screen where it could not be read.
+                    if ($targetTop -lt $script:targetArea[1]) { $targetTop = $script:targetArea[1] }
+                    if ($targetTop -gt $script:targetArea[3]) { $targetTop = $script:targetArea[3] }
+                    if ($targetLeft -lt $script:targetArea[0]) { $targetLeft = $script:targetArea[0] }
+                    if ($targetLeft -gt $script:targetArea[2]) { $targetLeft = $script:targetArea[2] }
                     $topmost = New-Object IntPtr -ArgumentList (-1)
                     [void][Native.Win]::SetWindowPos($handle, $topmost, $targetLeft, $targetTop, 0, 0, (0x0001 -bor 0x0010 -bor 0x0040))
                     $script:placedLeft = [int]$targetLeft

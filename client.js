@@ -43,7 +43,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-02.2";
+	const PANEL_REVISION = "2026-11-03.1";
 	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
 	const NAV_GROUPS = [
 		["peek", "长这样"],
@@ -672,19 +672,62 @@ const ROLE_LOOK = {
 					if (sameField(value, path, draft[path])) continue;
 					ops.push({ op: "set", path: path.split("."), value: draft[path] });
 				}
+				if (ops.length === 0) {
+					setDraft({});
+					return;
+				}
+				// 先把草稿收起来，界面立刻干净；写回被拒或抛错再原样放回去，用户不用重填。
+				const backup = { ...draft };
 				setDraft({});
-				if (ops.length === 0) return;
-				Promise.resolve(form.mutate(ops, snapshot.revision))
+				let result;
+				try {
+					result = form.mutate(ops, snapshot.revision);
+				} catch (error) {
+					setSaved(false);
+					setDraft(backup);
+					retryOneByOne(`写入失败：${error instanceof Error ? error.message : String(error)}；`);
+					return;
+				}
+				// 「已保存」先亮起来：写回是本地调用，落盘由宿主负责；失败再翻回去。
+				setSaved(true);
+				// 两秒后自己熄掉。自测沙箱里没有定时器，取不到就跳过。
+				const later = globalThis.setTimeout;
+				if (typeof later === "function") later(() => setSaved(false), 2000);
+				/** 一条条试：哪几项宿主不要，就把它们点出来。 */
+				const retryOneByOne = (note) => {
+					const bad = [];
+					const step = (index) => {
+						if (index >= ops.length) return;
+						const item = ops[index];
+						Promise.resolve()
+							.then(() => form.mutate([item], snapshot.revision))
+							.then((ok) => {
+								if (ok === false) bad.push(item.path.join("."));
+							})
+							.catch(() => {
+								bad.push(item.path.join("."));
+							})
+							.then(() => {
+								if (bad.length === 0 && index + 1 >= ops.length) setFailure("");
+								step(index + 1);
+							});
+					};
+					step(0);
+					return bad;
+				};
+
+				Promise.resolve(result)
 					.then((ok) => {
 						if (ok === false) {
-							setFailure("宿主没接受这次修改，已刷新成当前值。");
-							return;
+							setSaved(false);
+							setDraft(backup);
+							retryOneByOne("宿主没接受这次修改，逐项试过了。");
 						}
-						setSaved(true);
-						setTimeout(() => setSaved(false), 2000);
 					})
 					.catch((error) => {
-						setFailure("写入失败：" + (error instanceof Error ? error.message : String(error)));
+						setSaved(false);
+						setDraft(backup);
+						retryOneByOne(`写入失败：${error instanceof Error ? error.message : String(error)}；`);
 					});
 			};
 
@@ -729,6 +772,20 @@ const ROLE_LOOK = {
 			/** 一组的「恢复默认」：把该组的默认值一次写回去。 */
 			const resetGroup = (entries) => writeMany(entries.map(([path, next]) => ({ path, value: next })));
 
+			/**
+			 * 把一层层嵌套的对象摊成 `a.b.c` 这样的路径。
+			 * 宿主只认叶子上的 volatile 字段，整块写 kinds / typography 会被直接拒绝。
+			 * @param {string} prefix 前缀路径
+			 * @param {unknown} value 值
+			 * @returns {{ path: string, value: unknown }[]} 摊平后的项
+			 */
+			const flattenConfig = (prefix, value) => {
+				if (value === null || typeof value !== "object" || Array.isArray(value)) return [{ path: prefix, value }];
+				const out = [];
+				for (const [key, child] of Object.entries(value)) out.push(...flattenConfig(prefix + "." + key, child));
+				return out;
+			};
+
 			/** 能导出、也能导入的配置项。 */
 			const CONFIG_KEYS = [
 				"enabled",
@@ -751,7 +808,7 @@ const ROLE_LOOK = {
 				"debugPayload",
 				"debugFile",
 				"rememberPosition",
-				"placementFile",
+				"blocks",
 			];
 
 			/** 把当前配置变成一段文本，塞进下面的框里。 */
@@ -783,7 +840,9 @@ const ROLE_LOOK = {
 					setFailure("没认出任何一项能导入的设置。");
 					return;
 				}
-				writeMany(keys.map((key) => ({ path: key, value: parsed[key] })));
+				const entries = [];
+				for (const key of keys) entries.push(...flattenConfig(key, parsed[key]));
+				writeMany(entries);
 			};
 
 			const roleLabel = (role) => {

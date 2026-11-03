@@ -1676,6 +1676,58 @@ check(
 	"preview temp files must be removed on close and pruned on start",
 );
 
+check(
+	"预览卡换外观时旧进程不会抹掉新卡的状态",
+	// 重画预览卡是先写停止标记再起新卡，旧进程的 exit 会晚到几百毫秒；它若照样
+	// 清 previewStopFile / layoutFile，新卡就关不掉、拖动结果也读不回来。
+	indexSource.includes("this.previewToken = 0;")
+		&& indexSource.includes("token = ++this.previewToken;")
+		&& indexSource.includes("if (preview && this.previewToken === token)"),
+	"stale preview exit must not clobber the new card",
+);
+
+const applySlice = (() => {
+	const at = clientSource.indexOf("const applyDraft");
+	return at === -1 ? "" : clientSource.slice(at, at + 3200);
+})();
+check(
+	"设置页应用失败时不清草稿",
+	// 原来先把草稿清掉再写回：被宿主拒掉或抛错时用户的改动就白填了。
+	// 现在先收起草稿（界面立刻干净），失败按 backup 原样放回去。
+	applySlice.includes("const backup = { ...draft };")
+		&& (applySlice.match(/setDraft\(backup\)/gu) ?? []).length >= 3
+		&& applySlice.includes("form.mutate(ops, snapshot.revision)")
+		&& applySlice.includes("try {"),
+	"draft must survive a failed apply",
+);
+check(
+	"设置页导入按叶子摊平",
+	// 宿主只认 volatile 叶子路径，整块写 kinds / typography / blocks 会被直接拒绝。
+	clientSource.includes("const flattenConfig = (prefix, value) =>")
+		&& clientSource.includes("entries.push(...flattenConfig(key, parsed[key]))")
+		&& clientSource.includes("const retryOneByOne = (note) =>")
+		&& !clientSource.includes('"placementFile",'),
+	"import must flatten containers into leaf paths",
+);
+
+const popupBrand = popupSource;
+check(
+	"弹卡颜色写错不会把 helper 带走",
+	// 颜色串不合法时 ColorConverter 会抛；$ErrorActionPreference='Stop' 下整个进程直接没了，
+	// 窗口没出现、stdout 一行都没有，宿主只能看到 helper 退出。
+	popupBrand.includes("function New-Brush {")
+		&& popupBrand.includes("$Fallback = '#F2FFFFFF'")
+		&& popupBrand.includes("$color = $null"),
+	"a bad colour string must not kill the helper",
+);
+
+check(
+	"卡片再高也不会把自己的顶边推出屏幕",
+	popupBrand.includes("if ($targetTop -lt $script:targetArea[1]) { $targetTop = $script:targetArea[1] }")
+		&& popupBrand.includes("if ($targetLeft -gt $script:targetArea[2]) { $targetLeft = $script:targetArea[2] }"),
+	"tall cards must stay inside the work area",
+);
+
 /**
  * 把子进程输出压成一行证据。
  * @param {string} text 原始输出
