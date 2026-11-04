@@ -1955,8 +1955,19 @@ if ($null -ne $payload) {
                     if ($null -ne $script:placement) {
                         # A spot the user picked by hand. Read-Placement already
                         # dropped anything that no longer lands on a monitor.
+                        $cardWidthPx = $rect.Right - $rect.Left
+                        $cardHeightPx = $rect.Bottom - $rect.Top
                         $targetLeft = [int]$script:placement.left
                         $targetTop = [int]$script:placement.top
+                        # Pin the edge that sits nearest the screen border. A card in
+                        # the lower half has to stretch up from its footer when a
+                        # second message arrives; pinning the top instead pushed the
+                        # footer 66px further down the screen.
+                        $savedBottom = [int]$script:placement.top + [int]$script:placement.height
+                        $areaMiddleY = [int][Math]::Round(($script:targetArea[1] + $script:targetArea[3]) / 2)
+                        if ($savedBottom -gt $areaMiddleY) {
+                            $targetTop = $savedBottom - $cardHeightPx
+                        }
                     } else {
                         $cardWidthPx = $rect.Right - $rect.Left
                         $cardHeightPx = $rect.Bottom - $rect.Top

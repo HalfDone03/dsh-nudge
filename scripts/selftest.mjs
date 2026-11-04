@@ -1747,6 +1747,16 @@ check(
 	"size must be applied before the anchor is computed",
 );
 
+check(
+	"卡片多一条消息时往上长，不往下压",
+	// 记住的位置存的是左上角，直接当目标就把顶边钉死了：多一条消息只能往下延，
+	// 落在屏幕下半区的卡片改成钉住保存时的底边，涨出来的高度全吃在顶边上。
+	popupBrand.includes("$savedBottom = [int]$script:placement.top + [int]$script:placement.height")
+		&& popupBrand.includes("$targetTop = $savedBottom - $cardHeightPx")
+		&& popupBrand.includes("if ($savedBottom -gt $areaMiddleY)"),
+	"a card in the lower half must grow upward from its bottom edge",
+);
+
 /**
  * 把子进程输出压成一行证据。
  * @param {string} text 原始输出

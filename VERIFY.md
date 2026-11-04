@@ -24,7 +24,7 @@ if (-not $node) { $node = 'node' }          # 便携版/旧结构也找不到时
 期望：
 
 - `node --check` 无输出、退出码 0。
-- selftest 输出 `ALL PASS (242 checks)`，退出码 0（CI 上是 `219 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 249 条）。
+- selftest 输出 `ALL PASS (243 checks)`，退出码 0（CI 上是 `220 checks`；指 `DSH_NUDGE_SCHEMASTERY` 给 schemastery 目录时 250 条）。
 
 证据（实测）：
 
