@@ -1387,6 +1387,15 @@ function Read-Placement {
         # came back at the natural size and looked like it had never remembered anything.
         if ($savedWidth -gt 0) { $spot.width = [Math]::Max(200, [Math]::Min(2000, $savedWidth)) }
         if ($savedHeight -gt 0) { $spot.height = [Math]::Max(90, [Math]::Min(2000, $savedHeight)) }
+        # A size is a preference only when the edge was dragged out by hand. A plain
+        # move writes the window rect as well, and taking that width as a preference
+        # pinned the card at whatever size it had when it was last moved: the width
+        # set in the settings page then never came back.
+        $spot.sized = ($data.sized -eq $true)
+        $spot.base = 0
+        if ($null -ne $data.base) {
+            try { $spot.base = [int]$data.base } catch { $spot.base = 0 }
+        }
         return $spot
     } catch {
         return $null
@@ -1394,7 +1403,7 @@ function Read-Placement {
 }
 
 function Save-Placement {
-    param([IntPtr]$Handle, [string]$Path)
+    param([IntPtr]$Handle, [string]$Path, [switch]$Sized, [int]$Base = 0)
     if ([string]::IsNullOrWhiteSpace($Path)) { return }
     if ($Handle -eq [IntPtr]::Zero) { return }
     try {
@@ -1404,7 +1413,31 @@ function Save-Placement {
         if (-not [string]::IsNullOrWhiteSpace($dir) -and -not (Test-Path -LiteralPath $dir)) {
             New-Item -ItemType Directory -Path $dir -Force | Out-Null
         }
-        $data = @{ left = $rect.Left; top = $rect.Top; width = ($rect.Right - $rect.Left); height = ($rect.Bottom - $rect.Top) }
+        # Moving the card must not turn its current size into a preference: keep
+        # whatever size record the file already carries, and only the edge-resize
+        # path is allowed to write a new one.
+        $previous = $null
+        if (-not $Sized -and (Test-Path -LiteralPath $Path)) {
+            try { $previous = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json } catch { $previous = $null }
+        }
+        $data = @{ left = $rect.Left; top = $rect.Top }
+        if ($Sized) {
+            $data.width = $rect.Right - $rect.Left
+            $data.height = $rect.Bottom - $rect.Top
+            $data.sized = $true
+            $data.base = $Base
+        } elseif ($null -ne $previous -and $null -ne $previous.width -and $null -ne $previous.height) {
+            $data.width = [int]$previous.width
+            $data.height = [int]$previous.height
+            if ($previous.sized -eq $true) { $data.sized = $true }
+            if ($null -ne $previous.base) { $data.base = [int]$previous.base }
+        } else {
+            # First record is a move: keep the running size for reference only (never
+            # as a preference -- only an edge resize sets "sized"), the height still
+            # matters as the bottom edge a taller card has to grow upwards from.
+            $data.width = $rect.Right - $rect.Left
+            $data.height = $rect.Bottom - $rect.Top
+        }
         Set-Content -LiteralPath $Path -Value (($data | ConvertTo-Json -Compress) + [Environment]::NewLine) -Encoding ASCII -NoNewline
     } catch { }
 }
@@ -1412,12 +1445,13 @@ function Save-Placement {
 # Anything the user moved by hand is worth remembering: the next card opens where
 # this one ended instead of jumping back to the corner.
 function Save-CurrentPlacement {
+    param([switch]$Sized, [int]$Base = 0)
     if (-not $script:rememberPosition) { return }
     if ([string]::IsNullOrWhiteSpace($script:placementPath)) { return }
     if (-not $script:placementDirty) { return }
     try {
         $handle = (New-Object System.Windows.Interop.WindowInteropHelper $window).Handle
-        Save-Placement -Handle $handle -Path $script:placementPath
+        Save-Placement -Handle $handle -Path $script:placementPath -Sized:$Sized -Base $Base
     } catch { }
 }
 
@@ -1579,6 +1613,9 @@ if ($null -ne $payload) {
         $wantCardWidth = [int]$payload.width
         if ($wantCardWidth -ge 260 -and $wantCardWidth -le 900) { $cardWidth = $wantCardWidth }
     }
+    # The width the settings page asks for. A remembered size is only allowed to win
+    # while this number is the same one it was saved with.
+    $script:configWidth = [int]$cardWidth
     $card = New-Card $payload -Width $cardWidth -LayoutFile $LayoutFile
     Write-Trace 'card'
     $size = Measure-Card $card
@@ -1677,7 +1714,14 @@ if ($null -ne $payload) {
     # Values are physical pixels, so divide by the scale. A number outside the sane range
     # is clamped, never dropped: dropping it reset the card to its natural size, which is
     # exactly what "I sized it, and the next one was different again" looked like.
+    # A remembered size wins only when it was dragged out by hand and the configured
+    # width has not changed since. Otherwise the card kept coming back at an old
+    # width the settings page no longer showed, which read as two different cards.
+    $keepSize = $false
     if ($null -ne $script:placement) {
+        $keepSize = ($script:placement.sized -eq $true) -and ([int]$script:placement.base -eq [int]$script:configWidth)
+    }
+    if ($keepSize) {
         if ($script:placement.ContainsKey('width')) {
             $wantWidth = [double]$script:placement.width / $scale
             $wantWidth = [Math]::Max(260, [Math]::Min(1200, $wantWidth))
@@ -1820,7 +1864,7 @@ if ($null -ne $payload) {
                 [void][Native.Win]::SendMessage($handle, 0x00A1, [IntPtr]$code, [IntPtr]::Zero)
                 $script:resizing = $false
                 $script:placementDirty = $true
-                Save-CurrentPlacement
+                Save-CurrentPlacement -Sized -Base $script:configWidth
                 $script:pressActive = $false
                 try {
                     if ($script:autoClose) { $timer.Stop(); $timer.Start() }

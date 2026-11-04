@@ -1757,6 +1757,15 @@ check(
 	"a card in the lower half must grow upward from its bottom edge",
 );
 
+// 只拖动不该把当时的宽度钉成偏好：宽度仍按设置里的来。
+check(
+	"拖动只记位置，宽度仍按设置里的来",
+	popupBrand.includes("$spot.sized = ($data.sized -eq $true)")
+		&& popupBrand.includes("Save-CurrentPlacement -Sized -Base $script:configWidth")
+		&& popupBrand.includes("if (-not $Sized -and (Test-Path -LiteralPath $Path))")
+		&& popupBrand.includes("$keepSize = ($script:placement.sized -eq $true) -and ([int]$script:placement.base -eq [int]$script:configWidth)"),
+);
+
 /**
  * 把子进程输出压成一行证据。
  * @param {string} text 原始输出

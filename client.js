@@ -43,7 +43,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-03.1";
+	const PANEL_REVISION = "2026-11-04.1";
 	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
 	const NAV_GROUPS = [
 		["peek", "长这样"],
@@ -1025,7 +1025,7 @@ const ROLE_LOOK = {
 								[
 									h(
 										"label",
-										{ className: "dsh-nudge-check", key: "remember", title: "拖过之后下次还在那儿。" },
+										{ className: "dsh-nudge-check", key: "remember", title: "拖过之后下次还在那儿；拖边改的尺寸也一起记住。" },
 										[
 											h("input", {
 												type: "checkbox",
