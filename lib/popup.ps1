@@ -1396,6 +1396,13 @@ function Read-Placement {
         if ($null -ne $data.base) {
             try { $spot.base = [int]$data.base } catch { $spot.base = 0 }
         }
+        # A remembered spot belongs to one corner. Without that link, changing the
+        # anchor in the settings page left the card sitting on the old dragged spot
+        # forever, which read as "I picked bottom-right, it opened somewhere else".
+        $spot.anchor = ''
+        if ($null -ne $data.anchor) {
+            try { $spot.anchor = ([string]$data.anchor).Trim().ToLowerInvariant() } catch { $spot.anchor = '' }
+        }
         return $spot
     } catch {
         return $null
@@ -1421,6 +1428,7 @@ function Save-Placement {
             try { $previous = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json } catch { $previous = $null }
         }
         $data = @{ left = $rect.Left; top = $rect.Top }
+        $data.anchor = $script:configAnchor
         if ($Sized) {
             $data.width = $rect.Right - $rect.Left
             $data.height = $rect.Bottom - $rect.Top
@@ -1601,6 +1609,8 @@ if ($null -ne $payload) {
     $script:placementDirty = $false
     $script:placementPath = ''
     $script:placement = $null
+$script:placementUsed = $false
+$script:configAnchor = 'bottom-right'
     if ($script:rememberPosition) {
         $script:placementPath = Get-PlacementPath -Override ([string]$payload.placementFile)
         $script:placement = Read-Placement -Path $script:placementPath
@@ -1708,6 +1718,7 @@ if ($null -ne $payload) {
             if ($anchorParts[1] -eq 'center') { $script:anchorH = 'center' }
         }
     }
+    $script:configAnchor = $anchor
     # A size the user dragged out by hand comes back before the anchor is computed: the
     # corner pin has to use the size the card will actually have, or a widened card is
     # still placed as if it were the natural width and hangs off the edge of the screen.
@@ -1996,7 +2007,16 @@ if ($null -ne $payload) {
                 $handle = (New-Object System.Windows.Interop.WindowInteropHelper $window).Handle
                 $rect = New-Object 'Native.Win+RECT'
                 if ([Native.Win]::GetWindowRect($handle, [ref]$rect)) {
+                    $useSavedSpot = $false
                     if ($null -ne $script:placement) {
+                        $savedAnchor = ''
+                        if ($script:placement.ContainsKey('anchor')) { $savedAnchor = [string]$script:placement.anchor }
+                        # The spot is only valid for the corner it was dragged to: once the
+                        # anchor changes, the card has to go back to that corner instead of
+                        # staying pinned where the old anchor had been dragged.
+                        $useSavedSpot = [string]::IsNullOrWhiteSpace($savedAnchor) -or ($savedAnchor -eq $script:configAnchor)
+                    }
+                    if ($useSavedSpot) {
                         # A spot the user picked by hand. Read-Placement already
                         # dropped anything that no longer lands on a monitor.
                         $cardWidthPx = $rect.Right - $rect.Left
@@ -2037,6 +2057,7 @@ if ($null -ne $payload) {
                     if ($targetLeft -gt $script:targetArea[2]) { $targetLeft = $script:targetArea[2] }
                     $topmost = New-Object IntPtr -ArgumentList (-1)
                     [void][Native.Win]::SetWindowPos($handle, $topmost, $targetLeft, $targetTop, 0, 0, (0x0001 -bor 0x0010 -bor 0x0040))
+                    $script:placementUsed = $useSavedSpot
                     $script:placedLeft = [int]$targetLeft
                     $script:placedTop = [int]$targetTop
                 }
@@ -2056,7 +2077,7 @@ if ($null -ne $payload) {
             # the status line can prove which process the card would focus.
             [void](Resolve-OwnerWindow)
             Write-Trace 'shown'
-            Write-Status @{ type = 'shown'; count = [int]$payload.count; theme = $script:ThemeName; left = [int]$window.Left; top = [int]$window.Top; placedLeft = [int]$script:placedLeft; placedTop = [int]$script:placedTop; placement = $(if ($null -ne $script:placement) { 'remembered' } else { 'corner' }); width = [int]$window.Width; height = [int]$window.Height; dpi = $script:DpiMode; scale = [double]$script:scale; marginPx = [int]$script:marginPx; padPx = [int]$script:padPx; owner = [int]$script:ownerPid; ownerSrc = $script:ownerSource; slot = $(if ($script:slotState.took) { 'replaced' } elseif ($script:slotState.owned) { 'owner' } else { 'parallel' }) }
+            Write-Status @{ type = 'shown'; count = [int]$payload.count; theme = $script:ThemeName; left = [int]$window.Left; top = [int]$window.Top; placedLeft = [int]$script:placedLeft; placedTop = [int]$script:placedTop; placement = $(if ($script:placementUsed) { 'remembered' } else { 'corner' }); width = [int]$window.Width; height = [int]$window.Height; dpi = $script:DpiMode; scale = [double]$script:scale; marginPx = [int]$script:marginPx; padPx = [int]$script:padPx; owner = [int]$script:ownerPid; ownerSrc = $script:ownerSource; slot = $(if ($script:slotState.took) { 'replaced' } elseif ($script:slotState.owned) { 'owner' } else { 'parallel' }) }
         })
     # By the time Closed runs the window handle is gone, so GetWindowRect cannot read
     # the final geometry: save once here, where the handle still works.

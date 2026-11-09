@@ -1799,6 +1799,16 @@ check(
 	"a card in the lower half must grow upward from its bottom edge",
 );
 
+// 记住的位置只对当时那个角落有效：换了落点要真的回到新角落。
+check(
+	"落点变了旧记忆就失效",
+	popupBrand.includes("$script:configAnchor = $anchor")
+		&& popupBrand.includes("$data.anchor = $script:configAnchor")
+		&& popupBrand.includes("$spot.anchor = ([string]$data.anchor).Trim().ToLowerInvariant()")
+		&& popupBrand.includes("$useSavedSpot = [string]::IsNullOrWhiteSpace($savedAnchor) -or ($savedAnchor -eq $script:configAnchor)"),
+	"a remembered spot must belong to the corner it was dragged to",
+);
+
 // 只拖动不该把当时的宽度钉成偏好：宽度仍按设置里的来。
 check(
 	"拖动只记位置，宽度仍按设置里的来",
