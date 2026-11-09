@@ -43,7 +43,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-04.1";
+	const PANEL_REVISION = "2026-11-09.1";
 	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
 	const NAV_GROUPS = [
 		["peek", "长这样"],
@@ -485,6 +485,7 @@ const ROLE_LOOK = {
 				["showWhenFocused", true],
 				["suppressWhenFullscreen", true],
 				["alertOnToolError", true],
+				["quietToolErrors", true],
 			]],
 			["merge", [
 				["mergeWindowMs", 1200],
@@ -1262,9 +1263,17 @@ const ROLE_LOOK = {
 						onChange: (next) => write("suppressWhenFullscreen", next),
 					}),
 					h(SwitchRow, {
+						key: "quietToolErrors",
+						label: "回合中途报错不弹",
+						hint: "AI 还在跑的时候工具出错先不打扰，等这一回合真的出错结束再提醒。",
+						checked: bool("quietToolErrors"),
+						disabled,
+						onChange: (next) => write("quietToolErrors", next),
+					}),
+					h(SwitchRow, {
 						key: "alertOnToolError",
-						label: "工具报错也提醒",
-						hint: "单个工具调用出错时会单独弹一条失败提醒。",
+						label: "工具报错也单独提醒",
+						hint: "单个工具调用失败时立刻弹一条（关掉就只在回合结束时提醒）。",
 						checked: bool("alertOnToolError"),
 						disabled,
 						onChange: (next) => write("alertOnToolError", next),

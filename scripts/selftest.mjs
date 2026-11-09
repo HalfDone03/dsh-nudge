@@ -203,6 +203,8 @@ checkThrows("muteRanges 小时越界抛错", () => normalizeConfig({ muteRanges:
 checkThrows("muteRanges 分钟越界抛错", () => normalizeConfig({ muteRanges: ["22:60-08:00"] }));
 checkThrows("kinds 非对象抛错", () => normalizeConfig({ kinds: ["completed"] }));
 check("默认全屏时不打扰", defaults.suppressWhenFullscreen === true, String(defaults.suppressWhenFullscreen));
+check("默认回合中途报错不打扰", defaults.quietToolErrors === true && DEFAULTS.quietToolErrors === true, String(defaults.quietToolErrors));
+checkThrows("quietToolErrors 非布尔抛错", () => normalizeConfig({ quietToolErrors: "yes" }));
 checkThrows("suppressWhenFullscreen 非布尔抛错", () => normalizeConfig({ suppressWhenFullscreen: "yes" }));
 check("默认配色跟随系统", defaults.theme === "auto", String(defaults.theme));
 check("配色可固定为浅色", normalizeConfig({ theme: "light" }).theme === "light");
@@ -273,7 +275,7 @@ if (schemasteryDir) {
 	const rebuilt = new z(schema.toJSON());
 	check("Config 是可重建的 schemastery schema", schema.type === "object" && rebuilt.type === "object", String(schema.type));
 	const volatileKeys = Object.entries(rebuilt.dict).filter(([, node]) => node.meta?.volatile).map(([key]) => key);
-	check("顶层 volatile 字段齐了（19 个，含预览、位置与外观四项）", volatileKeys.length === 19 && volatileKeys.includes("debugPreview") && volatileKeys.includes("rememberPosition") && volatileKeys.includes("anchor") && volatileKeys.includes("cardColor"), volatileKeys.length + "/" + volatileKeys.join(","));
+	check("顶层 volatile 字段齐了（20 个，含预览、位置与外观四项）", volatileKeys.length === 20 && volatileKeys.includes("debugPreview") && volatileKeys.includes("rememberPosition") && volatileKeys.includes("anchor") && volatileKeys.includes("cardColor"), volatileKeys.length + "/" + volatileKeys.join(","));
 	check("kinds 子字段各自 volatile", Object.values(rebuilt.dict.kinds.dict).every((node) => node.meta?.volatile === true));
 	check("typography 每类的颜色与字号各自 volatile",
 		Object.keys(rebuilt.dict.typography.dict).length === 8
@@ -446,9 +448,40 @@ emitSession("tool/result", {
 		content: [{ type: "text", text: "Error: permission denied" }]
 	}
 });
-batch = drain();
-check("tool/result 的 message.isError 触发失败提醒", batch[0]?.kind === "failed", JSON.stringify(batch[0]));
-check("工具失败明细取结果正文", batch[0]?.detail === "工具调用失败：permission denied", JSON.stringify(batch[0]?.detail));
+check("回合中途的工具报错默认不弹", drain().length === 0);
+
+// 关掉「回合中途报错不弹」之后回到旧行为：单个工具失败立刻提醒。
+const loudShown = [];
+const loudRunner = {
+	show(items) {
+		loudShown.push(structuredClone(items));
+		return true;
+	},
+	dispose() {}
+};
+const { ctx: loudCtx, handlers: loudHandlers } = makePluginContext({ questions });
+const loudPlugin = createPlugin(
+	loudCtx,
+	{ ...defaults, mergeWindowMs: 0, staySeconds: 5, quietToolErrors: false },
+	{ runner: loudRunner }
+);
+for (const handler of loudHandlers.get("session/event") ?? []) {
+	handler(wiredSession, {
+		type: "tool/result",
+		data: {
+			message: {
+				role: "tool",
+				source: { kind: "tool", callId: "call-loud" },
+				isError: true,
+				content: [{ type: "text", text: "Error: permission denied" }]
+			}
+		}
+	});
+}
+loudPlugin.center.flush();
+const loudBatch = loudShown.at(-1) ?? [];
+check("关掉静默后工具失败立刻提醒", loudBatch[0]?.kind === "failed", JSON.stringify(loudBatch[0]));
+check("工具失败明细取结果正文", loudBatch[0]?.detail === "工具调用失败：permission denied", JSON.stringify(loudBatch[0]?.detail));
 
 emitSession("tool/result", {
 	message: {
@@ -944,6 +977,10 @@ check("弹窗脚本按 payload.typography 覆盖每一类文字",
 	&& popupSource.includes("function Get-FontColor")
 	&& popupSource.includes("$script:Fonts = Resolve-Typography $payload.typography"));
 check("宿主把字体和配色下发，并在预览卡外观变了就重画",
+	indexSource.includes("if (failed && config.quietToolErrors === true) return;")
+		&& indexSource.includes("quietToolErrors: bool(DEFAULTS.quietToolErrors)"),
+	"quietToolErrors");
+check("工具报错在回合中途被拦住",
 	indexSource.includes("typography: this.config.typography") && indexSource.includes("restartPreview()")
 		&& indexSource.includes("function styleKeyOf(cfg)") && indexSource.includes("previewStyleKey !== styleKey"));
 check("弹窗脚本会读 rememberPosition / placementFile 并维护位置文件",
@@ -1236,7 +1273,7 @@ const clientControls = clientNodes.filter((node) => ["input", "select", "textare
 check("设置页有三类提醒与主要分组", ["任务完成", "需要你选择", "执行失败", "配色", "停留秒数", "静音时段"].every((label) => clientTexts.includes(label)));
 check("设置页控件数量", clientControls.length >= 14, "controls=" + clientControls.length);
 	const clientCheckboxes = clientControls.filter((node) => node.props.type === "checkbox");
-	check("设置页开关是 checkbox", clientCheckboxes.length === 8, "boxes=" + clientCheckboxes.length);
+	check("设置页开关是 checkbox", clientCheckboxes.length === 9, "boxes=" + clientCheckboxes.length);
 	const clientDebugTitle = clientNodes.find((node) => node.type === "button" && node.props.className === "dsh-nudge-group-toggle");
 	check(
 		"调试那组默认收着，只留一个展开按钮",
@@ -1273,7 +1310,12 @@ check("设置页控件数量", clientControls.length >= 14, "controls=" + client
 	);
 	check(
 		"设置页的改动先进草稿、点应用才写回",
-		clientSource.includes("dsh-nudge-applybar")
+		clientSource.includes('key: "quietToolErrors"')
+		&& clientSource.includes("回合中途报错不弹")
+		&& clientSource.includes("工具报错也单独提醒"),
+	"quietToolErrors row");
+check("设置页有回合中途报错开关",
+	clientSource.includes("dsh-nudge-applybar")
 			&& clientSource.includes("const applyDraft =")
 			&& clientSource.includes("const discardDraft =")
 			&& clientSource.includes("sameField("),
