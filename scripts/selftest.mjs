@@ -1809,6 +1809,28 @@ check(
 	"a remembered spot must belong to the corner it was dragged to",
 );
 
+// 卡片内容逐项勾选：宿主下发 visible，popup 按它跳过对应块。
+check(
+	"卡片内容可以逐项关掉",
+	Object.keys(defaults.visible).length === 7
+		&& defaults.visible.title === true
+		&& defaults.visible.footer === true
+		&& indexSource.includes("visible: { ...DEFAULTS.visible, ...(this.config.visible ?? {}) }")
+		&& indexSource.includes("visible: z")
+		&& popupBrand.includes("function Test-PartVisible {")
+		&& popupBrand.includes("if (Test-PartVisible $Payload 'title') {")
+		&& popupBrand.includes("if (-not (Test-PartVisible $Payload 'status')) {")
+		&& popupBrand.includes("if ($items.Count -gt 0 -and (Test-PartVisible $Payload 'items')) {"),
+);
+check(
+	"设置页有显示内容的一排开关",
+	clientSource.includes("const CARD_PARTS = [")
+		&& clientSource.includes('"data-part": part,')
+		&& clientSource.includes('const partOn = (part) => raw("visible." + part) !== false;')
+		&& clientSource.includes('GROUP_DEFAULTS[0][1].push(["visible." + part, true]);')
+		&& clientSource.includes('partOn("footer") ? h('),
+);
+
 // 只拖动不该把当时的宽度钉成偏好：宽度仍按设置里的来。
 check(
 	"拖动只记位置，宽度仍按设置里的来",

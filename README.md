@@ -346,7 +346,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version 0.3.1
 ```
 
-它按顺序做：挑 node 跑语法检查与 250 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
+它按顺序做：挑 node 跑语法检查与 252 项自测 → 改 `package.json` 版本 → 把 `CHANGELOG.md` 顶部的
 「未发布」换成本版标题 → 更新本文件里的「当前版本」与版本一览表格 → 提交 → 打附注 tag → 把 `index.json`
 的 `versions[0]` 三字段指向这个提交并再提一条
 `chore(release): 索引指向 x.y.z 最终提交 (<hash>)` → `gh release create --latest` → push `main` 与 tag。
@@ -368,7 +368,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release.ps1 -Version
 
 ```powershell
 & $node --check .\lib\index.js
-& $node .\scripts\selftest.mjs      # 250 项全绿；CI 上跑的是 --no-live（227 项）
+& $node .\scripts\selftest.mjs      # 252 项全绿；CI 上跑的是 --no-live（229 项）
 ```
 
 三条硬要求，少一条装上就是坏的：
@@ -404,7 +404,7 @@ registry 安装是 `saveExact`（精确版本），不改版本号重装拿不�
 $node = (Find-DshDependencies).Node
 if (-not $node) { $node = 'node' }          # PATH 里已有 node 就直接用
 & $node .\scripts\selftest.mjs              # 225 项，含真起窗口与双卡抢槽位
-& $node .\scripts\selftest.mjs --no-live    # 227 项，跳过需要交互桌面的两段（CI 跑这个）
+& $node .\scripts\selftest.mjs --no-live    # 229 项，跳过需要交互桌面的两段（CI 跑这个）
 ```
 
 当前 **225 项全绿**，覆盖：配置校验与默认值、实时配置（改完点应用就生效，不用重启）、静音时段（含跨零点）、事件合并计数、
@@ -465,7 +465,7 @@ dsh-nudge/
 │  ├─ install.ps1        注册进 profile（幂等、备份、失败回滚）
 │  ├─ uninstall.ps1      从 profile 摘除
 │  ├─ dsh-deps.ps1       两个脚本共用：找 DSH 自带的 node + pnpm
-│  ├─ selftest.mjs       250 项自测（`--no-live` 227 项、`--update-baseline` 重写像素基线）
+│  ├─ selftest.mjs       252 项自测（`--no-live` 229 项、`--update-baseline` 重写像素基线）
 │  └─ demo.mjs           假会话演示：不起 DSH、不改 profile，直接弹三张示例卡
 ├─ tools/
 │  ├─ release.ps1        一条命令发版（自测→版本号→tag→索引指针→Release→push）

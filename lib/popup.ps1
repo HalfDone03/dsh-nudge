@@ -963,6 +963,17 @@ function Initialize-BlockEdit ($Body, $Nodes, $Geom, $LayoutFile) {
 }
 
 
+# Which parts of the card the user asked to see. Missing flag means visible, so a
+# payload from an older host keeps drawing the whole card.
+function Test-PartVisible {
+    param($Payload, [string]$Name)
+    if ($null -eq $Payload) { return $true }
+    if ($null -eq $Payload.visible) { return $true }
+    $flag = $Payload.visible.$Name
+    if ($null -eq $flag) { return $true }
+    return [bool]$flag
+}
+
 function New-Card {
     param($Payload, [int]$Width = $script:CardWidth, [string]$LayoutFile = '')
     $accent = [string]$Payload.accent
@@ -1073,8 +1084,10 @@ function New-Card {
         [System.Windows.Controls.Grid]::SetColumn($headTime, 1)
         [void]$header.Children.Add($headTime)
     }
-    [void]$body.Children.Add($header)
-    $blockNodes['title'] = $header
+    if (Test-PartVisible $Payload 'title') {
+        [void]$body.Children.Add($header)
+        $blockNodes['title'] = $header
+    }
 
     # Reading order, top to bottom: WHERE (the project folder, biggest), then WHICH
     # task, then why it stopped. You triage a reminder by project first: the folder
@@ -1088,8 +1101,10 @@ function New-Card {
         $contextLabel.TextWrapping = 'NoWrap'
         $contextLabel.HorizontalAlignment = 'Left'
         $contextLabel.Margin = New-Object System.Windows.Thickness 0,7,0,0
-        [void]$body.Children.Add($contextLabel)
-        $blockNodes['project'] = $contextLabel
+        if (Test-PartVisible $Payload 'project') {
+            [void]$body.Children.Add($contextLabel)
+            $blockNodes['project'] = $contextLabel
+        }
     }
 
     # One rung down: which task inside that project.
@@ -1103,8 +1118,10 @@ function New-Card {
         $headlineBlock.MaxHeight = 54
         $headlineBlock.HorizontalAlignment = 'Left'
         $headlineBlock.Margin = New-Object System.Windows.Thickness 0,2,0,0
-        [void]$body.Children.Add($headlineBlock)
-        $blockNodes['task'] = $headlineBlock
+        if (Test-PartVisible $Payload 'task') {
+            [void]$body.Children.Add($headlineBlock)
+            $blockNodes['task'] = $headlineBlock
+        }
     }
 
     # Third line, the smallest rung: what was reported. It is read only after the
@@ -1141,7 +1158,9 @@ function New-Card {
             [void]$verdictRow.Children.Add($verdictBody)
         }
         $verdictTint = [string]$Payload.headlineTint
-        if ([string]::IsNullOrWhiteSpace($verdictTint)) {
+        if (-not (Test-PartVisible $Payload 'status')) {
+            # skipped: the user turned this part off
+        } elseif ([string]::IsNullOrWhiteSpace($verdictTint)) {
             $verdictRow.Margin = New-Object System.Windows.Thickness 0,6,0,0
             [void]$body.Children.Add($verdictRow)
             $blockNodes['status'] = $verdictRow
@@ -1164,7 +1183,7 @@ function New-Card {
     # showed the project as its headline line above; a batch lists one project per
     # row, so the shared line would only repeat it.
 
-    if ($items.Count -gt 0) {
+    if ($items.Count -gt 0 -and (Test-PartVisible $Payload 'items')) {
         $itemsPanel = New-Object System.Windows.Controls.StackPanel
         $divider = New-Object System.Windows.Controls.Border
         $divider.Height = 1
@@ -1177,7 +1196,7 @@ function New-Card {
     }
 
     $more = [string]$Payload.more
-    if (-not [string]::IsNullOrWhiteSpace($more)) {
+    if (-not [string]::IsNullOrWhiteSpace($more) -and (Test-PartVisible $Payload 'more')) {
         $moreText = New-Text -Text $more -Size (Get-FontSize 'more' 10.5) -Color (Get-FontColor 'more' $script:MoreText)
         $moreText.Margin = New-Object System.Windows.Thickness 0,8,0,0
         [void]$body.Children.Add($moreText)
@@ -1185,7 +1204,7 @@ function New-Card {
     }
 
     $footerText = [string]$Payload.footer
-    if (-not [string]::IsNullOrWhiteSpace($footerText)) {
+    if (-not [string]::IsNullOrWhiteSpace($footerText) -and (Test-PartVisible $Payload 'footer')) {
         $footer = New-Text -Text $footerText -Size (Get-FontSize 'footer' 10) -Color (Get-FontColor 'footer' $script:FooterText)
         $footer.Margin = New-Object System.Windows.Thickness 0,12,0,0
         [void]$body.Children.Add($footer)

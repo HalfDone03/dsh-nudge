@@ -43,7 +43,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-09.2";
+	const PANEL_REVISION = "2026-11-09.3";
 	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
 	const NAV_GROUPS = [
 		["peek", "长这样"],
@@ -61,6 +61,8 @@ window.__ModuleLoader__.load({
 	".dsh-nudge-role:disabled{opacity:.5;cursor:not-allowed}",
 	".dsh-nudge-rolename{font-size:12px;line-height:1.4}",
 	".dsh-nudge-rolesize{font-size:11px;line-height:1.4;opacity:.65;font-variant-numeric:tabular-nums}",
+	".dsh-nudge-parts{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}",
+	".dsh-nudge-partslabel{font-size:11px;opacity:.65;margin-right:2px}",
 			".dsh-nudge-settings{max-width:820px;display:flex;flex-direction:column;gap:12px;color:var(--dsw-alias-label-primary)}",
 			".dsh-nudge-settings h2{margin:0;font-size:18px;font-weight:600}",
 			".dsh-nudge-intro{margin:0;font-size:12.5px;line-height:19px;color:var(--dsw-alias-label-tertiary)}",
@@ -508,6 +510,17 @@ const ROLE_LOOK = {
 			["blocks." + role + ".w", 0],
 		]);
 		GROUP_DEFAULTS[0][1].push(...BLOCK_DEFAULTS());
+		/** 卡片上可以关掉的那几块：键名与宿主 DEFAULTS.visible 一致。 */
+		const CARD_PARTS = [
+			["title", "标题行"],
+			["project", "项目名"],
+			["task", "任务名"],
+			["status", "状态与原因"],
+			["items", "提醒列表"],
+			["more", "展开提示"],
+			["footer", "底部提示"],
+		];
+		for (const [part] of CARD_PARTS) GROUP_DEFAULTS[0][1].push(["visible." + part, true]);
 
 		/** 静音时段的写法：小时 0–23、分钟 0–59，中间允许空格。 */
 		const RANGE_PATTERN = /^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/u;
@@ -933,6 +946,8 @@ const ROLE_LOOK = {
 			 * @param {string} role 文字类别
 			 * @returns {import("react").ReactElement} 可点的一行
 			 */
+			/** 这一块要不要画：没写过的键按显示处理。 */
+			const partOn = (part) => raw("visible." + part) !== false;
 			const cardLine = (role) =>
 				h(
 					"span",
@@ -1009,17 +1024,19 @@ const ROLE_LOOK = {
 						[
 							h("div", { className: "dsh-nudge-card-strip", key: "strip", style: stripStyle }),
 							h("div", { className: "dsh-nudge-card-body", key: "body" }, [
-								h("div", { className: "dsh-nudge-card-head", key: "head" }, [cardLine("title"), cardLine("time")]),
-								h("div", { className: "dsh-nudge-card-ctx", key: "ctx" }, [cardLine("project")]),
-								h("div", { className: "dsh-nudge-card-task", key: "task" }, [cardLine("task")]),
-								h("div", { className: "dsh-nudge-card-verdict", key: "verdict" }, [
-									// 真卡的「完成：」和原因是同一行的左右两列，样卡也照这个排。
-									h("div", { className: "dsh-nudge-card-verdictrow", key: "row" }, [cardLine("status"), cardLine("reason")]),
-								]),
-								h("div", { className: "dsh-nudge-card-rule", key: "rule" }),
-								h("div", { className: "dsh-nudge-card-more", key: "more" }, [cardLine("more")]),
-								h("div", { className: "dsh-nudge-card-footer", key: "footer" }, [cardLine("footer")]),
-							]),
+								partOn("title") ? h("div", { className: "dsh-nudge-card-head", key: "head" }, [cardLine("title"), cardLine("time")]) : null,
+								partOn("project") ? h("div", { className: "dsh-nudge-card-ctx", key: "ctx" }, [cardLine("project")]) : null,
+								partOn("task") ? h("div", { className: "dsh-nudge-card-task", key: "task" }, [cardLine("task")]) : null,
+								partOn("status")
+									? h("div", { className: "dsh-nudge-card-verdict", key: "verdict" }, [
+											// 真卡的「完成：」和原因是同一行的左右两列，样卡也照这个排。
+											h("div", { className: "dsh-nudge-card-verdictrow", key: "row" }, [cardLine("status"), cardLine("reason")]),
+										])
+									: null,
+								partOn("items") ? h("div", { className: "dsh-nudge-card-rule", key: "rule" }) : null,
+								partOn("more") ? h("div", { className: "dsh-nudge-card-more", key: "more" }, [cardLine("more")]) : null,
+								partOn("footer") ? h("div", { className: "dsh-nudge-card-footer", key: "footer" }, [cardLine("footer")]) : null,
+							].filter((node) => node !== null)),
 							h(
 								"div",
 								{ className: "dsh-nudge-card-bar", key: "bar" },
@@ -1069,6 +1086,29 @@ const ROLE_LOOK = {
 						"p",
 						{ className: "dsh-nudge-intro", key: "cardhint" },
 						"宽 " + cardWidth + "、内边距 14/16、左侧 3px 竖条；其余按真卡画，长按上面任一块就能拖。",
+					),
+					h(
+						"div",
+						{ className: "dsh-nudge-parts", key: "parts" },
+						[
+							h("span", { key: "label", className: "dsh-nudge-partslabel" }, "显示"),
+							...CARD_PARTS.map(([part, label]) =>
+								h(
+									"button",
+									{
+										key: part,
+										type: "button",
+										className: "dsh-nudge-role",
+										"data-part": part,
+										"data-on": partOn(part) ? "1" : "0",
+										disabled,
+										title: (partOn(part) ? "点一下隐藏「" : "点一下显示「") + label + "」",
+										onClick: () => write("visible." + part, !partOn(part)),
+									},
+									label,
+								),
+							),
+						],
 					),
 					h(
 						"div",
