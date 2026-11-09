@@ -43,7 +43,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-09.3";
+	const PANEL_REVISION = "2026-11-09.4";
 	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
 	const NAV_GROUPS = [
 		["peek", "长这样"],
@@ -107,7 +107,10 @@ window.__ModuleLoader__.load({
 				".dsh-nudge-card-bar .dsh-nudge-btn:disabled{opacity:.45;cursor:not-allowed}",
 			".dsh-nudge-card-hit{padding:0 2px;margin:0 -2px;border-radius:4px;cursor:pointer;border:0.5px solid transparent;white-space:pre-wrap}",
 			".dsh-nudge-card-hit:hover{background:var(--dsw-alias-bg-l2)}",
-			".dsh-nudge-card-hit[data-on=\"1\"]{border-color:var(--dsw-alias-state-business-primary)}",
+			".dsh-nudge-card-hit[data-on=\"1\"]{border-color:var(--dsw-alias-state-business-primary);background:color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);box-shadow:0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 24%, transparent)}",
+	".dsh-nudge-focusline{margin:10px 0 0;font-size:12px;line-height:1.5;opacity:.85}",
+	".dsh-nudge-focusline b{font-weight:600;color:var(--dsw-alias-state-business-primary)}",
+	".dsh-nudge-roles .dsh-nudge-role[data-on=\"1\"]{border-color:var(--dsw-alias-state-business-primary);background:color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, transparent);color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-actions{display:flex;gap:8px;flex-wrap:wrap;padding:6px 0 10px}",
 			".dsh-nudge-btn{font:inherit;font-size:13px;line-height:18px;padding:6px 12px;border-radius:8px;cursor:pointer;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l2);color:var(--dsw-alias-label-primary)}",
 			".dsh-nudge-btn:hover:not(:disabled){border-color:var(--dsw-alias-state-business-primary)}",
@@ -1110,6 +1113,16 @@ const ROLE_LOOK = {
 							),
 						],
 					),
+					/* 正在调哪一块，写清楚，免得点完没反应。 */
+					h(
+						"p",
+						{ className: "dsh-nudge-focusline", key: "focus" },
+						[
+							"正在调 ",
+							h("b", { key: "name" }, roleLabel(fontRole)),
+							" · " + roleSize(fontRole) + "px · " + (text("typography." + fontRole + ".color") === "" ? "颜色跟随主题" : text("typography." + fontRole + ".color")),
+						],
+					),
 					h(
 						"div",
 						{ className: "dsh-nudge-roles", key: "chips" },
@@ -1122,6 +1135,7 @@ const ROLE_LOOK = {
 									className: "dsh-nudge-role",
 									"data-role": role,
 									"data-on": fontRole === role ? "1" : "0",
+									"aria-pressed": fontRole === role ? "true" : "false",
 									disabled,
 									title: roleHint(role),
 									onClick: () => setFontRole(role),

@@ -1831,6 +1831,13 @@ check(
 		&& clientSource.includes('partOn("footer") ? h('),
 );
 
+	check(
+		"选中的那一类在样卡里有明显高亮",
+		clientSource.includes('.dsh-nudge-card-hit[data-on=\\"1\\"]{border-color:var(--dsw-alias-state-business-primary);background:color-mix') &&
+			clientSource.includes('.dsh-nudge-roles .dsh-nudge-role[data-on=\\"1\\"]') &&
+			clientSource.includes('className: "dsh-nudge-focusline"') &&
+			clientSource.includes('"aria-pressed": fontRole === role ? "true" : "false"'),
+	);
 // 只拖动不该把当时的宽度钉成偏好：宽度仍按设置里的来。
 check(
 	"拖动只记位置，宽度仍按设置里的来",
