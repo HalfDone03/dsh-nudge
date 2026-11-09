@@ -71,7 +71,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/HalfDone03/dsh-nudge",
-            "commit": "de851e0ae1c56761d7336f94fa25deacaa5ea394"
+            "commit": "3e371c1005620067f4fb552005102eda4df538f6"
           },
           "engines": {
             "dsh": ">=0.2.1-rc.2"
