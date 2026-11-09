@@ -2,6 +2,12 @@
 
 本插件按语义化版本记录改动。日期为提交到 `main` 的时间。
 
+## 1.2.4 - 2026-11-10
+**修复**
+
+- 设置服务出错会把整个 DSH 带崩：`applyLayout` 只把 `mutate` 包在 try 里，前面的 `config.blocks` 读取和 `ops` 构造都在 try 外；函数是 `async`，那段一旦抛错就变成一条 unhandled rejection，而调用点又是 `void applyLayout(dragged)`，没人接。宿主在 load 阶段看到未处理的 rejection 会直接判 `fatal load failure`，host 进程 `exit 1`，桌面端弹恢复框（2026-11-02 那次 `Config field "blocks" is not volatile` 崩溃就是这条链）。现在调用点改成 `applyLayout(dragged).catch(...)`，rejection 只会记一条 debug 日志。
+- `settings.configure({ auto: false })` 在 apply 阶段执行，同样会抛成 fatal load failure（比如 schema 里没有 volatile 字段时）。现在包在 try 里，失败只记 debug，不影响提醒本身。
+
 ## 1.2.3 - 2026-11-09
 **改进**
 

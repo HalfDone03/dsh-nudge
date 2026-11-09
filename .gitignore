@@ -8,3 +8,6 @@ Thumbs.db
 .DS_Store
 .dsh-vision-router/
 
+
+# 本地会话存档（从 dsh 投影缓存恢复出来的），不进版本库
+.dsh-recovered/

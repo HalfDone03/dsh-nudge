@@ -1703,8 +1703,22 @@ check(
 	!indexSource.includes('path: ["blocks"]')
 		&& indexSource.includes('path: ["blocks", role, key]')
 		&& indexSource.includes("await settingsApi.mutate")
-		&& indexSource.includes("void applyLayout(dragged)"),
+		// 调用点必须接住这个 promise：applyLayout 是 async，同步段抛错也会变成
+		// rejection，`void` 掉就没人处理，宿主在 load 阶段看到未处理 rejection
+		// 会直接判 fatal load failure。
+		&& indexSource.includes("applyLayout(dragged).catch("),
 	"layout must be written leaf by leaf and awaited",
+);
+
+check(
+	"设置服务出错不会把宿主带崩",
+	// 两处都在 load/apply 或定时器里执行，抛出去就是 fatal load failure：
+	// 1) apply 阶段的 settings.configure 包在 try 里；
+	// 2) applyLayout 的 promise 在调用点 .catch 掉。
+	indexSource.includes("settings.configure skipped")
+		&& indexSource.includes("layout not saved")
+		&& !indexSource.includes("void applyLayout("),
+	"a settings failure must be logged, never thrown",
 );
 
 check(
