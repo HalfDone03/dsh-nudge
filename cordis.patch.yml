@@ -17,6 +17,10 @@
         enabled: true
         staySeconds: 15
         showWhenFocused: true
+        # 点击卡片的行为：clickToFocus 关掉后点一下只收起卡片（不跳 DSH、不写剪贴板）；
+        # clickThrough 打开后整张卡鼠标穿透，点下去落到后面的窗口，只当提示
+        clickToFocus: true
+        clickThrough: false
         suppressWhenFullscreen: true
         # 配色：auto 跟随 Windows 的深浅色设置，也可以固定 dark / light
         theme: auto

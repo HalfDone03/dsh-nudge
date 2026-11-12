@@ -28,26 +28,25 @@ window.__ModuleLoader__.load({
 			["more", "展开提示", "「还有 N 条未展开」"],
 			["footer", "底部提示", "「点击卡片回到 DeepSeek Harness」"],
 		];
-		/** 卡片上能单独摆放的七块：[配置里的名字, 页面上的名字]。 */
-		const BLOCK_ROLES = [
-			["title", "标题行"],
-			["project", "项目名"],
-			["task", "任务名"],
-			["status", "状态与原因"],
-			["items", "提醒列表"],
-			["more", "展开提示"],
-			["footer", "底部提示"],
-		];
 		/** 设置页注册的 slot 类型。 */
 		const SECTION = "settings.section";
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-09.4";
-	/** 长页面的分组导航：id 与下面每个分组容器的 id 对得上。 */
+	const PANEL_REVISION = "2026-11-10.7";
+	/**
+	 * 分组导航：id 与下面每个分组容器的 id 对得上。
+	 * 顺序 = 你多久会动它一次：先看长什么样（预览），再调字、卡片、位置，
+	 * 然后才是弹不弹、点了会怎样、什么时候别弹、怎么合并，最后是排查用的调试。
+	 * 「预览」那一组不是配置项，只画样卡，所以没有「恢复默认」。
+	 */
 	const NAV_GROUPS = [
-		["peek", "长这样"],
+		["preview", "预览"],
+		["type", "文字"],
+		["card", "卡片"],
+		["place", "位置"],
 		["basic", "提醒"],
+		["click", "点击"],
 		["when", "时机"],
 		["merge", "合并"],
 		["debug", "调试"],
@@ -68,13 +67,16 @@ window.__ModuleLoader__.load({
 			".dsh-nudge-intro{margin:0;font-size:12.5px;line-height:19px;color:var(--dsw-alias-label-tertiary)}",
 			".dsh-nudge-group{display:flex;flex-direction:column;gap:0;border:0.5px solid var(--dsw-alias-border-l2);border-radius:12px;padding:0 16px 4px;scroll-margin-top:52px}",
 			".dsh-nudge-group-title{margin:0;flex:1;font-size:13px;font-weight:600;line-height:20px;letter-spacing:0;color:var(--dsw-alias-label-primary)}",
-			".dsh-nudge-group-head{display:flex;align-items:center;gap:12px;padding:10px 0 7px;border-bottom:0.5px solid var(--dsw-alias-border-l2)}",
+			".dsh-nudge-group-head{display:flex;align-items:center;gap:12px;padding:10px 0 7px;border-bottom:0.5px solid var(--dsw-alias-border-l2);position:sticky;top:38px;z-index:1;background:var(--dsw-alias-bg-l1)}",
 			".dsh-nudge-group-head .dsh-nudge-actions{padding:0;margin:0}",
 			".dsh-nudge-group-head .dsh-nudge-btn{font-size:12px;line-height:16px;padding:2px 9px;border-radius:6px;opacity:.8}",
 			".dsh-nudge-group-head .dsh-nudge-btn:hover:not(:disabled){opacity:1}",
 			".dsh-nudge-group-head .dsh-nudge-group-toggle{margin:0;flex:1}",
 			".dsh-nudge-group .dsh-nudge-intro{padding:7px 0 1px}",
 			".dsh-nudge-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;padding:6px 0;border-top:0.5px solid var(--dsw-alias-border-l2)}",
+			/* 被别的开关压住的那一行：说明白，别让人以为开关坏了。 */
+			".dsh-nudge-row[data-muted=\"1\"] .dsh-nudge-label{opacity:.6}",
+			".dsh-nudge-row[data-muted=\"1\"] .dsh-nudge-hint{color:var(--dsw-alias-state-business-primary);opacity:.85}",
 			".dsh-nudge-group-head + .dsh-nudge-row{border-top:0}",
 			".dsh-nudge-text{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}",
 			".dsh-nudge-label{font-size:13px;line-height:20px}",
@@ -90,6 +92,8 @@ window.__ModuleLoader__.load({
 			".dsh-nudge-card{position:relative;display:block;width:384px;max-width:100%;box-sizing:border-box;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l1);font-family:\"Microsoft YaHei UI\",\"Microsoft YaHei\",\"Segoe UI\",Arial,sans-serif;line-height:1.25;padding:0}",
 			".dsh-nudge-card-strip{position:absolute;left:1px;top:13px;bottom:13px;width:3px;border-radius:1.5px;background:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-card-body{display:flex;flex-direction:column;padding:14px 16px 14px 20px;min-width:0}",
+			/* 关掉上面的块之后，顶上那块不该再带着自己的上边距（真卡里是同一个规则，见 popup.ps1 的 $firstCarrier）。 */
+			".dsh-nudge-card-body > *:first-child{margin-top:0}",
 			".dsh-nudge-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:2px}",
 			".dsh-nudge-card-ctx{display:flex;align-items:baseline;margin-top:7px}",
 			".dsh-nudge-card-task{display:flex;align-items:baseline;margin-top:2px;line-height:18px}",
@@ -99,8 +103,6 @@ window.__ModuleLoader__.load({
 			".dsh-nudge-card-more{display:flex;align-items:baseline;margin-top:8px}",
 			".dsh-nudge-card-footer{display:flex;align-items:baseline;margin-top:12px}",
 				".dsh-nudge-card-bar{display:flex;align-items:center;gap:10px;padding:9px 0 2px;margin-top:10px;border-top:0.5px solid color-mix(in srgb,currentColor 16%,transparent)}",
-				".dsh-nudge-card-bar .dsh-nudge-check{display:flex;align-items:center;gap:5px;font-size:10.5px;cursor:pointer;white-space:nowrap}",
-				".dsh-nudge-card-bar .dsh-nudge-check input{width:13px;height:13px;accent-color:var(--dsw-alias-fg-strong)}",
 				".dsh-nudge-card-bar-space{flex:1}",
 				".dsh-nudge-card-bar .dsh-nudge-btn{font-size:10.5px;padding:3px 8px;border-radius:6px;border:0.5px solid color-mix(in srgb,currentColor 20%,transparent);background:transparent;color:inherit;cursor:pointer;white-space:nowrap}",
 				".dsh-nudge-card-bar .dsh-nudge-btn:hover:not(:disabled){background:color-mix(in srgb,currentColor 8%,transparent)}",
@@ -118,12 +120,21 @@ window.__ModuleLoader__.load({
 			".dsh-nudge-btn[data-on=\"1\"]{border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-applybar{position:sticky;bottom:0;z-index:2;display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:0.5px solid var(--dsw-alias-state-business-primary);background:var(--dsw-alias-bg-l1);box-shadow:0 2px 12px rgba(0,0,0,.12)}",
 			".dsh-nudge-applytext{flex:1;font-size:13px;line-height:20px}",
+			".dsh-nudge-applywhere{display:flex;align-items:center;flex-wrap:wrap;font-size:12px;line-height:18px;opacity:.75}",
+			".dsh-nudge-applysep{opacity:.6}",
+			".dsh-nudge-applylink{padding:0;border:0;background:none;font:inherit;font-size:12px;line-height:18px;color:var(--dsw-alias-state-business-primary);cursor:pointer;text-decoration:underline;text-underline-offset:2px}",
+			".dsh-nudge-applylink:hover{opacity:.8}",
 			".dsh-nudge-applybar[data-dirty=\"0\"]{border-color:var(--dsw-alias-border-l2);box-shadow:none}",
+			/* 全部恢复默认：靠边一条，不抢「应用」的位置。 */
+			".dsh-nudge-resetall{display:flex;align-items:center;gap:10px;padding:2px 0 6px}",
+			".dsh-nudge-resetall .dsh-nudge-btn[data-armed=\"1\"]{border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary)}",
 			".dsh-nudge-group[data-dirty=\"1\"]{border-color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-group[data-dirty=\"1\"] .dsh-nudge-group-title::after{content:\" ·\";color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-nav{position:sticky;top:0;z-index:3;display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:6px 0;background:var(--dsw-alias-bg-l1)}",
 			".dsh-nudge-navbtn{font:inherit;font-size:12px;line-height:18px;padding:3px 10px;border-radius:999px;cursor:pointer;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l2);color:var(--dsw-alias-label-tertiary)}",
 			".dsh-nudge-navbtn:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-state-business-primary)}",
+			/* 当前滚到的那一组：实心描边 + 主色文字，一眼知道自己在哪。 */
+			".dsh-nudge-navbtn[data-on=\"1\"]{color:var(--dsw-alias-state-business-primary);border-color:var(--dsw-alias-state-business-primary);background:color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent)}",
 			".dsh-nudge-status{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}",
 			".dsh-nudge-stamp{margin:0;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);opacity:.75}",
 			".dsh-nudge-swatches{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 0 4px}",
@@ -248,7 +259,7 @@ function ColorSwatches(props) {
 }
 
 function SwitchRow(props) {
-			return h("div", { className: "dsh-nudge-row" }, [
+			return h("div", { className: "dsh-nudge-row", "data-muted": props.muted === true ? "1" : "0" }, [
 				h("div", { className: "dsh-nudge-text", key: "text" }, [
 					h("span", { className: "dsh-nudge-label", key: "label" }, props.label),
 					props.hint === undefined ? null : h("span", { className: "dsh-nudge-hint", key: "hint" }, props.hint),
@@ -274,6 +285,12 @@ function SwitchRow(props) {
 			const [draft, setDraft] = React.useState(String(props.value));
 			React.useEffect(() => setDraft(String(props.value)), [props.value]);
 			const commit = () => {
+				// 清空输入框是编辑中的正常中间态，不是「想要最小值」：
+				// Number("") 是 0，不拦住就会把停留秒数写成 1 秒、清单条数写成 1 条。
+				if (String(draft).trim() === "") {
+					setDraft(String(props.value));
+					return;
+				}
 				const next = Number(draft);
 				if (!Number.isFinite(next)) {
 					setDraft(String(props.value));
@@ -399,21 +416,28 @@ function SwitchRow(props) {
 		 * @returns {object} 表单快照
 		 */
 		function useConfigSnapshot(form) {
-			const [snapshot, setSnapshot] = React.useState(() => form.getSnapshot());
+			// 宿主半身没装、被禁用、或者 id 对不上时 configForms.get 返回 undefined：
+			// 这里必须给一个「不可用」的快照，而不是在渲染期解引用 undefined
+			// （那会让承载它的整个设置面板崩掉，连一句说明都看不到）。
+			const usable = form !== undefined && form !== null && typeof form.getSnapshot === "function";
+			const [snapshot, setSnapshot] = React.useState(() =>
+				usable ? form.getSnapshot() : { status: "unavailable", value: undefined, writable: false, revision: 0 },
+			);
 			React.useEffect(() => {
+				if (!usable) return undefined;
 				let alive = true;
 				const sync = () => {
 					if (!alive) return;
 					const next = form.getSnapshot();
 					setSnapshot((previous) => (previous === next ? previous : next));
 				};
-				const off = form.subscribe(sync);
+				const off = typeof form.subscribe === "function" ? form.subscribe(sync) : () => {};
 				sync();
 				return () => {
 					alive = false;
-					off();
+					if (typeof off === "function") off();
 				};
-			}, [form]);
+			}, [form, usable]);
 			return snapshot;
 		}
 
@@ -445,7 +469,7 @@ const COLOR_CHOICES = [["", "跟随主题"], ["#FFFFFF", "白"], ["#E6E6E6", "�
 			status: "完成：",
 			reason: "改完自测全过，顺手把提示文案也收了一档",
 			more: "还有 2 条未展开",
-			footer: "点击卡片回到 DeepSeekRuntime",
+			footer: "点击卡片回到 DeepSeek Harness",
 		};
 		/** 样卡里每一行的浓淡与字重：颜色留空时按这套走，贴近真卡片的层次。 */
 		/** 每一类文字在真卡里的浓淡：颜色留空时按这个透明度走（对齐 popup.ps1 的 TextPrimary / TextBody / TextMuted 等）。 */
@@ -468,14 +492,19 @@ const ROLE_LOOK = {
 		/**
 		 * 每一组「恢复默认」写回去的值。必须和 `lib/index.js` 的 `DEFAULTS` 一致，
 		 * 自测会拿这份逐项比对（`exports.groupDefaults` 就是给它看的）。
+		 * 一组只管一件事：文字 / 卡片 / 位置 / 提醒 / 点击 / 时机 / 合并 / 调试。
+		 * 「预览」那组只画样卡，没有配置项，所以不在这里。
 		 */
 		const GROUP_DEFAULTS = [
-			["peek", [
+			["type", []],
+			["card", [
 				["width", 384],
-				["anchor", "bottom-right"],
 				["cardColor", ""],
 				["accentColor", ""],
 				["theme", "auto"],
+			]],
+			["place", [
+				["anchor", "bottom-right"],
 				["staySeconds", 15],
 				["margin", 16],
 				["rememberPosition", true],
@@ -485,6 +514,10 @@ const ROLE_LOOK = {
 				["kinds.completed", true],
 				["kinds.needs_choice", true],
 				["kinds.failed", true],
+			]],
+			["click", [
+				["clickToFocus", true],
+				["clickThrough", false],
 			]],
 			["when", [
 				["showWhenFocused", true],
@@ -506,13 +539,6 @@ const ROLE_LOOK = {
 		for (const [role] of FONT_ROLES) {
 			GROUP_DEFAULTS[0][1].push(["typography." + role + ".color", ""], ["typography." + role + ".size", 0]);
 		}
-		/** 七块文字的默认摆放：偏移 0、宽度 0（跟着卡片走）。 */
-		const BLOCK_DEFAULTS = () => BLOCK_ROLES.flatMap(([role]) => [
-			["blocks." + role + ".dx", 0],
-			["blocks." + role + ".dy", 0],
-			["blocks." + role + ".w", 0],
-		]);
-		GROUP_DEFAULTS[0][1].push(...BLOCK_DEFAULTS());
 		/** 卡片上可以关掉的那几块：键名与宿主 DEFAULTS.visible 一致。 */
 		const CARD_PARTS = [
 			["title", "标题行"],
@@ -523,18 +549,25 @@ const ROLE_LOOK = {
 			["more", "展开提示"],
 			["footer", "底部提示"],
 		];
-		for (const [part] of CARD_PARTS) GROUP_DEFAULTS[0][1].push(["visible." + part, true]);
+		/* 「显示哪几块」是卡片本身的事，归「卡片」那一组。 */
+		const cardGroup = GROUP_DEFAULTS.find((item) => item[0] === "card");
+		for (const [part] of CARD_PARTS) cardGroup[1].push(["visible." + part, true]);
 
 		/** 静音时段的写法：小时 0–23、分钟 0–59，中间允许空格。 */
 		const RANGE_PATTERN = /^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/u;
 
 		/**
-		 * 把静音时段拆成「能用的」和「写法不对的」两堆。
+		 * 把静音时段拆成「能用的」「写法不对的」「写法能认但超出 24 小时的」三堆。
+		 *
+		 * 第三堆必须单独拎出来：宿主 `inMuteRange` 只跳过 `from === to`，没有 1439 上限，
+		 * 所以 `25:00-08:00` 在宿主那边是**真的会静音**（按 from > to 走跨零点分支，
+		 * 等于每天 00:00–08:00 不弹）。页面要是把它当「会被跳过」报出去，就是在骗人。
 		 * @param {string[]} ranges 原始行
-		 * @returns {{bad: string[], slots: {from: number, to: number}[]}} 结果
+		 * @returns {{bad: string[], odd: {line: string, from: number, to: number}[], slots: {from: number, to: number}[]}} 结果
 		 */
 		function splitRanges(ranges) {
 			const bad = [];
+			const odd = [];
 			const slots = [];
 			for (const raw of ranges) {
 				const line = String(raw).trim();
@@ -546,14 +579,22 @@ const ROLE_LOOK = {
 				}
 				const from = Number(match[1]) * 60 + Number(match[2]);
 				const to = Number(match[3]) * 60 + Number(match[4]);
-				if (from > 1439 || to > 1439) {
-					bad.push(line);
-					continue;
-				}
 				if (from === to) continue;
+				// 照样入 slots：页面的「现在是否静音」要和宿主算得一模一样。
 				slots.push({ from, to });
+				if (from > 1439 || to > 1439) odd.push({ line, from, to });
 			}
-			return { bad, slots };
+			return { bad, odd, slots };
+		}
+
+		/**
+		 * 把「当天第几分钟」写回 HH:MM，越界就按 24 小时取模，用来解释 odd 那几行实际怎么算。
+		 * @param {number} minutes 分钟数
+		 * @returns {string} HH:MM
+		 */
+		function clockText(minutes) {
+			const wrapped = ((minutes % 1440) + 1440) % 1440;
+			return String(Math.floor(wrapped / 60)).padStart(2, "0") + ":" + String(wrapped % 60).padStart(2, "0");
 		}
 
 		/**
@@ -614,6 +655,10 @@ const ROLE_LOOK = {
 			const [clock, setClock] = React.useState(0);
 			/** 还没点「应用」的改动：字段路径 → 新值。空对象表示没有待应用的改动。 */
 			const [draft, setDraft] = React.useState({});
+			/** 现在滚到哪一组：导航按钮靠它高亮。 */
+			const [activeGroup, setActiveGroup] = React.useState("preview");
+			/** 「全部恢复默认」是不是已经点过第一下（等第二下确认）。 */
+			const [resetAllArmed, setResetAllArmed] = React.useState(false);
 			/** 字号那组是否展开成「8 行一起看」。 */
 			/** 刚保存完的提示，两秒后自己消失。 */
 			const [saved, setSaved] = React.useState(false);
@@ -673,13 +718,62 @@ const ROLE_LOOK = {
 				if (found === undefined) return 0;
 				return found[1].filter((entry) => dirty(entry[0])).length;
 			};
+			/**
+			 * 改动的组名（按页面顺序）：页脚的应用栏靠它告诉人「改的是哪几组」，
+			 * 九组之后光看「N 项」已经想不起来是在哪儿改的了。
+			 */
+			const dirtyGroupNames = GROUP_DEFAULTS.filter(([id]) => groupDirty(id) > 0).map(
+				([id]) => (NAV_GROUPS.find(([navId]) => navId === id) ?? [id, id])[1],
+			);
 			/** 跳到某一组。 */
 			const jumpTo = (id) => {
 				if (typeof document === "undefined" || typeof document.getElementById !== "function") return;
 				const target = document.getElementById("dsh-nudge-g-" + id);
 				if (target !== null && typeof target.scrollIntoView === "function")
 					target.scrollIntoView({ block: "start", behavior: "smooth" });
+				// 立刻点亮，不等滚动结束：点了按钮就该看见反馈。
+				setActiveGroup(id);
 			};
+			/**
+			 * 滚动时高亮「现在在哪一组」。
+			 *
+			 * 用 IntersectionObserver 而不是 scroll 事件：九组的分组标题是 sticky 的，滚动事件里
+			 * 得自己算每一组相对 38px 导航条的位置，还要跟着窗口尺寸变；观察器只告诉我们
+			 * 「哪些组还在视口里」，取其中最靠上的一组即可。
+			 * 拿不到观察器（老浏览器、自测沙箱）就什么都不做，导航仍可点。
+			 */
+			React.useEffect(() => {
+				if (typeof document === "undefined" || typeof IntersectionObserver !== "function") return undefined;
+				const nodes = NAV_GROUPS.map(([id]) => document.getElementById("dsh-nudge-g-" + id)).filter(
+					(node) => node !== null && node !== undefined,
+				);
+				if (nodes.length === 0) return undefined;
+				/** 视口里还看得见的组：id → 顶部位置。 */
+				const visible = new Map();
+				const observer = new IntersectionObserver(
+					(entries) => {
+						for (const entry of entries) {
+							const id = String(entry.target.id ?? "").replace("dsh-nudge-g-", "");
+							if (entry.isIntersecting) visible.set(id, entry.boundingClientRect.top);
+							else visible.delete(id);
+						}
+						if (visible.size === 0) return;
+						// 最靠上（top 最小）的那一组就是「正在看」的；导航条挡住的也算进来。
+						let best = "";
+						let bestTop = Number.POSITIVE_INFINITY;
+						for (const [id, top] of visible) {
+							if (top < bestTop) {
+								bestTop = top;
+								best = id;
+							}
+						}
+						if (best !== "") setActiveGroup((current) => (current === best ? current : best));
+					},
+					{ rootMargin: "-38px 0px -55% 0px", threshold: 0 },
+				);
+				for (const node of nodes) observer.observe(node);
+				return () => observer.disconnect();
+			}, []);
 
 			/** 把草稿里与当前值不同的项一次性写回去。 */
 			const applyDraft = () => {
@@ -693,16 +787,70 @@ const ROLE_LOOK = {
 					setDraft({});
 					return;
 				}
-				// 先把草稿收起来，界面立刻干净；写回被拒或抛错再原样放回去，用户不用重填。
+				// 先把草稿收起来，界面立刻干净；写回被拒或抛错再放回去，用户不用重填。
 				const backup = { ...draft };
 				setDraft({});
+				/**
+				 * 失败回滚：只把「这次提交的 path」放回草稿，而且用户在等待期间又改过的
+				 * （当前草稿里已经有这个 path）保留新值——整块 setDraft(backup) 会把这几秒
+				 * 里的新输入悄悄吃掉。
+				 * @param {Record<string, unknown>} current 当前草稿
+				 * @returns {Record<string, unknown>} 合并后的草稿
+				 */
+				const rollback = (current) => {
+					const merged = { ...current };
+					for (const item of ops) {
+						const path = item.path.join(".");
+						if (Object.hasOwn(merged, path)) continue;
+						if (Object.hasOwn(backup, path)) merged[path] = backup[path];
+					}
+					return merged;
+				};
+				/**
+				 * 取一个尽量新鲜的 revision：批量写被拒很可能是「别处刚改过」的冲突，
+				 * 拿闭包里那份旧 revision 逐项重试，N 次必然全败。
+				 * @returns {number} revision
+				 */
+				const revisionNow = () => {
+					try {
+						const fresh = form.getSnapshot?.();
+						if (fresh !== undefined && Number.isFinite(fresh.revision)) return fresh.revision;
+					} catch {}
+					return snapshot.revision;
+				};
+				/** 一条条试：哪几项宿主不要，就把它们点出来。 */
+				const retryOneByOne = (note) => {
+					const bad = [];
+					const step = (index) => {
+						if (index >= ops.length) {
+							// 走完一轮才说话：全部通过就清掉提示，有被拒的就把路径点出来。
+							setFailure(bad.length === 0 ? "" : `${note}宿主没接受这几项：${bad.join("、")}`);
+							return;
+						}
+						const item = ops[index];
+						const path = item.path.join(".");
+						Promise.resolve()
+							.then(() => form.mutate([item], revisionNow()))
+							.then((ok) => {
+								if (ok === false) bad.push(path);
+							})
+							.catch(() => {
+								bad.push(path);
+							})
+							.then(() => step(index + 1));
+					};
+					step(0);
+					return bad;
+				};
+
 				let result;
 				try {
 					result = form.mutate(ops, snapshot.revision);
 				} catch (error) {
+					// 同步抛错：不能再走 retryOneByOne（它此时还没被初始化），直接说清楚。
 					setSaved(false);
-					setDraft(backup);
-					retryOneByOne(`写入失败：${error instanceof Error ? error.message : String(error)}；`);
+					setDraft(rollback);
+					setFailure(`写入失败：${error instanceof Error ? error.message : String(error)}`);
 					return;
 				}
 				// 「已保存」先亮起来：写回是本地调用，落盘由宿主负责；失败再翻回去。
@@ -710,40 +858,18 @@ const ROLE_LOOK = {
 				// 两秒后自己熄掉。自测沙箱里没有定时器，取不到就跳过。
 				const later = globalThis.setTimeout;
 				if (typeof later === "function") later(() => setSaved(false), 2000);
-				/** 一条条试：哪几项宿主不要，就把它们点出来。 */
-				const retryOneByOne = (note) => {
-					const bad = [];
-					const step = (index) => {
-						if (index >= ops.length) return;
-						const item = ops[index];
-						Promise.resolve()
-							.then(() => form.mutate([item], snapshot.revision))
-							.then((ok) => {
-								if (ok === false) bad.push(item.path.join("."));
-							})
-							.catch(() => {
-								bad.push(item.path.join("."));
-							})
-							.then(() => {
-								if (bad.length === 0 && index + 1 >= ops.length) setFailure("");
-								step(index + 1);
-							});
-					};
-					step(0);
-					return bad;
-				};
 
 				Promise.resolve(result)
 					.then((ok) => {
 						if (ok === false) {
 							setSaved(false);
-							setDraft(backup);
-							retryOneByOne("宿主没接受这次修改，逐项试过了。");
+							setDraft(rollback);
+							retryOneByOne("整批被拒（可能是别处刚改过，已按最新版本逐项重试）；");
 						}
 					})
 					.catch((error) => {
 						setSaved(false);
-						setDraft(backup);
+						setDraft(rollback);
 						retryOneByOne(`写入失败：${error instanceof Error ? error.message : String(error)}；`);
 					});
 			};
@@ -788,6 +914,19 @@ const ROLE_LOOK = {
 
 			/** 一组的「恢复默认」：把该组的默认值一次写回去。 */
 			const resetGroup = (entries) => writeMany(entries.map(([path, next]) => ({ path, value: next })));
+			/**
+			 * 所有组的默认值摊成一张 path → 值 的表，供「全部恢复默认」用。
+			 * 同一个 path 出现在两组里时后者覆盖前者——GROUP_DEFAULTS 本身就是「一 field 一组」，
+			 * 出现重复说明分组写错了，这里不额外报错，取最后一份即可。
+			 * @returns {{ path: string, value: unknown }[]} 全部默认值
+			 */
+			const allDefaults = () => {
+				const merged = new Map();
+				for (const [, entries] of GROUP_DEFAULTS) {
+					for (const [path, value] of entries) merged.set(path, value);
+				}
+				return [...merged].map(([path, value]) => ({ path, value }));
+			};
 
 			/**
 			 * 把一层层嵌套的对象摊成 `a.b.c` 这样的路径。
@@ -809,6 +948,8 @@ const ROLE_LOOK = {
 				"staySeconds",
 				"showWhenFocused",
 				"suppressWhenFullscreen",
+				"clickToFocus",
+				"clickThrough",
 				"margin",
 				"anchor",
 				"width",
@@ -817,15 +958,16 @@ const ROLE_LOOK = {
 				"mergeWindowMs",
 				"maxItems",
 				"alertOnToolError",
+				"quietToolErrors",
 				"muteRanges",
 				"kinds",
 				"theme",
 				"typography",
+				"visible",
 				"debugPreview",
 				"debugPayload",
 				"debugFile",
 				"rememberPosition",
-				"blocks",
 			];
 
 			/** 把当前配置变成一段文本，塞进下面的框里。 */
@@ -927,14 +1069,38 @@ const ROLE_LOOK = {
 			const themeValue = text("theme") === "" ? "auto" : text("theme");
 			/** 卡片现在用的宽度：0 表示用脚本里的默认 384。 */
 			const cardWidth = num("width") > 0 ? num("width") : 384;
-			/** 被拖过或改过宽度的块有几个：一个都没有时「摆回原位」没什么可摆的。 */
-			const movedCount = BLOCK_ROLES.filter(([role]) => {
-				const dx = num("blocks." + role + ".dx");
-				const dy = num("blocks." + role + ".dy");
-				const wide = num("blocks." + role + ".w");
-				return dx !== 0 || dy !== 0 || wide !== 0;
-			}).length;
-			const layoutMoved = movedCount > 0;
+			/**
+			 * 分组标题右边那行小字：一眼看清这组现在是什么状态，不用点开才知道。
+			 * 全部从当前值算，草稿里改了就跟着变（还没点应用也算「改完会是什么样」）。
+			 */
+			const themeLabel = themeValue === "auto" ? "跟随系统" : themeValue === "light" ? "浅色" : "深色";
+			const anchorNow = text("anchor") === "" ? "bottom-right" : text("anchor");
+			const anchorLabel = (() => {
+				const found = ANCHOR_CELLS.find((cell) => cell.id === anchorNow);
+				return found === undefined ? anchorNow : found.hint.replace("（默认）", "");
+			})();
+			const kindsLabel = (() => {
+				const names = [["completed", "完成"], ["needs_choice", "待选"], ["failed", "失败"]];
+				const on = names.filter(([key]) => bool("kinds." + key)).map(([, label]) => label);
+				if (!bool("enabled")) return "已关闭";
+				if (on.length === names.length) return "三类都弹";
+				return on.length === 0 ? "三类都不弹" : "只弹 " + on.join(" / ");
+			})();
+			const clickLabel = bool("clickThrough") ? "穿透：只当提示" : bool("clickToFocus") ? "点击回到 DSH" : "点击只收起";
+			const whenLabel = (() => {
+				const parts = [];
+				if (!bool("showWhenFocused")) parts.push("前台不弹");
+				if (bool("suppressWhenFullscreen")) parts.push("全屏不弹");
+				if (bool("quietToolErrors")) parts.push("中途报错先忍");
+				if (bool("alertOnToolError")) parts.push("工具报错单独弹");
+				return parts.length === 0 ? "不设条件" : parts.join(" · ");
+			})();
+			const mergeLabel = (() => {
+				const window = num("mergeWindowMs");
+				const mute = lines("muteRanges").filter((line) => line.trim() !== "").length;
+				const head = window <= 0 ? "不合并" : window + "ms 内合并 · 最多 " + num("maxItems") + " 条";
+				return mute === 0 ? head : head + " · 静音 " + mute + " 段";
+			})();
 			const skin = (() => {
 				const base = Object.hasOwn(THEME_SKIN, themeValue) ? Object.assign({}, THEME_SKIN[themeValue]) : {};
 				base.width = cardWidth + "px";
@@ -951,6 +1117,18 @@ const ROLE_LOOK = {
 			 */
 			/** 这一块要不要画：没写过的键按显示处理。 */
 			const partOn = (part) => raw("visible." + part) !== false;
+			/**
+			 * 样卡上这一行显示什么。底部那行说的是「点一下会怎样」，必须跟着点击开关走，
+			 * 和宿主 `footerOf` 的三句话逐字一致——否则改完开关，样卡还在教一个不会发生的事。
+			 * @param {string} role 文字类别
+			 * @returns {string} 示例文字
+			 */
+			const roleSample = (role) => {
+				if (role !== "footer") return ROLE_SAMPLE[role];
+				if (bool("clickThrough")) return "仅提示 · 点击穿透，点得到后面的窗口";
+				if (!bool("clickToFocus")) return "仅提示 · 点击不跳转，点一下收起";
+				return "点击卡片回到 DeepSeek Harness";
+			};
 			const cardLine = (role) =>
 				h(
 					"span",
@@ -963,7 +1141,7 @@ const ROLE_LOOK = {
 						onClick: () => setFontRole(role),
 						title: "点一下改「" + roleLabel(role) + "」",
 					},
-					ROLE_SAMPLE[role],
+					roleSample(role),
 				);
 
 			return h("div", { className: "dsh-nudge-settings" }, [
@@ -988,6 +1166,10 @@ const ROLE_LOOK = {
 								key: id,
 								type: "button",
 								className: "dsh-nudge-navbtn",
+								// 当前在看哪一组：滚动时由 IntersectionObserver 更新，
+								// 浏览器不支持时这一项一直是 false，只是没有高亮，不影响跳转。
+								"data-on": activeGroup === id ? "1" : "0",
+								"aria-current": activeGroup === id ? "true" : "false",
 								onClick: () => jumpTo(id),
 							},
 							label,
@@ -1006,20 +1188,16 @@ const ROLE_LOOK = {
 						: null,
 				failure === "" ? null : h("p", { className: "dsh-nudge-error", key: "failure", role: "alert" }, failure),
 
-				h("div", { className: "dsh-nudge-group", key: "peek", id: "dsh-nudge-g-peek", "data-dirty": groupDirty("peek") > 0 ? "1" : "0" }, [
+				/* ---------------- 预览：只画样卡，没有配置项，所以没有「恢复默认」 ---------------- */
+				h("div", { className: "dsh-nudge-group", key: "preview", id: "dsh-nudge-g-preview" }, [
 					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
-						h("p", { className: "dsh-nudge-group-title", key: "title" }, "长这样"),
-						h(ResetRow, { key: "reset", group: "peek", disabled, onReset: resetGroup }),
+						h("p", { className: "dsh-nudge-group-title", key: "title" }, "预览"),
+						h("span", { className: "dsh-nudge-hint", key: "note" }, "样卡，改完当场变"),
 					]),
 					h(
 						"p",
-						{ className: "dsh-nudge-hint", key: "draghint" },
-						"桌面上那张预览卡里：按住某一块不放，它会变淡，这时候拖就换位置；按住右键横拖改宽度，松手即存。",
-					),
-					h(
-						"p",
 						{ className: "dsh-nudge-intro", key: "intro" },
-						"点样卡某一行、或下面那排名字可切换类别；往下还有宽度、落点、配色。",
+						"桌面上的卡片就是这个样子。点样卡上任一行，会跳到「文字」去调那一类的字号和颜色。",
 					),
 					h(
 						"div",
@@ -1044,19 +1222,6 @@ const ROLE_LOOK = {
 								"div",
 								{ className: "dsh-nudge-card-bar", key: "bar" },
 								[
-									h(
-										"label",
-										{ className: "dsh-nudge-check", key: "remember", title: "拖过之后下次还在那儿；拖边改的尺寸也一起记住。换了落点就回到那个角落。" },
-										[
-											h("input", {
-												type: "checkbox",
-												checked: bool("rememberPosition") === true,
-												disabled,
-												onChange: (ev) => write("rememberPosition", ev.target.checked),
-											}),
-											"记住拖过的位置",
-										],
-									),
 									h("div", { className: "dsh-nudge-card-bar-space", key: "sp" }),
 									h(
 										"button",
@@ -1065,21 +1230,10 @@ const ROLE_LOOK = {
 											type: "button",
 											className: "dsh-nudge-btn",
 											disabled,
+											title: "在桌面右下角真弹一张，拖边改尺寸、拖卡身换位置，都记在「位置」那一组里。",
 											onClick: () => writeNow("debugPreview", !bool("debugPreview")),
 										},
 										bool("debugPreview") ? "收起桌面上的卡片" : "在桌面上弹一张看看",
-									),
-									h(
-										"button",
-										{
-											key: "reset-layout",
-											type: "button",
-											className: "dsh-nudge-btn",
-											title: layoutMoved ? "把七块文字都摆回原位，宽度也还原" : "七块文字都在原位，宽度也没改过",
-											disabled: disabled || !layoutMoved,
-											onClick: () => writeMany(BLOCK_DEFAULTS()),
-										},
-										movedCount > 0 ? "摆回原位（" + movedCount + " 块）" : "摆回原位",
 									),
 								],
 							),
@@ -1088,31 +1242,17 @@ const ROLE_LOOK = {
 					h(
 						"p",
 						{ className: "dsh-nudge-intro", key: "cardhint" },
-						"宽 " + cardWidth + "、内边距 14/16、左侧 3px 竖条；其余按真卡画，长按上面任一块就能拖。",
+						"宽 " + cardWidth + "、内边距 14/16、左侧 3px 竖条；文字自上而下固定排布，能调的只有尺寸和字号。",
 					),
-					h(
-						"div",
-						{ className: "dsh-nudge-parts", key: "parts" },
-						[
-							h("span", { key: "label", className: "dsh-nudge-partslabel" }, "显示"),
-							...CARD_PARTS.map(([part, label]) =>
-								h(
-									"button",
-									{
-										key: part,
-										type: "button",
-										className: "dsh-nudge-role",
-										"data-part": part,
-										"data-on": partOn(part) ? "1" : "0",
-										disabled,
-										title: (partOn(part) ? "点一下隐藏「" : "点一下显示「") + label + "」",
-										onClick: () => write("visible." + part, !partOn(part)),
-									},
-									label,
-								),
-							),
-						],
-					),
+				]),
+
+				/* ---------------- 文字：每一类的字号与颜色 ---------------- */
+				h("div", { className: "dsh-nudge-group", key: "type", id: "dsh-nudge-g-type", "data-dirty": groupDirty("type") > 0 ? "1" : "0" }, [
+					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
+						h("p", { className: "dsh-nudge-group-title", key: "title" }, "文字"),
+						h("span", { className: "dsh-nudge-hint", key: "note" }, FONT_ROLES.length + " 类文字"),
+						h(ResetRow, { key: "reset", group: "type", disabled, onReset: resetGroup }),
+					]),
 					/* 正在调哪一块，写清楚，免得点完没反应。 */
 					h(
 						"p",
@@ -1186,10 +1326,45 @@ const ROLE_LOOK = {
 						disabled,
 						onCommit: (next) => write("typography." + fontRole + ".color", next),
 					}),
+				]),
+
+				/* ---------------- 卡片：显示哪几块 + 尺寸 + 配色 ---------------- */
+				h("div", { className: "dsh-nudge-group", key: "card", id: "dsh-nudge-g-card", "data-dirty": groupDirty("card") > 0 ? "1" : "0" }, [
+					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
+						h("p", { className: "dsh-nudge-group-title", key: "title" }, "卡片"),
+						h("span", { className: "dsh-nudge-hint", key: "note" }, "宽 " + cardWidth + " · " + themeLabel),
+						h(ResetRow, { key: "reset", group: "card", disabled, onReset: resetGroup }),
+					]),
+					h("div", { className: "dsh-nudge-block", key: "parts" }, [
+						h("div", { className: "dsh-nudge-text", key: "text" }, [
+							h("span", { className: "dsh-nudge-label", key: "label" }, "显示哪几块"),
+							h("span", { className: "dsh-nudge-hint", key: "hint" }, "点一下隐藏、再点一下显示；关掉的块不占位置。"),
+						]),
+						h(
+							"div",
+							{ className: "dsh-nudge-parts", key: "parts" },
+							CARD_PARTS.map(([part, label]) =>
+								h(
+									"button",
+									{
+										key: part,
+										type: "button",
+										className: "dsh-nudge-role",
+										"data-part": part,
+										"data-on": partOn(part) ? "1" : "0",
+										disabled,
+										title: (partOn(part) ? "点一下隐藏「" : "点一下显示「") + label + "」",
+										onClick: () => write("visible." + part, !partOn(part)),
+									},
+									label,
+								),
+							),
+						),
+					]),
 					h(NumberRow, {
 						key: "width",
 						label: "卡片宽度",
-						hint: "260–900；填 0 用默认 384。",
+						hint: "260–900；填 0 用默认 384。拖卡片的边也能改，改完记在「位置」里。",
 						value: num("width"),
 						min: 0,
 						max: 900,
@@ -1197,29 +1372,6 @@ const ROLE_LOOK = {
 						disabled,
 						onCommit: (next) => write("width", next),
 					}),
-					h("div", { className: "dsh-nudge-block", key: "anchor" }, [
-						h("div", { className: "dsh-nudge-text", key: "text" }, [
-							h("span", { className: "dsh-nudge-label", key: "label" }, "卡片落在哪"),
-							h("span", { className: "dsh-nudge-hint", key: "hint" }, "点一格就是那个位置。"),
-						]),
-						h(AnchorGrid, { key: "grid", value: text("anchor") === "" ? "bottom-right" : text("anchor"), disabled, onPick: (next) => write("anchor", next) }),
-					]),
-					h("div", { className: "dsh-nudge-block", key: "cardcolor" }, [
-						h("div", { className: "dsh-nudge-text", key: "text" }, [
-							h("span", { className: "dsh-nudge-label", key: "label" }, "卡片底色"),
-							h("span", { className: "dsh-nudge-hint", key: "hint" }, "留空跟随主题。"),
-						]),
-						h(ColorSwatches, { key: "sw", value: text("cardColor"), disabled, onPick: (next) => write("cardColor", next) }),
-						focusedRow("cardColor", "底色", "#1F2430"),
-					]),
-					h("div", { className: "dsh-nudge-block", key: "accentcolor" }, [
-						h("div", { className: "dsh-nudge-text", key: "text" }, [
-							h("span", { className: "dsh-nudge-label", key: "label" }, "左侧竖条"),
-							h("span", { className: "dsh-nudge-hint", key: "hint" }, "留空按类别：完成绿、待选橙、失败红。"),
-						]),
-						h(ColorSwatches, { key: "sw", value: text("accentColor"), disabled, onPick: (next) => write("accentColor", next) }),
-						focusedRow("accentColor", "竖条", "#4DABF7"),
-					]),
 					h(SelectRow, {
 						key: "theme",
 						label: "配色",
@@ -1233,10 +1385,42 @@ const ROLE_LOOK = {
 						disabled,
 						onChange: (next) => write("theme", next),
 					}),
+					h("div", { className: "dsh-nudge-block", key: "cardcolor" }, [
+						h("div", { className: "dsh-nudge-text", key: "text" }, [
+							h("span", { className: "dsh-nudge-label", key: "label" }, "卡片底色"),
+							h("span", { className: "dsh-nudge-hint", key: "hint" }, "留空跟随主题。" ),
+						]),
+						h(ColorSwatches, { key: "sw", value: text("cardColor"), disabled, onPick: (next) => write("cardColor", next) }),
+						focusedRow("cardColor", "底色", "#1F2430"),
+					]),
+					h("div", { className: "dsh-nudge-block", key: "accentcolor" }, [
+						h("div", { className: "dsh-nudge-text", key: "text" }, [
+							h("span", { className: "dsh-nudge-label", key: "label" }, "左侧竖条"),
+							h("span", { className: "dsh-nudge-hint", key: "hint" }, "留空按类别：完成绿、待选橙、失败红。" ),
+						]),
+						h(ColorSwatches, { key: "sw", value: text("accentColor"), disabled, onPick: (next) => write("accentColor", next) }),
+						focusedRow("accentColor", "竖条", "#4DABF7"),
+					]),
+				]),
+
+				/* ---------------- 位置与停留 ---------------- */
+				h("div", { className: "dsh-nudge-group", key: "place", id: "dsh-nudge-g-place", "data-dirty": groupDirty("place") > 0 ? "1" : "0" }, [
+					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
+						h("p", { className: "dsh-nudge-group-title", key: "title" }, "位置与停留"),
+						h("span", { className: "dsh-nudge-hint", key: "note" }, anchorLabel + " · " + num("staySeconds") + "s"),
+						h(ResetRow, { key: "reset", group: "place", disabled, onReset: resetGroup }),
+					]),
+					h("div", { className: "dsh-nudge-block", key: "anchor" }, [
+						h("div", { className: "dsh-nudge-text", key: "text" }, [
+							h("span", { className: "dsh-nudge-label", key: "label" }, "卡片落在哪"),
+							h("span", { className: "dsh-nudge-hint", key: "hint" }, "点一格就是那个位置；拖过卡片之后以拖到的地方为准。" ),
+						]),
+						h(AnchorGrid, { key: "grid", value: text("anchor") === "" ? "bottom-right" : text("anchor"), disabled, onPick: (next) => write("anchor", next) }),
+					]),
 					h(NumberRow, {
 						key: "staySeconds",
 						label: "停留秒数",
-						hint: "1–600 秒。",
+						hint: "1–600 秒；待你选择的卡片按三倍算（不少于 30 秒）。",
 						value: num("staySeconds"),
 						min: 1,
 						max: 600,
@@ -1253,12 +1437,21 @@ const ROLE_LOOK = {
 						disabled,
 						onCommit: (next) => write("margin", next),
 					}),
-
+					h(SwitchRow, {
+						key: "rememberPosition",
+						label: "记住拖过的位置",
+						hint: "拖过之后下次还在那儿；拖边改的尺寸也一起记住。换了落点就回到那个角落。",
+						checked: bool("rememberPosition"),
+						disabled,
+						onChange: (next) => write("rememberPosition", next),
+					}),
 				]),
 
+				/* ---------------- 提醒：弹不弹、弹哪几类 ---------------- */
 				h("div", { className: "dsh-nudge-group", key: "basic", id: "dsh-nudge-g-basic", "data-dirty": groupDirty("basic") > 0 ? "1" : "0" }, [
 					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
 						h("p", { className: "dsh-nudge-group-title", key: "title" }, "提醒"),
+						h("span", { className: "dsh-nudge-hint", key: "note" }, kindsLabel),
 						h(ResetRow, { key: "reset", group: "basic", disabled, onReset: resetGroup }),
 					]),
 					h(SwitchRow, {
@@ -1295,9 +1488,36 @@ const ROLE_LOOK = {
 					}),
 				]),
 
+				/* ---------------- 点击：点一下会发生什么 ---------------- */
+				h("div", { className: "dsh-nudge-group", key: "click", id: "dsh-nudge-g-click", "data-dirty": groupDirty("click") > 0 ? "1" : "0" }, [
+					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
+						h("p", { className: "dsh-nudge-group-title", key: "title" }, "点击"),
+						h("span", { className: "dsh-nudge-hint", key: "note" }, clickLabel),
+						h(ResetRow, { key: "reset", group: "click", disabled, onReset: resetGroup }),
+					]),
+					h(SwitchRow, {
+						key: "clickToFocus",
+						label: "点击卡片回到 DSH",
+						hint: "关掉后点一下只是把卡片收起来：不跳回 DSH，也不往剪贴板写这批提醒。",
+						checked: bool("clickToFocus"),
+						disabled,
+						onChange: (next) => write("clickToFocus", next),
+					}),
+					h(SwitchRow, {
+						key: "clickThrough",
+						label: "鼠标穿透（纯提示）",
+						hint: "卡片完全不接鼠标：点下去落到后面的窗口上，等于它不存在。想彻底只当提示，把上面那颗也关掉；代价是不能拖、不能右键关，只等停留时间到点自己消失。预览卡不受影响。",
+						checked: bool("clickThrough"),
+						disabled,
+						onChange: (next) => write("clickThrough", next),
+					}),
+				]),
+
+				/* ---------------- 时机：什么时候别弹 ---------------- */
 				h("div", { className: "dsh-nudge-group", key: "when", id: "dsh-nudge-g-when", "data-dirty": groupDirty("when") > 0 ? "1" : "0" }, [
 					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
 						h("p", { className: "dsh-nudge-group-title", key: "title" }, "什么时候弹"),
+						h("span", { className: "dsh-nudge-hint", key: "note" }, whenLabel),
 						h(ResetRow, { key: "reset", group: "when", disabled, onReset: resetGroup }),
 					]),
 					h(SwitchRow, {
@@ -1327,16 +1547,23 @@ const ROLE_LOOK = {
 					h(SwitchRow, {
 						key: "alertOnToolError",
 						label: "工具报错也单独提醒",
-						hint: "单个工具调用失败时立刻弹一条（关掉就只在回合结束时提醒）。",
+						// 这一条会被上面那条整条压掉（宿主：quietToolErrors 为真时直接 return），
+						// 所以两者都开时必须当场说明白，否则用户会以为开关坏了。
+						hint: bool("quietToolErrors")
+							? "上面「回合中途报错不弹」开着，这一条现在不生效——工具报错会攒到回合结束再弹。想立刻弹，先关掉那一条。"
+							: "单个工具调用失败时立刻弹一条（关掉就只在回合结束时提醒）。",
 						checked: bool("alertOnToolError"),
+						muted: bool("quietToolErrors"),
 						disabled,
 						onChange: (next) => write("alertOnToolError", next),
 					}),
 				]),
 
+				/* ---------------- 合并与静音 ---------------- */
 				h("div", { className: "dsh-nudge-group", key: "merge", id: "dsh-nudge-g-merge", "data-dirty": groupDirty("merge") > 0 ? "1" : "0" }, [
 					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
-						h("p", { className: "dsh-nudge-group-title", key: "title" }, "合并"),
+						h("p", { className: "dsh-nudge-group-title", key: "title" }, "合并与静音"),
+						h("span", { className: "dsh-nudge-hint", key: "note" }, mergeLabel),
 						h(ResetRow, { key: "reset", group: "merge", disabled, onReset: resetGroup }),
 					]),
 					h(NumberRow, {
@@ -1376,6 +1603,17 @@ const ROLE_LOOK = {
 								{ className: "dsh-nudge-error", key: "mutebad", role: "alert" },
 								"这几行写法不对，会被跳过：" + mute.bad.join("、") + "；写成 22:00-08:00 这样。",
 							),
+					mute.odd.length === 0
+						? null
+						: h(
+								"p",
+								{ className: "dsh-nudge-warn", key: "muteodd", role: "alert" },
+								"这几行超出 24 小时，宿主不会跳过、而是照原样算：" +
+									mute.odd
+										.map((item) => `${item.line} → 实际按 ${clockText(item.from)}–${clockText(item.to)} 静音`)
+										.join("；") +
+									"。建议改成 00:00 起算的写法。",
+							),
 					mute.slots.length === 0 && mute.bad.length === 0
 						? null
 						: h(
@@ -1385,7 +1623,7 @@ const ROLE_LOOK = {
 							),
 				]),
 
-
+				/* ---------------- 调试：默认收着 ---------------- */
 				h("div", { className: "dsh-nudge-group", key: "debug", id: "dsh-nudge-g-debug", "data-dirty": groupDirty("debug") > 0 ? "1" : "0" }, [
 					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
 						h(
@@ -1402,14 +1640,14 @@ const ROLE_LOOK = {
 						),
 						h(ResetRow, { key: "reset", group: "debug", disabled, onReset: resetGroup }),
 					]),
-					debugOpen ? h(SwitchRow, {
-						key: "debugPreview",
-						label: "预览弹窗（常驻，可拖动缩放）",
-						hint: "打开后立刻弹一张卡片并一直留着；拖动或缩放它，关掉开关时位置和大小会记住。",
-						checked: bool("debugPreview"),
-						disabled,
-						onChange: (next) => write("debugPreview", next),
-					}) : null,
+					/* 预览卡不在这儿再开一个入口：「预览」组样卡底下那颗按钮已经是它了。 */
+					debugOpen
+						? h(
+								"p",
+								{ className: "dsh-nudge-intro", key: "previewhint" },
+								"想看真卡长什么样、或者拖一拖摆位置：回「预览」组，点样卡底下那颗「在桌面上弹一张看看」。",
+							)
+						: null,
 					debugOpen ? h(SwitchRow, {
 						key: "debugPayload",
 						label: "把每次弹出的内容落盘",
@@ -1465,6 +1703,7 @@ const ROLE_LOOK = {
 						])
 					: null,
 				]),
+
 				h("div", { className: "dsh-nudge-applybar", key: "applybar", "data-dirty": pending > 0 ? "1" : "0", role: "status" }, [
 					h(
 						"span",
@@ -1475,6 +1714,27 @@ const ROLE_LOOK = {
 								? "已保存"
 								: "没有未保存的改动",
 					),
+					/* 改在哪几组：点一下跳过去，省得在九组里翻。 */
+					pending > 0 && dirtyGroupNames.length > 0
+						? h(
+								"span",
+								{ className: "dsh-nudge-applywhere", key: "where" },
+								dirtyGroupNames.map((name, index) => [
+									index === 0 ? null : h("span", { key: "sep" + index, className: "dsh-nudge-applysep" }, " · "),
+									h(
+										"button",
+										{
+											key: "jump" + name,
+											type: "button",
+											className: "dsh-nudge-applylink",
+											title: "跳到「" + name + "」",
+											onClick: () => jumpTo((NAV_GROUPS.find(([, label]) => label === name) ?? ["", ""])[0]),
+										},
+										name,
+									),
+								]),
+							)
+						: null,
 					h(
 						"button",
 						{
@@ -1497,6 +1757,36 @@ const ROLE_LOOK = {
 							onClick: discardDraft,
 						},
 						"放弃",
+					),
+				]),
+				/* 全部恢复默认：九组一颗颗点太慢，但这是批量写回，所以要点两下。 */
+				h("div", { className: "dsh-nudge-resetall", key: "resetall" }, [
+					h(
+						"span",
+						{ className: "dsh-nudge-applytext", key: "text" },
+						resetAllArmed
+							? "再点一下就把全部 " + allDefaults().length + " 项写回出厂值（还没保存，可以「放弃」）"
+							: "把九组设置一起写回出厂值",
+					),
+					h(
+						"button",
+						{
+							key: "resetallbtn",
+							type: "button",
+							className: "dsh-nudge-btn",
+							"data-armed": resetAllArmed ? "1" : "0",
+							disabled,
+							onClick: () => {
+								if (!resetAllArmed) {
+									setResetAllArmed(true);
+									return;
+								}
+								setResetAllArmed(false);
+								// 只进草稿：真正的写回仍然由「应用」完成，误点也能「放弃」。
+								writeMany(allDefaults());
+							},
+						},
+						resetAllArmed ? "确认全部恢复" : "全部恢复默认",
 					),
 				]),
 				h("p", { className: "dsh-nudge-stamp", key: "stamp" }, "提醒弹窗设置页 · 修订 " + PANEL_REVISION),

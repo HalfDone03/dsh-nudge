@@ -39,7 +39,6 @@ param(
     [int]$SnapshotWidth = 0,
     [switch]$Preview,
     [string]$StopFile = '',
-    [string]$LayoutFile = '',
     [switch]$Trace
 )
 
@@ -509,13 +508,13 @@ function Set-CardTextScale {
                     Line = [double]$node.LineHeight
                     Max  = [double]$node.MaxHeight
                 }
-            }
+        }
             $base = $script:textBase[$node]
             $node.FontSize = [double]$base.Size * $Factor
             if (-not [double]::IsNaN([double]$base.Line)) { $node.LineHeight = [double]$base.Line * $Factor }
             if (-not [double]::IsInfinity([double]$base.Max) -and [double]$base.Max -gt 0) {
                 $node.MaxHeight = [double]$base.Max * $Factor
-            }
+        }
         }
         $count = 0
         try { $count = [System.Windows.Media.VisualTreeHelper]::GetChildrenCount($node) } catch { $count = 0 }
@@ -525,6 +524,36 @@ function Set-CardTextScale {
             if ($null -ne $child) { $stack.Push($child) }
         }
     }
+}
+
+# Rebuilds a resident preview card's content in place. The window, its position, its
+# size and every handler stay exactly as they are: only the card inside changes, so a
+# settings change shows up in ~250ms instead of a fresh helper's ~900ms startup.
+function Update-CardInPlace {
+    param($Payload, $Window, [int]$KeepWidth = 0)
+    if ($null -eq $Window -or $null -eq $Payload) { return }
+    $width = $KeepWidth
+    if ($width -le 0) {
+        $width = [int][Math]::Round([double]$Window.ActualWidth - (2 * $script:ShadowPad))
+    }
+    if ($width -lt 260) { $width = 260 }
+    $next = New-Card $Payload -Width $width
+    $size = Measure-Card $next
+    # The type is laid out for this width; every other width is a ratio of it.
+    $script:scaleBase = [double]$size.Width
+    $next.Width = [double]::NaN
+    $next.HorizontalAlignment = 'Stretch'
+    $next.VerticalAlignment = 'Stretch'
+    try { $next.Add_MouseEnter($script:cardHover) } catch { }
+    try { $next.Add_MouseLeave($script:cardLeave) } catch { }
+    $script:card = $next
+    $Window.Content = $next
+    # MinHeight was raised for the old content when the window was created: drop the floor
+    try { $Window.MinHeight = 90 } catch { }
+    try { $Window.Width = [double]$size.Width } catch { }
+    try { $Window.Height = [double]$size.Height } catch { }
+    try { Update-CardScale -Window $Window -Card $next } catch { }
+    try { $Window.UpdateLayout() } catch { }
 }
 
 function Update-CardScale {
@@ -697,272 +726,6 @@ function New-ItemRow {
     return $row
 }
 
-# --- Per-block layout editing -------------------------------------------------
-# A preview card doubles as a layout editor: drag a block with the left button to
-# nudge it, hold the right button and drag sideways to change its width. Every
-# change is written to a small json file that the host folds back into the plugin
-# config, so real cards inherit exactly what was set on the preview card.
-
-$script:BlockRoles = @('title', 'project', 'task', 'status', 'items', 'more', 'footer')
-
-function Get-BlockNumber ($Node, $Name) {
-    if ($null -eq $Node) { return 0.0 }
-    $prop = $Node.PSObject.Properties[$Name]
-    if ($null -eq $prop -or $null -eq $prop.Value) { return 0.0 }
-    try { return [double]$prop.Value } catch { return 0.0 }
-}
-
-function Read-BlockLayout ($Payload) {
-    $map = @{}
-    $source = $null
-    if ($null -ne $Payload) { $source = $Payload.blocks }
-    foreach ($role in $script:BlockRoles) {
-        $entry = @{ dx = 0.0; dy = 0.0; w = 0.0 }
-        if ($null -ne $source) {
-            $block = $source.PSObject.Properties[$role]
-            if ($null -ne $block -and $null -ne $block.Value) {
-                $entry.dx = Get-BlockNumber $block.Value 'dx'
-                $entry.dy = Get-BlockNumber $block.Value 'dy'
-                $entry.w = Get-BlockNumber $block.Value 'w'
-            }
-        }
-        $map[$role] = $entry
-    }
-    return $map
-}
-
-function Save-BlockLayout ($Path, $Geom) {
-    if ([string]::IsNullOrWhiteSpace($Path)) { return }
-    if ($null -eq $Geom) { return }
-    try {
-        $blocks = @{}
-        foreach ($role in $script:BlockRoles) {
-            $entry = $Geom[$role]
-            if ($null -eq $entry) { continue }
-            $blocks[$role] = @{
-                dx = [int][Math]::Round([double]$entry.dx)
-                dy = [int][Math]::Round([double]$entry.dy)
-                w  = [int][Math]::Round([double]$entry.w)
-            }
-        }
-        $json = ConvertTo-Json -InputObject @{ blocks = $blocks } -Depth 6 -Compress
-        $utf8 = New-Object System.Text.UTF8Encoding $false
-        [System.IO.File]::WriteAllText($Path, $json, $utf8)
-    } catch { }
-}
-
-function Set-BlockShift ($Node, $Dx, $Dy) {
-    if ($null -eq $Node) { return }
-    $shift = $Node.RenderTransform
-    if (-not ($shift -is [System.Windows.Media.TranslateTransform])) {
-        $shift = New-Object System.Windows.Media.TranslateTransform 0, 0
-        $Node.RenderTransform = $shift
-    }
-    $shift.X = $Dx
-    $shift.Y = $Dy
-}
-
-# True when the click landed on a block (or on text inside one). The window's own
-# press handler has to stay out of the way or the whole card would start moving.
-function Test-BlockSource ($Source) {
-    $node = $Source
-    $hops = 0
-    while ($null -ne $node -and $hops -lt 64) {
-        $hops = $hops + 1
-        $tag = ''
-        try { $tag = [string]$node.Tag } catch { $tag = '' }
-        if ($tag.StartsWith('block:')) { return $true }
-        try { $node = [System.Windows.Media.VisualTreeHelper]::GetParent($node) } catch { $node = $null }
-    }
-    return $false
-}
-
-function Initialize-BlockEdit ($Body, $Nodes, $Geom, $LayoutFile) {
-    if ($null -eq $Body -or $null -eq $Nodes -or $null -eq $Geom) { return }
-    $editable = ($Preview -and -not [string]::IsNullOrWhiteSpace($LayoutFile))
-
-    # Blocks drift outside the plain stack once they are nudged, so the body
-    # keeps room for the worst offender on each side. Without this a saved
-    # layout would be cut off by the card edge.
-    $padLeft = 0.0; $padTop = 0.0; $padRight = 0.0; $padBottom = 0.0
-    foreach ($role in $script:BlockRoles) {
-        $entry = $Geom[$role]
-        if ($null -eq $entry) { continue }
-        $dx = [double]$entry.dx
-        $dy = [double]$entry.dy
-        if ($dx -lt 0) { if (- $dx -gt $padLeft) { $padLeft = - $dx } } elseif ($dx -gt $padRight) { $padRight = $dx }
-        if ($dy -lt 0) { if (- $dy -gt $padTop) { $padTop = - $dy } } elseif ($dy -gt $padBottom) { $padBottom = $dy }
-    }
-    $Body.Margin = New-Object System.Windows.Thickness -ArgumentList @(
-        [double](16 + $padLeft), [double](14 + $padTop), [double](16 + $padRight), [double](14 + $padBottom))
-
-    $script:blockBody = $Body
-    $script:blockNodes = $Nodes
-    $script:blockGeom = $Geom
-    $script:blockFile = $LayoutFile
-    $script:blockRole = ''
-    $script:blockDrag = ''
-    $script:blockResize = ''
-    $script:blockMoved = $false
-
-    # A stretched block cannot move sideways (there is no slack), so pin it to the
-    # width it already had. Same pixels, same place, but now it can be dragged.
-    $script:blockApply = {
-        foreach ($role in $script:BlockRoles) {
-            $node = $script:blockNodes[$role]
-            if ($null -eq $node) { continue }
-            $entry = $script:blockGeom[$role]
-            if ($null -eq $entry) { continue }
-            try {
-                if ([double]::IsNaN([double]$node.Width) -and $node.ActualWidth -gt 0) {
-                    $node.HorizontalAlignment = 'Left'
-                    $node.Width = [double]$node.ActualWidth
-                }
-                if ([double]$entry.w -gt 0) {
-                    $node.HorizontalAlignment = 'Left'
-                    $node.Width = [double]$entry.w
-                }
-                Set-BlockShift $node ([double]$entry.dx) ([double]$entry.dy)
-            } catch { }
-        }
-    }
-
-    if (-not $editable) {
-        $Body.Add_Loaded({ & $script:blockApply })
-        return
-    }
-
-    # Hold to drag: a press only records the start point and arms a 260ms timer.
-    # When the timer fires with the button still down the block is picked up, so a
-    # short click stays a plain click and nothing jumps the moment you touch it.
-    $script:blockArm = {
-        try { $script:blockHold.Stop() } catch { }
-        $role = $script:blockRole
-        if ([string]::IsNullOrEmpty($role)) { return }
-        if ($script:blockResize -eq $role) { return }
-        if ([System.Windows.Input.Mouse]::LeftButton -ne [System.Windows.Input.MouseButtonState]::Pressed) { $script:blockRole = ''; return }
-        $node = $script:blockNodes[$role]
-        if ($null -eq $node) { return }
-        # The hand often slides off the block during the hold. Picking up a block
-        # the pointer is no longer over would move something nobody is watching.
-        if (-not $node.IsMouseOver) { $script:blockRole = ''; return }
-        # The hand usually drifts a pixel or two during the hold; re-anchor the
-        # start point to right now so the block does not jump when it is picked up.
-        $screen = $node.PointToScreen([System.Windows.Input.Mouse]::GetPosition($node))
-        $script:blockStartX = $screen.X
-        $script:blockStartY = $screen.Y
-        $script:blockBaseDx = [double]$script:blockGeom[$role].dx
-        $script:blockBaseDy = [double]$script:blockGeom[$role].dy
-        $script:blockDrag = $role
-        try { [void]$node.CaptureMouse() } catch { }
-        try { $node.Opacity = 0.86 } catch { }
-    }
-
-    $script:blockHold = New-Object System.Windows.Threading.DispatcherTimer
-    $script:blockHold.Interval = [TimeSpan]::FromMilliseconds(260)
-    $script:blockHold.Add_Tick({ & $script:blockArm })
-
-    $script:blockBegin = {
-        param($Node, $Event, $Resize)
-        $role = ''
-        try { $role = ([string]$Node.Tag).Substring(6) } catch { $role = '' }
-        if (-not $script:blockGeom.ContainsKey($role)) { return }
-        $screen = $Node.PointToScreen($Event.GetPosition($Node))
-        $script:blockRole = $role
-        $script:blockStartX = $screen.X
-        $script:blockStartY = $screen.Y
-        $script:blockBaseDx = [double]$script:blockGeom[$role].dx
-        $script:blockBaseDy = [double]$script:blockGeom[$role].dy
-        $script:blockBaseW = [double]$Node.ActualWidth
-        if ($Resize) {
-            # Resizing needs no hold: right button grabs the block right away.
-            $script:blockResize = $role
-            $script:blockDrag = ''
-            $script:blockMoved = $false
-            try { [void]$Node.CaptureMouse() } catch { }
-            $Event.Handled = $true
-            return
-        }
-        $script:blockDrag = ''
-        $script:blockMoved = $false
-        try { $script:blockHold.Stop() } catch { }
-        try { $script:blockHold.Start() } catch { }
-    }
-    $script:blockFinish = {
-        param($Node, $Event)
-        try { $script:blockHold.Stop() } catch { }
-        # Only a real pull writes the layout file: holding a block and letting go
-        # without moving it must not touch the file or the settings.
-        $touched = $script:blockMoved
-        try { [void]$Node.ReleaseMouseCapture() } catch { }
-        try { $Node.Opacity = 1.0 } catch { }
-        $script:blockRole = ''
-        $script:blockDrag = ''
-        $script:blockResize = ''
-        $script:blockMoved = $false
-        # A plain click (no hold, no resize) never touches the layout file.
-        if ($touched) { Save-BlockLayout $script:blockFile $script:blockGeom }
-        $Event.Handled = $true
-    }
-    $script:blockMove = {
-        param($Node, $Event)
-        try {
-            $role = $script:blockRole
-            if ([string]::IsNullOrEmpty($role)) { return }
-            $entry = $script:blockGeom[$role]
-            if ($null -eq $entry) { return }
-            $screen = $Node.PointToScreen($Event.GetPosition($Node))
-            if ($script:blockResize -eq $role) {
-                $width = [double]$script:blockBaseW + ($screen.X - [double]$script:blockStartX)
-                if ($width -lt 60) { $width = 60 }
-                if ($width -gt 900) { $width = 900 }
-                $Node.HorizontalAlignment = 'Left'
-                $Node.Width = $width
-                $script:blockMoved = $true
-                $entry.w = [Math]::Round($width)
-                $Event.Handled = $true
-                return
-            }
-            if ($script:blockDrag -ne $role) { return }
-            $position = $Node.TranslatePoint((New-Object System.Windows.Point 0, 0), $script:blockBody)
-            $restX = $position.X - [double]$entry.dx
-            $restY = $position.Y - [double]$entry.dy
-            $minX = - $restX
-            $maxX = [double]$script:blockBody.ActualWidth - $restX - [double]$Node.ActualWidth
-            $minY = - $restY
-            $maxY = [double]$script:blockBody.ActualHeight - $restY - [double]$Node.ActualHeight
-            if ($maxX -lt $minX) { $maxX = $minX }
-            if ($maxY -lt $minY) { $maxY = $minY }
-            $dx = [double]$script:blockBaseDx + ($screen.X - [double]$script:blockStartX)
-            $dy = [double]$script:blockBaseDy + ($screen.Y - [double]$script:blockStartY)
-            if ($dx -lt $minX) { $dx = $minX }
-            if ($dx -gt $maxX) { $dx = $maxX }
-            if ($dy -lt $minY) { $dy = $minY }
-            if ($dy -gt $maxY) { $dy = $maxY }
-            $script:blockMoved = $true
-            $entry.dx = [Math]::Round($dx)
-            $entry.dy = [Math]::Round($dy)
-            Set-BlockShift $Node ([double]$entry.dx) ([double]$entry.dy)
-            $Event.Handled = $true
-        } catch { }
-    }
-
-    foreach ($role in $script:BlockRoles) {
-        $node = $Nodes[$role]
-        if ($null -eq $node) { continue }
-        $node.Tag = 'block:' + $role
-        $node.Cursor = [System.Windows.Input.Cursors]::SizeAll
-        $node.Add_MouseLeftButtonDown({ param($sender, $eventArgs) & $script:blockBegin $sender $eventArgs $false })
-        $node.Add_MouseRightButtonDown({ param($sender, $eventArgs) & $script:blockBegin $sender $eventArgs $true })
-        $node.Add_MouseMove({ param($sender, $eventArgs) & $script:blockMove $sender $eventArgs })
-        $node.Add_MouseLeftButtonUp({ param($sender, $eventArgs) & $script:blockFinish $sender $eventArgs })
-        $node.Add_MouseRightButtonUp({ param($sender, $eventArgs) & $script:blockFinish $sender $eventArgs })
-    }
-
-    $Body.Add_Loaded({ & $script:blockApply })
-}
-
-
 # Which parts of the card the user asked to see. Missing flag means visible, so a
 # payload from an older host keeps drawing the whole card.
 function Test-PartVisible {
@@ -974,12 +737,204 @@ function Test-PartVisible {
     return [bool]$flag
 }
 
+# Fills a card's body (the StackPanel to the right of the accent strip). Split out of
+# New-Card so a resident preview card can rebuild its own content in place: restarting
+# the whole PowerShell + WPF process costs ~900ms, which read as "the settings page is
+# laggy" every time a block was toggled.
+function Fill-CardBody {
+    param($Payload, [string]$Accent, $Body)
+    $items = @($Payload.items | Where-Object { $null -ne $_ })
+    $firstCarrier = $null
+    $header = New-Object System.Windows.Controls.Grid
+    $colHead = New-Object System.Windows.Controls.ColumnDefinition
+    $colHead.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+    $colHeadTime = New-Object System.Windows.Controls.ColumnDefinition
+    $colHeadTime.Width = [System.Windows.GridLength]::Auto
+    [void]$header.ColumnDefinitions.Add($colHead)
+    [void]$header.ColumnDefinitions.Add($colHeadTime)
+
+    # Badge + label + count pill as a grid: the label owns the star column so a
+    # narrow card trims it instead of shoving the timestamp off the edge.
+    $titleLine = New-Object System.Windows.Controls.Grid
+    $colBadge = New-Object System.Windows.Controls.ColumnDefinition
+    $colBadge.Width = [System.Windows.GridLength]::Auto
+    $colLabel = New-Object System.Windows.Controls.ColumnDefinition
+    $colLabel.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+    $colPill = New-Object System.Windows.Controls.ColumnDefinition
+    $colPill.Width = [System.Windows.GridLength]::Auto
+    [void]$titleLine.ColumnDefinitions.Add($colBadge)
+    [void]$titleLine.ColumnDefinitions.Add($colLabel)
+    [void]$titleLine.ColumnDefinitions.Add($colPill)
+    $badge = New-Badge -Accent $accent -Glyph ([string]$Payload.glyph)
+    $badge.VerticalAlignment = 'Center'
+    [System.Windows.Controls.Grid]::SetColumn($badge, 0)
+    [void]$titleLine.Children.Add($badge)
+    $labelText = New-Text -Text ([string]$Payload.label) -Size (Get-FontSize 'title' 14) -Color (Get-FontColor 'title' $script:TextPrimary) -Weight 'SemiBold'
+    $labelText.TextTrimming = 'CharacterEllipsis'
+    $labelText.TextWrapping = 'NoWrap'
+    $labelText.VerticalAlignment = 'Center'
+    [System.Windows.Controls.Grid]::SetColumn($labelText, 1)
+    [void]$titleLine.Children.Add($labelText)
+    if ([int]$Payload.count -gt 1) {
+        $pill = New-CountPill -Count ([int]$Payload.count) -Accent $accent
+        $pill.VerticalAlignment = 'Center'
+        [System.Windows.Controls.Grid]::SetColumn($pill, 2)
+        [void]$titleLine.Children.Add($pill)
+    }
+    [System.Windows.Controls.Grid]::SetColumn($titleLine, 0)
+    [void]$header.Children.Add($titleLine)
+
+    $newest = ''
+    if ($items.Count -gt 0) { $newest = [string]$items[0].at }
+    if ([string]::IsNullOrWhiteSpace($newest)) { $newest = [string]$Payload.at }
+    if (-not [string]::IsNullOrWhiteSpace($newest)) {
+        $headTime = New-Text -Text $newest -Size (Get-FontSize 'time' 10) -Color (Get-FontColor 'time' $script:TextFaint)
+        $headTime.VerticalAlignment = 'Center'
+        $headTime.Margin = New-Object System.Windows.Thickness 8,0,0,0
+        [System.Windows.Controls.Grid]::SetColumn($headTime, 1)
+        [void]$header.Children.Add($headTime)
+    }
+    if (Test-PartVisible $Payload 'title') {
+        if ($null -eq $firstCarrier) { $firstCarrier = $header }
+        [void]$Body.Children.Add($header)
+    }
+
+    # Reading order, top to bottom: WHERE (the project folder, biggest), then WHICH
+    # task, then why it stopped. You triage a reminder by project first: the folder
+    # name is what tells you from across the desk whether this one is even yours.
+    # No leading glyph: at 15.5px the name is already the loudest thing on the card,
+    # and an icon-font square in front of it just read as a box and stole width.
+    $contextText = [string]$Payload.context
+    if ($items.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($contextText)) {
+        $contextLabel = New-Text -Text $contextText -Size (Get-FontSize 'project' 15.5) -Color (Get-FontColor 'project' $script:TextPrimary) -Weight 'SemiBold'
+        $contextLabel.TextTrimming = 'CharacterEllipsis'
+        $contextLabel.TextWrapping = 'NoWrap'
+        $contextLabel.HorizontalAlignment = 'Left'
+        $contextLabel.Margin = New-Object System.Windows.Thickness 0,7,0,0
+        if (Test-PartVisible $Payload 'project') {
+            if ($null -eq $firstCarrier) { $firstCarrier = $contextLabel }
+            [void]$Body.Children.Add($contextLabel)
+        }
+    }
+
+    # One rung down: which task inside that project.
+    $headlineText = [string]$Payload.headline
+    if (-not [string]::IsNullOrWhiteSpace($headlineText)) {
+        $headlineBlock = New-Text -Text $headlineText -Size (Get-FontSize 'task' 12.5) -Color (Get-FontColor 'task' $script:TextBody)
+        $headlineBlock.TextWrapping = 'Wrap'
+        $headlineBlock.TextTrimming = 'CharacterEllipsis'
+        $headlineBlock.LineHeight = 18
+        $headlineBlock.LineStackingStrategy = 'BlockLineHeight'
+        $headlineBlock.MaxHeight = 54
+        $headlineBlock.HorizontalAlignment = 'Left'
+        $headlineBlock.Margin = New-Object System.Windows.Thickness 0,2,0,0
+        if (Test-PartVisible $Payload 'task') {
+            if ($null -eq $firstCarrier) { $firstCarrier = $headlineBlock }
+            [void]$Body.Children.Add($headlineBlock)
+        }
+    }
+
+    # Third line, the smallest rung: what was reported. It is read only after the
+    # project and the task told you whether you care.
+    $verdictKind = [string]$Payload.verdictKind
+    $verdictText = [string]$Payload.verdictText
+    if (-not [string]::IsNullOrWhiteSpace($verdictKind) -or -not [string]::IsNullOrWhiteSpace($verdictText)) {
+        $verdictRow = New-Object System.Windows.Controls.Grid
+        $colVerdictLabel = New-Object System.Windows.Controls.ColumnDefinition
+        $colVerdictLabel.Width = [System.Windows.GridLength]::Auto
+        $colVerdictBody = New-Object System.Windows.Controls.ColumnDefinition
+        $colVerdictBody.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+        [void]$verdictRow.ColumnDefinitions.Add($colVerdictLabel)
+        [void]$verdictRow.ColumnDefinitions.Add($colVerdictBody)
+        if (-not [string]::IsNullOrWhiteSpace($verdictKind)) {
+            # Only add the full-width colon when a reason follows it: the completion
+            # word alone reads fine, with a colon and nothing after it it does not.
+            $verdictLabelText = $verdictKind
+            if (-not [string]::IsNullOrWhiteSpace($verdictText)) { $verdictLabelText = $verdictKind + [string][char]0xFF1A }
+            $verdictLabel = New-Text -Text $verdictLabelText -Size (Get-FontSize 'status' 10.5) -Color (Get-FontColor 'status' (Get-KindAccent ([string]$Payload.kind))) -Weight 'SemiBold'
+            $verdictLabel.VerticalAlignment = 'Top'
+            [System.Windows.Controls.Grid]::SetColumn($verdictLabel, 0)
+            [void]$verdictRow.Children.Add($verdictLabel)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($verdictText)) {
+            $verdictBody = New-Text -Text $verdictText -Size (Get-FontSize 'reason' 10.5) -Color (Get-FontColor 'reason' $script:VerdictText)
+            $verdictBody.TextWrapping = 'Wrap'
+            $verdictBody.TextTrimming = 'CharacterEllipsis'
+            $verdictBody.LineHeight = 15
+            $verdictBody.LineStackingStrategy = 'BlockLineHeight'
+            $verdictBody.MaxHeight = 45
+            $verdictBody.VerticalAlignment = 'Top'
+            [System.Windows.Controls.Grid]::SetColumn($verdictBody, 1)
+            [void]$verdictRow.Children.Add($verdictBody)
+        }
+        $verdictTint = [string]$Payload.headlineTint
+        if (-not (Test-PartVisible $Payload 'status')) {
+            # skipped: the user turned this part off
+        } elseif ([string]::IsNullOrWhiteSpace($verdictTint)) {
+            $verdictRow.Margin = New-Object System.Windows.Thickness 0,6,0,0
+            if ($null -eq $firstCarrier) { $firstCarrier = $verdictRow }
+            [void]$Body.Children.Add($verdictRow)
+            } else {
+            # Failure and pending decisions get a faint coloured plate so the reason
+            # reads as a status, not as more body copy.
+            $verdictFrame = New-Object System.Windows.Controls.Border
+            $verdictFrame.Background = New-Brush $verdictTint
+            $verdictFrame.CornerRadius = New-Object System.Windows.CornerRadius 6
+            $verdictFrame.Padding = New-Object System.Windows.Thickness 9,6,9,6
+            $verdictFrame.Margin = New-Object System.Windows.Thickness 0,8,0,0
+            $verdictFrame.SnapsToDevicePixels = $true
+            $verdictFrame.Child = $verdictRow
+            if ($null -eq $firstCarrier) { $firstCarrier = $verdictFrame }
+            [void]$Body.Children.Add($verdictFrame)
+        }
+    }
+
+    # Which project / session this batch came from. A single-alert card already
+    # showed the project as its headline line above; a batch lists one project per
+    # row, so the shared line would only repeat it.
+
+    if ($items.Count -gt 0 -and (Test-PartVisible $Payload 'items')) {
+        $itemsPanel = New-Object System.Windows.Controls.StackPanel
+        $divider = New-Object System.Windows.Controls.Border
+        $divider.Height = 1
+        $divider.Background = New-Brush $script:RuleColor
+        $divider.Margin = New-Object System.Windows.Thickness 0,11,0,1
+        [void]$itemsPanel.Children.Add($divider)
+        foreach ($item in $items) { [void]$itemsPanel.Children.Add((New-ItemRow $item)) }
+        # The list block is spaced by its own divider, so that is the carrier.
+        if ($null -eq $firstCarrier) { $firstCarrier = $divider }
+        [void]$Body.Children.Add($itemsPanel)
+    }
+
+    $more = [string]$Payload.more
+    if (-not [string]::IsNullOrWhiteSpace($more) -and (Test-PartVisible $Payload 'more')) {
+        $moreText = New-Text -Text $more -Size (Get-FontSize 'more' 10.5) -Color (Get-FontColor 'more' $script:MoreText)
+        $moreText.Margin = New-Object System.Windows.Thickness 0,8,0,0
+        if ($null -eq $firstCarrier) { $firstCarrier = $moreText }
+        [void]$Body.Children.Add($moreText)
+    }
+
+    $footerText = [string]$Payload.footer
+    if (-not [string]::IsNullOrWhiteSpace($footerText) -and (Test-PartVisible $Payload 'footer')) {
+        $footer = New-Text -Text $footerText -Size (Get-FontSize 'footer' 10) -Color (Get-FontColor 'footer' $script:FooterText)
+        $footer.Margin = New-Object System.Windows.Thickness 0,12,0,0
+        if ($null -eq $firstCarrier) { $firstCarrier = $footer }
+        [void]$Body.Children.Add($footer)
+    }
+
+    # Zero the top edge of whichever block ended up first (see $firstCarrier above).
+    if ($null -ne $firstCarrier) {
+        $carrierMargin = $firstCarrier.Margin
+        $firstCarrier.Margin = New-Object System.Windows.Thickness $carrierMargin.Left, 0, $carrierMargin.Right, $carrierMargin.Bottom
+    }
+
+}
+
 function New-Card {
-    param($Payload, [int]$Width = $script:CardWidth, [string]$LayoutFile = '')
+    param($Payload, [int]$Width = $script:CardWidth)
     $accent = [string]$Payload.accent
     if ([string]::IsNullOrWhiteSpace($accent)) { $accent = Get-KindAccent ([string]$Payload.kind) }
     if (-not [string]::IsNullOrWhiteSpace([string]$Payload.accentColor)) { $accent = [string]$Payload.accentColor }
-    $items = @($Payload.items | Where-Object { $null -ne $_ })
 
     $card = New-Object System.Windows.Controls.Border
     if ($Width -gt 0) {
@@ -1032,184 +987,9 @@ function New-Card {
 
     $body = New-Object System.Windows.Controls.StackPanel
     $body.Margin = New-Object System.Windows.Thickness 16,14,16,14
-    $blockNodes = @{}
     [System.Windows.Controls.Grid]::SetColumn($body, 1)
-
-    $header = New-Object System.Windows.Controls.Grid
-    $colHead = New-Object System.Windows.Controls.ColumnDefinition
-    $colHead.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
-    $colHeadTime = New-Object System.Windows.Controls.ColumnDefinition
-    $colHeadTime.Width = [System.Windows.GridLength]::Auto
-    [void]$header.ColumnDefinitions.Add($colHead)
-    [void]$header.ColumnDefinitions.Add($colHeadTime)
-
-    # Badge + label + count pill as a grid: the label owns the star column so a
-    # narrow card trims it instead of shoving the timestamp off the edge.
-    $titleLine = New-Object System.Windows.Controls.Grid
-    $colBadge = New-Object System.Windows.Controls.ColumnDefinition
-    $colBadge.Width = [System.Windows.GridLength]::Auto
-    $colLabel = New-Object System.Windows.Controls.ColumnDefinition
-    $colLabel.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
-    $colPill = New-Object System.Windows.Controls.ColumnDefinition
-    $colPill.Width = [System.Windows.GridLength]::Auto
-    [void]$titleLine.ColumnDefinitions.Add($colBadge)
-    [void]$titleLine.ColumnDefinitions.Add($colLabel)
-    [void]$titleLine.ColumnDefinitions.Add($colPill)
-    $badge = New-Badge -Accent $accent -Glyph ([string]$Payload.glyph)
-    $badge.VerticalAlignment = 'Center'
-    [System.Windows.Controls.Grid]::SetColumn($badge, 0)
-    [void]$titleLine.Children.Add($badge)
-    $labelText = New-Text -Text ([string]$Payload.label) -Size (Get-FontSize 'title' 14) -Color (Get-FontColor 'title' $script:TextPrimary) -Weight 'SemiBold'
-    $labelText.TextTrimming = 'CharacterEllipsis'
-    $labelText.TextWrapping = 'NoWrap'
-    $labelText.VerticalAlignment = 'Center'
-    [System.Windows.Controls.Grid]::SetColumn($labelText, 1)
-    [void]$titleLine.Children.Add($labelText)
-    if ([int]$Payload.count -gt 1) {
-        $pill = New-CountPill -Count ([int]$Payload.count) -Accent $accent
-        $pill.VerticalAlignment = 'Center'
-        [System.Windows.Controls.Grid]::SetColumn($pill, 2)
-        [void]$titleLine.Children.Add($pill)
-    }
-    [System.Windows.Controls.Grid]::SetColumn($titleLine, 0)
-    [void]$header.Children.Add($titleLine)
-
-    $newest = ''
-    if ($items.Count -gt 0) { $newest = [string]$items[0].at }
-    if ([string]::IsNullOrWhiteSpace($newest)) { $newest = [string]$Payload.at }
-    if (-not [string]::IsNullOrWhiteSpace($newest)) {
-        $headTime = New-Text -Text $newest -Size (Get-FontSize 'time' 10) -Color (Get-FontColor 'time' $script:TextFaint)
-        $headTime.VerticalAlignment = 'Center'
-        $headTime.Margin = New-Object System.Windows.Thickness 8,0,0,0
-        [System.Windows.Controls.Grid]::SetColumn($headTime, 1)
-        [void]$header.Children.Add($headTime)
-    }
-    if (Test-PartVisible $Payload 'title') {
-        [void]$body.Children.Add($header)
-        $blockNodes['title'] = $header
-    }
-
-    # Reading order, top to bottom: WHERE (the project folder, biggest), then WHICH
-    # task, then why it stopped. You triage a reminder by project first: the folder
-    # name is what tells you from across the desk whether this one is even yours.
-    # No leading glyph: at 15.5px the name is already the loudest thing on the card,
-    # and an icon-font square in front of it just read as a box and stole width.
-    $contextText = [string]$Payload.context
-    if ($items.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($contextText)) {
-        $contextLabel = New-Text -Text $contextText -Size (Get-FontSize 'project' 15.5) -Color (Get-FontColor 'project' $script:TextPrimary) -Weight 'SemiBold'
-        $contextLabel.TextTrimming = 'CharacterEllipsis'
-        $contextLabel.TextWrapping = 'NoWrap'
-        $contextLabel.HorizontalAlignment = 'Left'
-        $contextLabel.Margin = New-Object System.Windows.Thickness 0,7,0,0
-        if (Test-PartVisible $Payload 'project') {
-            [void]$body.Children.Add($contextLabel)
-            $blockNodes['project'] = $contextLabel
-        }
-    }
-
-    # One rung down: which task inside that project.
-    $headlineText = [string]$Payload.headline
-    if (-not [string]::IsNullOrWhiteSpace($headlineText)) {
-        $headlineBlock = New-Text -Text $headlineText -Size (Get-FontSize 'task' 12.5) -Color (Get-FontColor 'task' $script:TextBody)
-        $headlineBlock.TextWrapping = 'Wrap'
-        $headlineBlock.TextTrimming = 'CharacterEllipsis'
-        $headlineBlock.LineHeight = 18
-        $headlineBlock.LineStackingStrategy = 'BlockLineHeight'
-        $headlineBlock.MaxHeight = 54
-        $headlineBlock.HorizontalAlignment = 'Left'
-        $headlineBlock.Margin = New-Object System.Windows.Thickness 0,2,0,0
-        if (Test-PartVisible $Payload 'task') {
-            [void]$body.Children.Add($headlineBlock)
-            $blockNodes['task'] = $headlineBlock
-        }
-    }
-
-    # Third line, the smallest rung: what was reported. It is read only after the
-    # project and the task told you whether you care.
-    $verdictKind = [string]$Payload.verdictKind
-    $verdictText = [string]$Payload.verdictText
-    if (-not [string]::IsNullOrWhiteSpace($verdictKind) -or -not [string]::IsNullOrWhiteSpace($verdictText)) {
-        $verdictRow = New-Object System.Windows.Controls.Grid
-        $colVerdictLabel = New-Object System.Windows.Controls.ColumnDefinition
-        $colVerdictLabel.Width = [System.Windows.GridLength]::Auto
-        $colVerdictBody = New-Object System.Windows.Controls.ColumnDefinition
-        $colVerdictBody.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
-        [void]$verdictRow.ColumnDefinitions.Add($colVerdictLabel)
-        [void]$verdictRow.ColumnDefinitions.Add($colVerdictBody)
-        if (-not [string]::IsNullOrWhiteSpace($verdictKind)) {
-            # Only add the full-width colon when a reason follows it: the completion
-            # word alone reads fine, with a colon and nothing after it it does not.
-            $verdictLabelText = $verdictKind
-            if (-not [string]::IsNullOrWhiteSpace($verdictText)) { $verdictLabelText = $verdictKind + [string][char]0xFF1A }
-            $verdictLabel = New-Text -Text $verdictLabelText -Size (Get-FontSize 'status' 10.5) -Color (Get-FontColor 'status' (Get-KindAccent ([string]$Payload.kind))) -Weight 'SemiBold'
-            $verdictLabel.VerticalAlignment = 'Top'
-            [System.Windows.Controls.Grid]::SetColumn($verdictLabel, 0)
-            [void]$verdictRow.Children.Add($verdictLabel)
-        }
-        if (-not [string]::IsNullOrWhiteSpace($verdictText)) {
-            $verdictBody = New-Text -Text $verdictText -Size (Get-FontSize 'reason' 10.5) -Color (Get-FontColor 'reason' $script:VerdictText)
-            $verdictBody.TextWrapping = 'Wrap'
-            $verdictBody.TextTrimming = 'CharacterEllipsis'
-            $verdictBody.LineHeight = 15
-            $verdictBody.LineStackingStrategy = 'BlockLineHeight'
-            $verdictBody.MaxHeight = 45
-            $verdictBody.VerticalAlignment = 'Top'
-            [System.Windows.Controls.Grid]::SetColumn($verdictBody, 1)
-            [void]$verdictRow.Children.Add($verdictBody)
-        }
-        $verdictTint = [string]$Payload.headlineTint
-        if (-not (Test-PartVisible $Payload 'status')) {
-            # skipped: the user turned this part off
-        } elseif ([string]::IsNullOrWhiteSpace($verdictTint)) {
-            $verdictRow.Margin = New-Object System.Windows.Thickness 0,6,0,0
-            [void]$body.Children.Add($verdictRow)
-            $blockNodes['status'] = $verdictRow
-        } else {
-            # Failure and pending decisions get a faint coloured plate so the reason
-            # reads as a status, not as more body copy.
-            $verdictFrame = New-Object System.Windows.Controls.Border
-            $verdictFrame.Background = New-Brush $verdictTint
-            $verdictFrame.CornerRadius = New-Object System.Windows.CornerRadius 6
-            $verdictFrame.Padding = New-Object System.Windows.Thickness 9,6,9,6
-            $verdictFrame.Margin = New-Object System.Windows.Thickness 0,8,0,0
-            $verdictFrame.SnapsToDevicePixels = $true
-            $verdictFrame.Child = $verdictRow
-            [void]$body.Children.Add($verdictFrame)
-            $blockNodes['status'] = $verdictFrame
-        }
-    }
-
-    # Which project / session this batch came from. A single-alert card already
-    # showed the project as its headline line above; a batch lists one project per
-    # row, so the shared line would only repeat it.
-
-    if ($items.Count -gt 0 -and (Test-PartVisible $Payload 'items')) {
-        $itemsPanel = New-Object System.Windows.Controls.StackPanel
-        $divider = New-Object System.Windows.Controls.Border
-        $divider.Height = 1
-        $divider.Background = New-Brush $script:RuleColor
-        $divider.Margin = New-Object System.Windows.Thickness 0,11,0,1
-        [void]$itemsPanel.Children.Add($divider)
-        foreach ($item in $items) { [void]$itemsPanel.Children.Add((New-ItemRow $item)) }
-        [void]$body.Children.Add($itemsPanel)
-        $blockNodes['items'] = $itemsPanel
-    }
-
-    $more = [string]$Payload.more
-    if (-not [string]::IsNullOrWhiteSpace($more) -and (Test-PartVisible $Payload 'more')) {
-        $moreText = New-Text -Text $more -Size (Get-FontSize 'more' 10.5) -Color (Get-FontColor 'more' $script:MoreText)
-        $moreText.Margin = New-Object System.Windows.Thickness 0,8,0,0
-        [void]$body.Children.Add($moreText)
-        $blockNodes['more'] = $moreText
-    }
-
-    $footerText = [string]$Payload.footer
-    if (-not [string]::IsNullOrWhiteSpace($footerText) -and (Test-PartVisible $Payload 'footer')) {
-        $footer = New-Text -Text $footerText -Size (Get-FontSize 'footer' 10) -Color (Get-FontColor 'footer' $script:FooterText)
-        $footer.Margin = New-Object System.Windows.Thickness 0,12,0,0
-        [void]$body.Children.Add($footer)
-        $blockNodes['footer'] = $footer
-    }
+    # The body (including the "first block drops its top margin" rule) comes from Fill-CardBody.
+    Fill-CardBody -Payload $Payload -Accent $accent -Body $body
 
     # The window can be dragged smaller than the content: keep every line
     # reachable by scrolling instead of clipping it away.
@@ -1217,8 +997,6 @@ function New-Card {
     [void]$outer.Children.Add($body)
     $card.Child = $outer
 
-    $geom = Read-BlockLayout $Payload
-    Initialize-BlockEdit -Body $body -Nodes $blockNodes -Geom $geom -LayoutFile $LayoutFile
     return $card
 }
 
@@ -1254,7 +1032,7 @@ function Resolve-OwnerWindow {
                 $script:ownerWindow = $fallback.MainWindowHandle
                 $script:ownerPid = $fallback.Id
                 $script:ownerSource = 'fallback'
-            }
+        }
         } catch { }
     }
     return $script:ownerWindow
@@ -1363,7 +1141,15 @@ function Show-CardWindow {
         # active window. Without this, any click on the card activates it and pulls
         # focus (and effectively the mouse) away from whatever the user is typing in.
         $exStyle = [Native.Win]::GetWindowLong($hwnd, -20)
-        [void][Native.Win]::SetWindowLong($hwnd, -20, ($exStyle -bor 0x08000000 -bor 0x00000080))
+        $style = $exStyle -bor 0x08000000 -bor 0x00000080
+        if ($script:clickThrough) {
+            # WS_EX_LAYERED (already on via AllowsTransparency) + WS_EX_TRANSPARENT: the
+            # window is skipped by hit testing, so the click goes to the window below it.
+            # This is what makes a pure-hint card: visible, topmost, and still invisible
+            # to the mouse.
+            $style = $style -bor 0x00080000 -bor 0x00000020
+        }
+        [void][Native.Win]::SetWindowLong($hwnd, -20, $style)
         [void][Native.Win]::ShowWindow($hwnd, 4)
         $topmost = New-Object IntPtr -ArgumentList (-1)
         [void][Native.Win]::SetWindowPos($hwnd, $topmost, 0, 0, 0, 0, 0x0001 -bor 0x0002 -bor 0x0010 -bor 0x0040)
@@ -1619,6 +1405,17 @@ if ($null -ne $payload) {
     $script:clipboardHeader = [string]$payload.clipboardHeader
     if ([string]::IsNullOrWhiteSpace($script:clipboardHeader)) { $script:clipboardHeader = 'DeepSeek Harness session alert' }
 
+    # Click behaviour, two independent switches from the host:
+    #   clickToFocus = $false -> a click only dismisses the card: no jump back to the
+    #                            harness and no clipboard write. The card is a note.
+    #   clickThrough = $true  -> the window takes no mouse input at all (WS_EX_TRANSPARENT):
+    #                            every click lands on whatever is behind the card, so the
+    #                            card only hints and never gets in the way.
+    # A preview card opts out of click-through: its whole point is to be dragged and
+    # resized, so it keeps taking the mouse while the setting stays on.
+    $script:clickToFocus = -not ($payload.clickToFocus -eq $false)
+    $script:clickThrough = ($payload.clickThrough -eq $true) -and (-not $Preview)
+
     # Default placement is the work-area corner, but a card the user dragged or
     # resized before comes back to that spot. The host owns the toggle and the file
     # location, so this script never has to spell out a user path.
@@ -1645,7 +1442,7 @@ $script:configAnchor = 'bottom-right'
     # The width the settings page asks for. A remembered size is only allowed to win
     # while this number is the same one it was saved with.
     $script:configWidth = [int]$cardWidth
-    $card = New-Card $payload -Width $cardWidth -LayoutFile $LayoutFile
+    $card = New-Card $payload -Width $cardWidth
     Write-Trace 'card'
     $size = Measure-Card $card
     Write-Trace 'measure'
@@ -1675,6 +1472,15 @@ $script:configAnchor = 'bottom-right'
     $card.HorizontalAlignment = 'Stretch'
     $card.VerticalAlignment = 'Stretch'
     $window.Content = $card
+    # In-place rebuild swaps the current card; the handlers follow $script:card.
+    $script:card = $card
+
+    # Pure-hint mode: the card is a picture, not a control. WPF stops hit testing it
+    # (the native WS_EX_TRANSPARENT above already does the same at the window level);
+    # belt and braces, because a hover or a cursor change would still be a lie.
+    if ($script:clickThrough) {
+        try { $window.IsHitTestVisible = $false } catch { }
+    }
 
     # Place the card on the monitor the user is actually looking at: the one that
     # holds the harness window, else the one under the cursor, else the primary.
@@ -1752,12 +1558,18 @@ $script:configAnchor = 'bottom-right'
         $keepSize = ($script:placement.sized -eq $true) -and ([int]$script:placement.base -eq [int]$script:configWidth)
     }
     if ($keepSize) {
+        # Width is a real preference: a card dragged wider stays wide.
         if ($script:placement.ContainsKey('width')) {
             $wantWidth = [double]$script:placement.width / $scale
             $wantWidth = [Math]::Max(260, [Math]::Min(1200, $wantWidth))
             $window.Width = [Math]::Round($wantWidth)
         }
-        if ($script:placement.ContainsKey('height')) {
+        # Height is NOT: a reminder card's height is whatever its content needs. Honouring
+        # a remembered height left the card taller than its text after blocks were switched
+        # off in the settings page - empty space at the bottom that read as "the card did not
+        # reflow". A preview card keeps the remembered height: the user is sizing that one
+        # on purpose to judge the layout.
+        if ($Preview -and $script:placement.ContainsKey('height')) {
             $wantHeight = [double]$script:placement.height / $scale
             $wantHeight = [Math]::Max(118, [Math]::Min(1400, $wantHeight))
             $window.Height = [Math]::Round($wantHeight)
@@ -1795,15 +1607,17 @@ $script:configAnchor = 'bottom-right'
     $card.RenderTransform = $slide
     $window.Opacity = 0
 
-    $card.Add_MouseEnter({
-            try { $card.BorderBrush = New-Brush $script:CardEdgeHover } catch { }
+    $script:cardHover = {
+            try { $script:card.BorderBrush = New-Brush $script:CardEdgeHover } catch { }
             # Looking at the card should not cost you the card: hovering restarts
             # the dwell instead of letting the original countdown run out mid-read.
             try {
                 if ($script:autoClose) { $timer.Stop(); $timer.Start() }
             } catch { }
-        })
-    $card.Add_MouseLeave({ try { $card.BorderBrush = New-Brush $script:cardEdgeNow } catch { } })
+        }
+    $script:cardLeave = { try { $script:card.BorderBrush = New-Brush $script:cardEdgeNow } catch { } }
+    [void]$card.Add_MouseEnter($script:cardHover)
+    [void]$card.Add_MouseLeave($script:cardLeave)
 
     # A transparent window has no non-client area, so the resize gesture has to be
     # handed to the system ourselves: press on an edge -> ReleaseCapture + a
@@ -1842,6 +1656,7 @@ $script:configAnchor = 'bottom-right'
 
     $window.Add_PreviewMouseMove({
             param($sender, $eventArgs)
+            if ($script:clickThrough) { return }
             try {
                 $point = $eventArgs.GetPosition($window)
                 $code = & $script:edgeHit $point
@@ -1850,7 +1665,7 @@ $script:configAnchor = 'bottom-right'
                 elseif ($code -eq 14 -or $code -eq 16) { $cursor = [System.Windows.Input.Cursors]::SizeNESW }
                 elseif ($code -eq 10 -or $code -eq 11) { $cursor = [System.Windows.Input.Cursors]::SizeWE }
                 elseif ($code -eq 12 -or $code -eq 15) { $cursor = [System.Windows.Input.Cursors]::SizeNS }
-                if ($card.Cursor -ne $cursor) { $card.Cursor = $cursor }
+                if ($script:card.Cursor -ne $cursor) { $script:card.Cursor = $cursor }
                 # Only a press that actually travels becomes a drag. A plain click
                 # never enters the native move loop, so it never captures the mouse.
                 if ($script:pressActive -and -not $script:dragging) {
@@ -1869,7 +1684,9 @@ $script:configAnchor = 'bottom-right'
 
     $window.Add_PreviewMouseLeftButtonDown({
             param($sender, $eventArgs)
-            if ($Preview -and (Test-BlockSource $eventArgs.OriginalSource)) { return }
+            # Click-through: nothing here can ever receive a press, and a card that
+            # cannot be hit must not start a drag either.
+            if ($script:clickThrough) { return }
             try {
                 if (([DateTime]::UtcNow - $script:shownAt).TotalMilliseconds -lt $script:pressGrace) {
                     $eventArgs.Handled = $true
@@ -1906,31 +1723,42 @@ $script:configAnchor = 'bottom-right'
     # A preview card is excluded: it must outlive clicks, and the host owns its end.
     $window.Add_MouseRightButtonUp({
             if ($Preview) { return }
+            # A click-through card never receives this event; the guard keeps the intent
+            # explicit for anyone reading the handlers in order.
+            if ($script:clickThrough) { return }
             $script:closeReason = 'dismissed'
             try { $window.Close() } catch { }
         })
 
     # A press that never travels is a click and keeps the original behaviour
-    # (focus the harness, copy the batch, close). Preview keeps the card up: the
-    # point is to leave it on screen while the setting stays on.
+    # (focus the harness, copy the batch, close). With clickToFocus off the same click
+    # only dismisses the card: no focus change, no clipboard write. Preview keeps the
+    # card up: the point is to leave it on screen while the setting stays on.
     $window.Add_MouseLeftButtonUp({
             try {
                 if ($Preview) { $script:pressActive = $false; return }
+                if ($script:clickThrough) { return }
                 if ($script:resizing) { $script:resizing = $false; return }
                 if ($script:dragging) { $script:dragging = $false; $script:pressActive = $false; return }
                 if (-not $script:pressActive) { return }
                 $script:pressActive = $false
                 $script:closeReason = 'clicked'
-                try { [void](Focus-Ds) } catch { }
-                # The clipboard can be held hostage by another process; a silent
-                # failure would leave the user believing the batch was copied. Record
-                # the outcome so the status line can report it instead.
-                try {
-                    if (-not [string]::IsNullOrWhiteSpace($script:lastSummary)) {
-                        Set-Clipboard -Value ($script:clipboardHeader + [Environment]::NewLine + $script:lastSummary)
-                        $script:clipboardOk = $true
-                    }
-                } catch { $script:clipboardOk = $false }
+                if ($script:clickToFocus) {
+                    try { [void](Focus-Ds) } catch { }
+                    # The clipboard can be held hostage by another process; a silent
+                    # failure would leave the user believing the batch was copied. Record
+                    # the outcome so the status line can report it instead.
+                    try {
+                        if (-not [string]::IsNullOrWhiteSpace($script:lastSummary)) {
+                            Set-Clipboard -Value ($script:clipboardHeader + [Environment]::NewLine + $script:lastSummary)
+                            $script:clipboardOk = $true
+                        }
+                    } catch { $script:clipboardOk = $false }
+                } else {
+                    # Click-to-focus is off, so the reason has to say so: a "clicked" line
+                    # with clipboard=false would otherwise look like a failed copy.
+                    $script:closeReason = 'clicked-nojump'
+                }
                 try { $window.Close() } catch { }
             } catch { }
         })
@@ -1940,11 +1768,12 @@ $script:configAnchor = 'bottom-right'
     $timer.Add_Tick({
             # Never close while the pointer is still down, but keep re-arming: a
             # lost mouse-up then just costs one more interval instead of leaving a
-            # topmost card stuck on screen.
-            if ([System.Windows.Input.Mouse]::LeftButton -eq 'Pressed') {
+            # topmost card stuck on screen. A click-through card cannot be clicked at
+            # all, so a button held down somewhere else must not pin it either.
+            if (-not $script:clickThrough -and [System.Windows.Input.Mouse]::LeftButton -eq 'Pressed') {
                 $timer.Start()
                 return
-            }
+        }
             $timer.Stop()
             $script:closeReason = 'timeout'
             try { $window.Close() } catch { }
@@ -1954,11 +1783,27 @@ $script:configAnchor = 'bottom-right'
     # Preview cards opt out: they are a knob, not a notice.
     if ($script:autoClose) {
         $script:hardDeadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(30, ($StaySeconds * 4) + 30))
+        # Last resort when even Close() fails: stop every timer, close, shut the app
+        # down, and finally leave the process. A topmost window that nobody can dismiss
+        # is worse than an abrupt exit - it sits over everything until the user kills
+        # powershell by hand. $app is created later on purpose: the timer only fires
+        # seconds after the window is up, so the variable is bound by then.
+        $script:forceQuit = {
+            try { $script:closeReason = 'watchdog' } catch { }
+            try { $script:watchdog.Stop() } catch { }
+            try { $timer.Stop() } catch { }
+            try { $script:replacePoll.Stop() } catch { }
+            try { if ($null -ne $script:stopPoll) { $script:stopPoll.Stop() } } catch { }
+            try { $window.Close() } catch { }
+            try { $script:appRef.Shutdown() } catch { }
+            # Shutdown is queued on the dispatcher; if that is wedged too, leave hard.
+            try { [System.Environment]::Exit(0) } catch { }
+        }
         $script:watchdog = New-Object System.Windows.Threading.DispatcherTimer
         $script:watchdog.Interval = [TimeSpan]::FromSeconds(5)
         $script:watchdog.Add_Tick({
                 $script:watchdog.Stop()
-                if ([DateTime]::UtcNow -ge $script:hardDeadline) { $script:closeReason = 'watchdog'; try { $window.Close() } catch { } }
+                if ([DateTime]::UtcNow -ge $script:hardDeadline) { & $script:forceQuit }
                 else { $script:watchdog.Start() }
             })
         $script:watchdog.Start()
@@ -1973,7 +1818,7 @@ $script:configAnchor = 'bottom-right'
                 $script:replacePoll.Stop()
                 $script:closeReason = 'replaced'
                 try { $window.Close() } catch { }
-            }
+        }
         })
     # A preview card stays until the host asks it to stop, so it never polls for a
     # takeover; otherwise a real reminder would make the card vanish while dragging.
@@ -1999,8 +1844,37 @@ $script:configAnchor = 'bottom-right'
         try { $script:stopPoll.Start() } catch { }
     }
 
+    # A resident preview card redraws itself in place instead of being restarted: the
+    # host rewrites the payload file, this poll notices and rebuilds the content. That
+    # turns a settings change into ~250ms instead of ~1.5s (a fresh helper costs ~900ms
+    # of PowerShell + WPF startup alone). Only preview cards get this; a reminder card
+    # is one-shot and never needs to change while it is up.
+    $script:payloadPath = ''
+    if ($Preview -and -not [string]::IsNullOrWhiteSpace($PayloadFile)) {
+        $script:payloadPath = $PayloadFile
+        $script:payloadSeen = ''
+        try { $script:payloadSeen = [System.IO.File]::ReadAllText($script:payloadPath, [System.Text.Encoding]::UTF8) } catch { }
+        $script:payloadPoll = New-Object System.Windows.Threading.DispatcherTimer
+        $script:payloadPoll.Interval = [TimeSpan]::FromMilliseconds(250)
+        $script:payloadPoll.Add_Tick({
+                try {
+                    $text = [System.IO.File]::ReadAllText($script:payloadPath, [System.Text.Encoding]::UTF8)
+                    if ($text -eq $script:payloadSeen) { return }
+                    $script:payloadSeen = $text
+                    $next = $text | ConvertFrom-Json
+                    if ($null -ne $next) {
+                        Write-Trace 'inplace'
+                        Update-CardInPlace -Payload $next -Window $window
+                    }
+                } catch { Write-Trace ('inplace-failed ' + $_.Exception.Message) }
+            })
+        try { $script:payloadPoll.Start() } catch { }
+    }
+
     $app = New-Object System.Windows.Application
     $app.ShutdownMode = 'OnExplicitShutdown'
+    # The watchdog's last-resort exit needs the app object; bind it as soon as it exists.
+    $script:appRef = $app
 
     $window.Add_SizeChanged({
             if (-not [bool]$script:cardReady) { return }
@@ -2096,7 +1970,7 @@ $script:configAnchor = 'bottom-right'
             # the status line can prove which process the card would focus.
             [void](Resolve-OwnerWindow)
             Write-Trace 'shown'
-            Write-Status @{ type = 'shown'; count = [int]$payload.count; theme = $script:ThemeName; left = [int]$window.Left; top = [int]$window.Top; placedLeft = [int]$script:placedLeft; placedTop = [int]$script:placedTop; placement = $(if ($script:placementUsed) { 'remembered' } else { 'corner' }); width = [int]$window.Width; height = [int]$window.Height; dpi = $script:DpiMode; scale = [double]$script:scale; marginPx = [int]$script:marginPx; padPx = [int]$script:padPx; owner = [int]$script:ownerPid; ownerSrc = $script:ownerSource; slot = $(if ($script:slotState.took) { 'replaced' } elseif ($script:slotState.owned) { 'owner' } else { 'parallel' }) }
+            Write-Status @{ type = 'shown'; count = [int]$payload.count; theme = $script:ThemeName; left = [int]$window.Left; top = [int]$window.Top; placedLeft = [int]$script:placedLeft; placedTop = [int]$script:placedTop; placement = $(if ($script:placementUsed) { 'remembered' } else { 'corner' }); width = [int]$window.Width; height = [int]$window.Height; dpi = $script:DpiMode; scale = [double]$script:scale; marginPx = [int]$script:marginPx; padPx = [int]$script:padPx; owner = [int]$script:ownerPid; ownerSrc = $script:ownerSource; clickThrough = [bool]$script:clickThrough; clickToFocus = [bool]$script:clickToFocus; slot = $(if ($script:slotState.took) { 'replaced' } elseif ($script:slotState.owned) { 'owner' } else { 'parallel' }) }
         })
     # By the time Closed runs the window handle is gone, so GetWindowRect cannot read
     # the final geometry: save once here, where the handle still works.
@@ -2114,11 +1988,14 @@ $script:configAnchor = 'bottom-right'
             # batch actually reached the clipboard, which used to fail silently.
             Write-Trace 'closed'
             $reason = if ($script:closeReason -ne '') { $script:closeReason } else { 'closed' }
-            if ($reason -eq 'clicked') {
+            if ($reason -eq 'clicked' -or $reason -eq 'clicked-nojump') {
+                # Both click paths report the clipboard outcome: with clickToFocus off
+                # nothing is ever copied, and that "false" is the answer to the question
+                # "did my click copy the batch?".
                 Write-Status @{ type = 'closed'; reason = $reason; clipboard = [bool]$script:clipboardOk; width = [int]$window.Width; height = [int]$window.Height; preview = [bool]$Preview }
             } else {
-                Write-Status @{ type = 'closed'; reason = $reason; width = [int]$window.Width; height = [int]$window.Height; preview = [bool]$Preview }
-            }
+                Write-Status @{ type = 'closed'; reason = $reason; width = [int]$window.Width; height = [int]$window.Height; preview = [bool]$Preview; clickThrough = [bool]$script:clickThrough }
+        }
             try { $app.Shutdown() } catch { }
         })
 

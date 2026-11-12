@@ -166,9 +166,28 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
   字号框里填的是**当前实际生效的值**（比如项目名 15.5、任务名 12.5），不是 0；改成 0 才回到默认。
 - 外观只有一处入口：`peek` 组同时装样卡、8 个名字按钮、单行的字号与颜色、11 颗 `data-color` 色块、
   卡片宽度、落点九宫格、底色与竖条两排 `data-swatch` 色块、`theme` / `staySeconds` / `margin`。
-  样卡底边自带一行操作条（`.dsh-nudge-card-bar`）：`rememberPosition` 开关（「记住拖过的位置」）、
-  「在桌面上弹一张看看」和「摆回原位」（`key: "reset-layout"`）都收进卡里，不再散在下面。全页只剩五组
-  （长这样 / 提醒 / 时机 / 合并 / 调试），导航按钮 5 颗；「提醒」组把总开关和三类提醒合成一组。
+  样卡底边自带一行操作条（`.dsh-nudge-card-bar`）：只剩「在桌面上弹一张看看」这一颗按钮（「记住拖过的位置」
+  搬去了「位置与停留」组，成了正常的开关行）。全页九组（预览 / 文字 / 卡片 / 位置 / 提醒 / 点击 / 时机 / 合并 / 调试），
+  导航按钮 9 颗；「预览」不是配置项，所以它没有「恢复默认」，另外八组各有一颗（`data-group` 各一）。
+- 每组标题右边有一行摘要小字（`.dsh-nudge-hint`），写这组现在的状态：文字组是「项目名 15.5px」、
+  卡片组是「宽 384 · 跟随系统」、位置组是「右下角 · 15s」、提醒组是「三类都弹 / 已关闭」、
+  点击组是「点击回到 DSH / 点击只收起 / 穿透：只当提示」、时机组是生效条件串成的一句、
+  合并组是「1200ms 内合并 · 最多 8 条 · 静音 N 段」。这些都从当前值算，草稿里改了立刻跟着变。
+- 分组标题吸顶：`.dsh-nudge-group-head` 是 `position:sticky;top:38px`（贴在 38px 高的分组导航下面），
+  底色用 `--dsw-alias-bg-l1` 盖住滚过去的内容；长页面往下滚时始终知道在看哪一组。
+- 应用栏点名改在哪几组：有改动时多一个 `.dsh-nudge-applywhere`，里面是若干个
+  `.dsh-nudge-applylink`（组名，点一下 `jumpTo` 滚过去），用 ` · ` 分隔；「N 项改动还没保存」本身
+  仍是 `.dsh-nudge-applytext` 的完整文案，没被拼上组名（自测按整串断言）。
+- 被压住的开关会自己说：`SwitchRow` 接受 `muted`，渲染成 `.dsh-nudge-row[data-muted="1"]`。
+  目前只有「工具报错也单独提醒」用它——`quietToolErrors` 开着时宿主 `tool/result` 里直接 `return`，
+  这条永远不生效，所以那一行变淡、说明换成「上面那条开着，这一条现在不生效」。
+- 预览卡只有一个入口：「预览」组样卡底下那颗按钮（`writeNow("debugPreview", …)`）。
+  「调试」组展开时不再有 `debugPreview` 开关，只有一句指路文字；自测断言
+  `!clientSource.includes('label: "预览弹窗（常驻，可拖动缩放）"')`。
+- 卡片没有逐块排版：文字位置固定自上而下，`blocks` 配置项与「摆回原位」按钮都已删除
+  （`client.js` 里没有 `BLOCK_ROLES` / `BLOCK_DEFAULTS` / `reset-layout`，`lib/index.js` 里没有
+  `blocks` 字段与 `blockRole()`，`lib/popup.ps1` 里没有 `-LayoutFile` / `BlockRoles` / `Set-BlockShift`）。
+  老配置里残留的 `blocks` 由 `normalizeConfig` 直接 `delete merged.blocks`，不报错。
 - 改一格不立刻写回：底部出现「1 项改动还没保存」，点「应用」才写出
   `[{op:"set",path:["typography","title","color"],value:"#FFFF0000"}]`（带当前 revision），点「放弃」则丢掉。
   自测里的假 `useState` 会真存值，所以草稿 → 应用 → 放弃三步都能断言。
@@ -199,11 +218,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -Snapshot $e
   `popup.ps1` 里 `$Payload.cardColor` 覆盖 `$card.Background`、`$Payload.accentColor` 覆盖 `$accent`。
 - 宽度能改：`width` 0–900，`popup.ps1` 只在 260–900 时采用，超出就用 `$script:CardWidth`；
   拖过卡片记住的尺寸仍然优先于这个值。
-- 预览卡上能直接摆位：「在桌面上弹一张看看」弹出的卡片里，七块（`title` / `project` / `task` / `status` /
-  `items` / `more` / `footer`）各自挂着 `Tag = 'block:<角色>'`；左键按下抓住一整块挪位置、右键横拖改宽度
-  （60–900）。拖动用屏幕坐标算位移（`PointToScreen`），所以偏移不受自身 `TranslateTransform` 影响；松手时
-  `Save-BlockLayout` 写一个临时 JSON（`UTF8Encoding $false`，无 BOM），宿主 `readLayout()` 读回后 `mutate` 到
-  `blocks.<角色>.{dx,dy,w}`，真卡按同一份数字排。全部为 0 时仍是原来的自动排布。
+- 预览卡只能改尺寸，不能逐块摆位：卡片是一个无边框窗口，拖卡身挪位置、拖四边/四角改尺寸
+  （`ReleaseCapture` + `WM_NCLBUTTONDOWN` 交给系统原生缩放循环）。七块文字的位置由
+  `StackPanel` 自上而下决定，`popup.ps1` 里**没有** `Tag = 'block:<角色>'`、`Set-BlockShift`、
+  `Save-BlockLayout`，也没有 `-LayoutFile` 参数；宿主不再有 `readLayout()` / `applyLayout()`。
+  改尺寸之后内容自适应：`Update-CardScale` 以首量宽度为基准按 `ActualWidth / scaleBase` 缩放字号
+  （`Set-CardTextScale`，夹在 0.85–1.8），文字块靠 `TextWrapping='Wrap'` + `MaxHeight` 重新折行。
 - 样卡按真卡的结构画：`.dsh-nudge-card-strip`（左侧 3px 竖条，`top/bottom:13px`，圆角 1.5）、
   `.dsh-nudge-card-verdict`（结论框，圆角 6、内边距 6/9）、`.dsh-nudge-card-rule`（分隔线，`margin:11px 0 1px`）、
   内容区 `padding:14px 16px 14px 20px`、任务名 `line-height:18px`、原因 `line-height:15px` —— 逐项对应 `popup.ps1` 的
@@ -458,7 +478,58 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1       
 | 让 Agent 调 `ask_user_question`，或触发一次需要批准的操作 | 弹「需要你选择」琥珀卡，等你处理 |
 | 让一个回合报错（例如让工具失败） | 弹「执行失败」红卡 |
 | 点击卡片 | 提醒来源的那个 DSH 实例被切到前台（按祖先链定位，不是「第一个同名进程」），剪贴板里是这批提醒的标题+明细 |
+| 关掉「点击卡片回到 DSH」后点卡片 | 卡片直接收起，DSH 不被切到前台，剪贴板不变；状态行是 `{"type":"closed","reason":"clicked-nojump","clipboard":false,...}` |
+| 打开「鼠标穿透（纯提示）」后点卡片 | 点击落到卡片后面的窗口上（`WindowFromPoint` 在卡片中心命中的不是卡片），DSH 不被切到前台；卡片只能等停留时间到点自己消失（`reason":"timeout"`）。这张卡不能拖、不能右键关，预览卡不受影响 |
 | 卡片显示期间关掉 DSH | helper 进程随之退出，不留孤儿窗口（`Get-Process powershell` 无新增常驻） |
+
+穿透与不跳转这两条有真机探针，不用手点：
+
+```powershell
+powershell -NoProfile -File tools\probe-passthrough.ps1   # 穿透：样式位 + 命中测试
+powershell -NoProfile -File tools\probe-click.ps1         # 不跳转：真点一下，看它怎么收场
+powershell -NoProfile -File tools\probe-reflow.ps1        # 只靠缩放：内容跟着宽度重排
+```
+
+`probe-reflow.ps1` 弹一张长文案的卡，用 `SetWindowPos` 扫 560 / 480 / 400 / 340 / 300 / 260 六个宽度，
+每个宽度等 450ms 再读窗口矩形。判据是「高度跟着宽度变、且同一个宽度两次量到的结果一致」——
+不是「越窄越高」（字号会跟着缩，宽的时候字大反而更高）。本机实测：
+
+```
+560x262  480x262  400x239  340x221  300x211  260x226   （distinctHeights=5，回到 560 仍是 262）
+windowsOwned = 1
+```
+
+`windowsOwned = 1` 说明卡片只有一个窗口：没有逐块拖动留下的额外窗口或子窗口。
+预览模式另外单验一次：`-Preview -StopFile` 起卡后 3 秒仍在（不自己收场），写入 stop 文件后
+以 `{"type":"closed","reason":"preview"}` 退出。
+
+`probe-passthrough.ps1` 连弹三张卡（普通 / 穿透 / 不跳转），逐张读扩展样式并问系统「卡片正中那一点命中的是谁」：
+
+| 卡片 | 期望 |
+| --- | --- |
+| 普通（默认） | `exStyle` 无 `0x20`；`WindowFromPoint(中心)` = 卡片自己的 hwnd（`hitIsCard: True`） |
+| `clickThrough: true` | `exStyle` 含 `0x20` 与 `0x80000`；`WindowFromPoint(中心)` = 后面那个窗口（`passedThru: True`） |
+| `clickToFocus: false` | 样式与普通卡一致；`shown` 状态行里 `clickToFocus: false` |
+
+本机实测（2026-11-10，2560×1440 @100%，单屏）：
+
+```
+plain      exStyle=0x08080188  transparent=False  hitIsCard=True
+through    exStyle=0x080801A8  transparent=True   passedThru=True   (hit=2033940, card=985754)
+no-jump    exStyle=0x08080188  transparent=False  hitIsCard=True
+```
+
+`probe-click.ps1` 走真鼠标（`SetCursorPos` + `mouse_event`，点完把光标放回原处）：把光标停在卡片正中点一下，
+期望 `cardClosed: True` / `reason: clicked-nojump` / `clipboard: false` / `focusUnchanged: True`。
+本机实测：
+
+```
+cardClosed=True  reason=clicked-nojump  clipboard=false
+foregroundBefore=592586  foregroundAfter=592586  focusUnchanged=True
+```
+
+注意这两条是**真点**：卡片当时必须已经画出来（探针会等到窗口出现 + 1.2 秒，越过 320ms 的按下宽限期），
+所以跑之前别同时手动点别的东西。
 
 ## 5. 已知边界
 
@@ -466,6 +537,51 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1       
   （`SetProcessDpiAwarenessContext(-4)` → `SetProcessDpiAwareness(2)` → `SetProcessDPIAware()`
   三级降级）+ 物理像素校正，逻辑上能对齐，但**仍未在真机多屏 / 非 100% 缩放上跑过**。
 - 点击只能聚焦 DSH 窗口 + 复制线索：Web GUI 是单页应用，没有按会话直达的 URL。
+- 鼠标穿透（`clickThrough`）已用 `WindowFromPoint` 在真机上验证「点不到卡片」，但**没有验证「点下去后
+  后面那个窗口真的收到这一下」**（那需要往别的应用里真点一次）。样式位 `WS_EX_TRANSPARENT` 是 Windows
+  自己做命中测试时看的位，所以这里只是把结论交给系统，不再自己兜。
 - 聚焦按祖先链定位已实测（`owner=8592/ownerSrc=ancestor`），但**没有在真开两个 DSH 的情况下
   点过卡片**——再点一次会抢当前前台焦点，所以只验证了句柄来源，没验证「切过去」的可见效果。
 - 卡片是「提醒」不是「操作面板」：批准/回答仍需回到 DSH 里做。
+- payload 超长改走 `-PayloadFile` 的**发送端**只在代码层面守住（阈值 24000 字符）：正常 payload 实测
+  约 5–8KB base64，撞不到这条线，所以没有真机触发过；**接收端**（`popup.ps1 -PayloadFile`）已实测——
+  写一个 JSON 文件直接喂给脚本，得到 `{"type":"shown"}` 与 `{"type":"closed","reason":"timeout"}`。
+- watchdog 的强制收场（`forceQuit`）只在代码层面守住：正常卡片都由停留计时器或点击关掉，
+  要触发它得让 `Close()` 失败，这一路径没有在真机上复现过。
+
+## 6. 隐患审计（2026-11-10，1.5.1）
+
+一次针对三个文件的审计，结论按「修没修」分开记：
+
+**已修（12 条，都有自测断言）**
+
+| 文件 | 问题 |
+| --- | --- |
+| `client.js` | 应用失败时 `catch` 调后声明的 `const`，同步抛错撞 TDZ → 按钮「点了没反应」 |
+| `client.js` | 逐项重试从不报错（`note` 未使用、`bad` 未渲染）→ 三种失败看起来一模一样 |
+| `client.js` | 逐项重试复用已失效的 revision → 冲突场景 N 次必然全败 |
+| `client.js` | 失败回滚整块覆盖草稿 → 等待期间的新输入被吃掉 |
+| `client.js` | 数字框清空后失焦 → 被当成 0 夹到最小值（停留 1 秒） |
+| `client.js` | 静音时段越界行：页面说「会被跳过」，宿主实际在静音 |
+| `client.js` | 导出/导入键表漏 `quietToolErrors` / `visible` |
+| `client.js` | `configForms.get()` 不判空 → 设置面板整片崩 |
+| `lib/index.js` | `session/event` 监听器无兜底，抛错冒进宿主派发 |
+| `lib/index.js` | `debugPayload` 的 JSONL 只增不减 |
+| `lib/index.js` | payload 走命令行，越 32767 字符就 spawn 失败 |
+| `lib/index.js` | `userQuestions.ask` 猴补丁用布尔标记 → 二次 apply 的实例什么都不弹 |
+| `lib/popup.ps1` | watchdog 自己 `Stop()` 后 `Close()` 抛错 → 置顶窗口永久留着 |
+
+**量过、决定不改**
+
+- `liveConfig` 每次读属性都 `JSON.stringify` 一遍配置：一份 ~1.5KB 的配置约 20µs，一张卡读 20 来个
+  字段 ≈ 0.4ms，预览轮询每秒十来次 ≈ 0.2ms/s。加「按 tick 缓存」换这点开销不划算，而且那种缓存一旦
+  漏了失效就是「设置改了不生效」。结论与理由写进了 `liveConfig` 的注释。
+
+**仍未处理（1.5.2 已补上这两条，留档）**
+
+- ~~设置页分组导航没有「当前在哪一组」的滚动高亮~~ → 1.5.2 用 `IntersectionObserver` 补上：
+  取视口里最靠上的分组点亮，`rootMargin: "-38px 0px -55% 0px"` 让吸顶导航不遮住判定；
+  拿不到观察器时整段跳过。自测断言 `导航默认高亮第一组，且带 aria-current`。
+- ~~没有「全部恢复默认」~~ → 1.5.2 补上，但**要点两下**：第一下只上膛（按钮变红、文案变
+  「确认全部恢复」），第二下才把 `allDefaults()` 写进草稿，落盘仍由「应用」完成。
+  自测断言 `全部恢复默认要点两下，且只进草稿`。

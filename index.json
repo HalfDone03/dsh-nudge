@@ -40,8 +40,8 @@
         "zh": "DSH 轻推提醒"
       },
       "description": {
-        "en": "Bottom-right desktop card when a session turn completes, needs a choice (approval / question), or fails. Topmost, never steals focus, auto-dismisses, click to jump back to the harness and copy the batch to the clipboard.",
-        "zh": "会话回合完成、需要你选择（审批 / 提问）或执行失败时，在 Windows 桌面右下角弹一张置顶卡片：不抢焦点、自动消失，点击回到 DSH 并把这批提醒复制到剪贴板。"
+        "en": "Bottom-right desktop card when a session turn completes, needs a choice (approval / question), or fails. Topmost, never steals focus, auto-dismisses; click jumps back to the harness and copies the batch, and both of those can be turned off — optionally the card becomes a pure hint that mouse clicks pass straight through.",
+        "zh": "会话回合完成、需要你选择（审批 / 提问）或执行失败时，在 Windows 桌面右下角弹一张置顶卡片：不抢焦点、自动消失。默认点击回到 DSH 并把这批提醒复制到剪贴板；这两件事都能关掉，还可以让整张卡鼠标穿透，只当提示、点到后面的窗口。"
       },
       "author": "HalfDone",
       "homepage": "https://github.com/HalfDone03/dsh-nudge#readme",
@@ -66,7 +66,7 @@
       },
       "versions": [
         {
-          "version": "1.2.4",
+          "version": "1.6.1",
           "publishTimestamp": 1794272672,
           "source": {
             "type": "git",

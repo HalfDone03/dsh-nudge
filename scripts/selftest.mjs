@@ -26,7 +26,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import vm from "node:vm";
 import { inflateSync } from "node:zlib";
 
-import { AlertCenter, DEFAULTS, PopupRunner, buildConfigSchema, createPlugin, inMuteRange, isVolatileRef, liveConfig, normalizeConfig } from "../lib/index.js";
+import { AlertCenter, DEFAULTS, PopupRunner, buildConfigSchema, createPlugin, footerOf, inMuteRange, isVolatileRef, liveConfig, normalizeConfig } from "../lib/index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -459,7 +459,7 @@ const loudRunner = {
 	},
 	dispose() {}
 };
-const { ctx: loudCtx, handlers: loudHandlers } = makePluginContext({ questions });
+const { ctx: loudCtx, handlers: loudHandlers, disposers: loudDisposers } = makePluginContext({ questions });
 const loudPlugin = createPlugin(
 	loudCtx,
 	{ ...defaults, mergeWindowMs: 0, staySeconds: 5, quietToolErrors: false },
@@ -543,7 +543,17 @@ check("userQuestions.ask 原样转发并返回原结果", answer?.answers?.[0]?.
 batch = drain();
 check("提问提醒使用问题标题", batch[0]?.kind === "needs_choice" && batch[0]?.detail === "部署确认", JSON.stringify(batch[0]?.detail));
 
+/*
+ * 同一个 questions 对象被两个实例（wired / loud）包过：谁先卸载谁只摘掉自己那个通知器，
+ * 最后一个走的人才还原原函数。所以这里要把两边都卸掉，还原才算真的发生。
+ */
 for (const dispose of disposers.reverse()) dispose();
+check(
+	"卸载一个实例只摘自己的通知器，不拆别人的包装",
+	questions.ask !== originalAsk && loudPlugin !== undefined,
+	"one instance gone, the other still wrapped",
+);
+for (const dispose of loudDisposers.reverse()) dispose();
 check("dispose 后还原 userQuestions.ask", questions.ask === originalAsk);
 emitSession("turn/end", { reason: { kind: "completed" } });
 check("dispose 后不再产生提醒", drain().length === 0);
@@ -932,6 +942,31 @@ check("清单行的项目名排在任务名前面",
 check("单卡槽位与替换事件都在", popupSource.includes("Local\\dsh-nudge-card") && popupSource.includes("Local\\dsh-nudge-replace"),
 	"Mutex + Event");
 check("点击后回报剪贴板是否写成", popupSource.includes("clipboard = [bool]$script:clipboardOk"), "closed.clipboard");
+// 点击行为的三段接线：payload 带两个布尔 -> 脚本据此改窗口样式与点击分支 -> 底部文案跟着变。
+check(
+	"穿透卡挂 WS_EX_TRANSPARENT，不穿透时不动那个位",
+	popupSource.includes("$style = $style -bor 0x00080000 -bor 0x00000020")
+		&& popupSource.includes("$script:clickThrough = ($payload.clickThrough -eq $true) -and (-not $Preview)")
+		&& popupSource.includes("$window.IsHitTestVisible = $false"),
+	"WS_EX_TRANSPARENT + IsHitTestVisible",
+);
+check(
+	"关掉跳转的点击只收卡片：不聚焦、不写剪贴板",
+	popupSource.includes("$script:clickToFocus = -not ($payload.clickToFocus -eq $false)")
+		&& popupSource.includes("if ($script:clickToFocus) {")
+		&& popupSource.includes("$script:closeReason = 'clicked-nojump'")
+		&& popupSource.indexOf("if ($script:clickToFocus) {") < popupSource.indexOf("Set-Clipboard -Value ($script:clipboardHeader"),
+	"Focus-Ds + Set-Clipboard must sit behind clickToFocus",
+);
+check(
+	"payload 带点击开关，底部文案跟着开关走",
+	captured[0]?.clickToFocus === true
+		&& captured[0]?.clickThrough === false
+		&& captured[0]?.footer === "点击卡片回到 DeepSeek Harness"
+		&& footerOf({ clickToFocus: false }) !== footerOf({ clickToFocus: true })
+		&& footerOf({ clickThrough: true }) !== footerOf({ clickToFocus: false }),
+	JSON.stringify({ clickToFocus: captured[0]?.clickToFocus, clickThrough: captured[0]?.clickThrough, footer: captured[0]?.footer }),
+);
 check("payload 带剪贴板抬头", captured[0]?.clipboardHeader === "DeepSeek Harness · 会话提醒", JSON.stringify(captured[0]?.clipboardHeader));
 check("payload 带配色", captured[0]?.theme === "auto", JSON.stringify(captured[0]?.theme));
 check("弹窗脚本有深浅两套配色",
@@ -1228,7 +1263,7 @@ for (const [path, value] of groupDefaults) {
 }
 check(
 	"恢复默认的取值和宿主 DEFAULTS 一致",
-	clientExports.groupDefaults?.length === 5 && groupDefaults.size >= 30 && defaultDrift.length === 0,
+	clientExports.groupDefaults?.length === 8 && groupDefaults.size >= 40 && defaultDrift.length === 0,
 	"groups=" + (clientExports.groupDefaults?.length ?? 0) + " keys=" + groupDefaults.size + " " + defaultDrift.join("; "),
 );
 
@@ -1273,7 +1308,16 @@ const clientControls = clientNodes.filter((node) => ["input", "select", "textare
 check("设置页有三类提醒与主要分组", ["任务完成", "需要你选择", "执行失败", "配色", "停留秒数", "静音时段"].every((label) => clientTexts.includes(label)));
 check("设置页控件数量", clientControls.length >= 14, "controls=" + clientControls.length);
 	const clientCheckboxes = clientControls.filter((node) => node.props.type === "checkbox");
-	check("设置页开关是 checkbox", clientCheckboxes.length === 9, "boxes=" + clientCheckboxes.length);
+	// 10 个原开关（含搬进「位置」组的「记住拖过的位置」）+「点击卡片回到 DSH」+「鼠标穿透」。预览卡只有一个入口，不算开关。
+	check("设置页开关是 checkbox", clientCheckboxes.length === 11, "boxes=" + clientCheckboxes.length);
+	check(
+		"点击行为有两颗开关，默认照旧回 DSH、不穿透",
+		clientTexts.includes("点击卡片回到 DSH")
+			&& clientTexts.includes("鼠标穿透（纯提示）")
+			&& groupDefaults.get("clickToFocus") === true
+			&& groupDefaults.get("clickThrough") === false,
+		"clickToFocus=" + JSON.stringify(groupDefaults.get("clickToFocus")) + " clickThrough=" + JSON.stringify(groupDefaults.get("clickThrough")),
+	);
 	const clientDebugTitle = clientNodes.find((node) => node.type === "button" && node.props.className === "dsh-nudge-group-toggle");
 	check(
 		"调试那组默认收着，只留一个展开按钮",
@@ -1281,12 +1325,112 @@ check("设置页控件数量", clientControls.length >= 14, "controls=" + client
 			&& clientNodes.every((node) => node.props["aria-label"] !== "预览弹窗（常驻，可拖动缩放）"),
 		String(clientDebugTitle?.props?.children),
 	);
+	/* 同一个字段只留一个入口：预览卡归「预览」组那颗按钮，调试组不再开一个开关。 */
+	check(
+		"预览卡只有一个入口（预览组那颗按钮）",
+		!clientSource.includes('label: "预览弹窗（常驻，可拖动缩放）"')
+			&& clientSource.includes('onClick: () => writeNow("debugPreview", !bool("debugPreview"))')
+			&& clientSource.includes("回「预览」组"),
+		"single entrance for debugPreview",
+	);
 	const clientResetButtons = clientNodes.filter((node) => node.type === "button" && node.props.children === "恢复默认");
 	check(
 		"每一组都有恢复默认",
-		clientResetButtons.length === 5 && new Set(clientResetButtons.map((node) => node.props["data-group"])).size === 5,
+		clientResetButtons.length === 8 && new Set(clientResetButtons.map((node) => node.props["data-group"])).size === 8,
 		"buttons=" + clientResetButtons.length + " groups=" + clientResetButtons.map((node) => node.props["data-group"]).join(","),
 	);
+	/*
+	 * 页面骨架：九组的 id、顺序、标题，以及「预览」是唯一没有恢复默认的那一组。
+	 * 重排设置页最容易犯的错就是顺序乱了、或者某一组忘了配恢复默认——这两件事
+	 * 在截图上看不出来，但会让人找不到东西。
+	 */
+	const groupOutline = clientNodes
+		.filter((node) => String(node.props?.className ?? "") === "dsh-nudge-group")
+		.map((node) => {
+			const children = Array.isArray(node.props.children) ? node.props.children : [node.props.children];
+			const head = children.find((child) => child !== null && String(child?.props?.className ?? "") === "dsh-nudge-group-head");
+			const headKids = Array.isArray(head?.props?.children) ? head.props.children : [head?.props?.children];
+			const titleNode = headKids.find((child) => {
+				const cls = String(child?.props?.className ?? "");
+				return cls === "dsh-nudge-group-title" || cls === "dsh-nudge-group-toggle";
+			});
+			const title = typeof titleNode?.props?.children === "string" ? titleNode.props.children : "";
+			// 恢复默认在树里还是未展开的函数组件（ResetRow），所以两种形态都认。
+			const hasReset = headKids.some((child) => {
+				if (String(child?.props?.className ?? "") === "dsh-nudge-actions") return true;
+				return typeof child?.type === "function" && child.type.name === "ResetRow";
+			});
+			return { id: String(node.props.id ?? "").replace("dsh-nudge-g-", ""), title, hasReset };
+		});
+	/** [id, 组标题, 导航按钮文字, 有没有恢复默认] */
+	const expectedOutline = [
+		["preview", "预览", "预览", false],
+		["type", "文字", "文字", true],
+		["card", "卡片", "卡片", true],
+		["place", "位置与停留", "位置", true],
+		["basic", "提醒", "提醒", true],
+		["click", "点击", "点击", true],
+		["when", "什么时候弹", "时机", true],
+		["merge", "合并与静音", "合并", true],
+		["debug", "调试（点一下展开）", "调试", true],
+	];
+	const outlineBad = expectedOutline.filter(([id, title, , hasReset], index) => {
+		const actual = groupOutline[index];
+		return actual === undefined || actual.id !== id || actual.title !== title || actual.hasReset !== hasReset;
+	});
+	check(
+		"设置页骨架：九组顺序、标题与恢复默认都对得上",
+		groupOutline.length === expectedOutline.length && outlineBad.length === 0,
+		groupOutline.map((item) => item.id + ":" + item.title + (item.hasReset ? "+reset" : "")).join(" | "),
+	);
+	const navLabels = clientNodes
+		.filter((node) => node.type === "button" && String(node.props.className ?? "") === "dsh-nudge-navbtn")
+		.map((node) => node.props.children);
+	check(
+		"导航按钮与分组一一对应，顺序一致",
+		navLabels.length === expectedOutline.length
+			&& expectedOutline.every(([, , navLabel], index) => navLabels[index] === navLabel),
+		"nav=" + navLabels.join(","),
+	);
+	/* 导航高亮：默认点亮第一组，其余靠 IntersectionObserver 更新；拿不到观察器也不该崩。 */
+	const navButtons = clientNodes.filter(
+		(node) => node.type === "button" && String(node.props.className ?? "") === "dsh-nudge-navbtn",
+	);
+	check(
+		"导航默认高亮第一组，且带 aria-current",
+		navButtons[0]?.props["data-on"] === "1"
+			&& navButtons[0]?.props["aria-current"] === "true"
+			&& navButtons.slice(1).every((node) => node.props["data-on"] === "0")
+			&& clientSource.includes('typeof IntersectionObserver !== "function"'),
+		"active nav must start on the first group and degrade without IntersectionObserver",
+	);
+	/* 全部恢复默认：点第一下只「上膛」，第二下才写进草稿，误点可以「放弃」。 */
+	const resetAllButton = clientNodes.find(
+		(node) => node.type === "button" && String(node.props.className ?? "") === "dsh-nudge-btn" && node.props["data-armed"] === "0",
+	);
+	check(
+		"全部恢复默认要点两下，且只进草稿",
+		resetAllButton?.props?.children === "全部恢复默认"
+			&& clientSource.includes("if (!resetAllArmed) {")
+			&& clientSource.includes("writeMany(allDefaults());")
+			&& clientSource.includes("const allDefaults = () =>")
+			&& clientSource.includes("h(\"div\", { className: \"dsh-nudge-resetall\""),
+		"two-step reset-all that only fills the draft",
+	);
+	/* 应用栏在九组之后要能说清「改的是哪几组」，并且点一下能跳过去。 */
+	const flattenChildren = (node) => {
+		if (node === null || node === undefined) return [];
+		if (Array.isArray(node)) return node.flatMap(flattenChildren);
+		return [node];
+	};
+	const whereChipsOf = (nodes) => {
+		const bar = applyBarOf(nodes);
+		if (bar === undefined) return [];
+		return flattenChildren(bar.props.children)
+			.filter((child) => String(child?.props?.className ?? "") === "dsh-nudge-applywhere")
+			.flatMap((child) => flattenChildren(child.props.children))
+			.filter((child) => String(child?.props?.className ?? "") === "dsh-nudge-applylink");
+	};
 	const clientMuteState = clientNodes.filter(
 		(node) =>
 			node.type === "p"
@@ -1300,9 +1444,10 @@ check("设置页控件数量", clientControls.length >= 14, "controls=" + client
 		"rules=" + errorRule,
 	);
 	check(
-		"README 的设置页一节跟得上现在的五组",
-		readmeSource.includes("从上到下五组")
-			&& readmeSource.includes("一排现成的色块")
+		"README 的设置页一节跟得上现在的九组",
+		readmeSource.includes("九组")
+			&& readmeSource.includes("| 预览 |") && readmeSource.includes("| 合并与静音 |")
+			&& readmeSource.includes('11 颗色块')
 			&& readmeSource.includes("现在实际用的值")
 			&& !readmeSource.includes("只在预览弹窗打开时出现")
 			&& !readmeSource.includes("/plugins/dsh-nudge/client.js"),
@@ -1363,7 +1508,7 @@ check(
 );
 check(
 	"顶部有分组导航和修订标记",
-	clientNodes.filter((node) => node.type === "button" && String(node.props.className ?? "") === "dsh-nudge-navbtn").length === 5
+	clientNodes.filter((node) => node.type === "button" && String(node.props.className ?? "") === "dsh-nudge-navbtn").length === 9
 		&& clientNodes.some((node) => typeof node.props.children === "string" && node.props.children.startsWith("提醒弹窗设置页 · 修订 ")),
 	"nav=" + clientNodes.filter((node) => node.type === "button" && String(node.props.className ?? "") === "dsh-nudge-navbtn").length,
 );
@@ -1377,6 +1522,15 @@ check(
 		&& applyBarOf(stagedPage.nodes) !== undefined
 		&& stagedPage.nodes.some((node) => node.props.children === "1 项改动还没保存"),
 	"writes=" + clientMutations.length + " bar=" + (applyBarOf(stagedPage.nodes) !== undefined),
+);
+/* 九组之后光看「N 项」想不起来改在哪，应用栏要点名是哪几组，并且能跳过去。 */
+const whereChips = whereChipsOf(stagedPage.nodes);
+check(
+	"应用栏标出改在哪几组，且能跳过去",
+	whereChips.length === 1
+		&& whereChips[0].props.children === "提醒"
+		&& typeof whereChips[0].props.onClick === "function",
+	"chips=" + whereChips.map((node) => node.props.children).join(","),
 );
 clientMutations.length = 0;
 buttonByText(stagedPage.nodes, "应用").props.onClick();
@@ -1480,55 +1634,61 @@ check(
 		&& hostText.includes("anchor: cfg.anchor"),
 	"host",
 );
-/* 拖动排版：每块文字的偏移与宽度。0 就是原样，拖了才有值。 */
-const blockRoles = ["title", "project", "task", "status", "items", "more", "footer"];
+/* 排版：文字位置固定自上而下，卡片只有尺寸可调。 */
 check(
-	"七块文字都有偏移与宽度的默认值",
-	blockRoles.every((role) => {
-		const one = DEFAULTS.blocks?.[role];
-		return one !== undefined && one.dx === 0 && one.dy === 0 && one.w === 0;
-	}) && Object.keys(DEFAULTS.blocks).length === blockRoles.length,
-	"roles=" + Object.keys(DEFAULTS.blocks ?? {}).length,
+	"配置里不再有每块的偏移与宽度",
+	DEFAULTS.blocks === undefined
+		&& !indexSource.includes("BLOCK_ROLES")
+		&& !indexSource.includes("blockRole(")
+		&& !hostText.includes('path: ["blocks"'),
+	"blocks must be gone from DEFAULTS and the schema",
 );
-const dragged = normalizeConfig({ blocks: { task: { dx: 9999, dy: -9999, w: -5 }, title: { dx: 12.6, dy: -3.2, w: 200 } } });
+const legacyBlocks = normalizeConfig({ blocks: { task: { dx: 40, dy: -12, w: 300 } }, width: 300 });
 check(
-	"拖出来的数字越界夹回来、小数取整",
-	dragged.blocks.task.dx === 600 && dragged.blocks.task.dy === -600 && dragged.blocks.task.w === 0
-		&& dragged.blocks.title.dx === 13 && dragged.blocks.title.dy === -3 && dragged.blocks.title.w === 200
-		&& dragged.blocks.footer.dx === 0,
-	JSON.stringify(dragged.blocks.task) + " " + JSON.stringify(dragged.blocks.title),
-);
-checkThrows("blocks 不是对象抛错", () => normalizeConfig({ blocks: ["title"] }));
-checkThrows("单块不是对象抛错", () => normalizeConfig({ blocks: { task: 1 } }));
-check(
-	"弹窗脚本能拖动每一块并记下来",
-	popupSource.includes("[string]$LayoutFile = ''")
-		&& popupSource.includes("$script:BlockRoles")
-		&& popupSource.includes("function Save-BlockLayout")
-		&& popupSource.includes("function Test-BlockSource")
-		&& popupSource.includes("'block:'")
-		&& popupSource.includes("UTF8Encoding")
-		&& popupSource.includes("-LayoutFile $LayoutFile"),
-	"popup",
+	"老配置里的 blocks 被丢掉而不是报错",
+	legacyBlocks.blocks === undefined && legacyBlocks.width === 300,
+	"blocks=" + JSON.stringify(legacyBlocks.blocks),
 );
 check(
-	"宿主把拖出来的布局写回配置",
-	hostText.includes("const BLOCK_ROLES = [")
-		&& hostText.includes("dsh-nudge-layout-")
-		&& hostText.includes("\"-LayoutFile\"")
-		&& hostText.includes("readLayout()")
-		&& hostText.includes("applyLayout")
-		&& hostText.includes("blocks: this.config.blocks")
-		&& hostText.includes('path: ["blocks", role, key]'),
-	"host",
+	"弹窗脚本不再支持逐块拖动",
+	!popupSource.includes("$LayoutFile")
+		&& !popupSource.includes("BlockRoles")
+		&& !popupSource.includes("Save-BlockLayout")
+		&& !popupSource.includes("Test-BlockSource")
+		&& !popupSource.includes("'block:'")
+		&& !popupSource.includes("Set-BlockShift")
+		&& !popupSource.includes("blockNodes"),
+	"no per-block drag machinery in popup.ps1",
 );
 check(
-	"设置页有摆回原位的按钮",
-	clientSource.includes("BLOCK_ROLES")
-		&& clientSource.includes("\"blocks.\" + role")
-		&& clientSource.includes("\"reset-layout\"")
-		&& clientSource.includes("摆回原位"),
+	"宿主不再回收卡片写回来的布局",
+	// 只剩 pruneTempFiles 的清理正则里还认得旧的 layout 文件名（用来收尸），
+	// 不再有 -LayoutFile 参数、readLayout / applyLayout 与 payload.blocks。
+	!hostText.includes('"-LayoutFile"')
+		&& !hostText.includes("readLayout()")
+		&& !hostText.includes("applyLayout")
+		&& !hostText.includes("blocks: this.config.blocks"),
+	"host must not poll a layout file",
+);
+check(
+	"设置页没有摆回原位的按钮，也没有 blocks 键",
+	!clientSource.includes("BLOCK_ROLES")
+		&& !clientSource.includes("BLOCK_DEFAULTS")
+		&& !clientSource.includes("reset-layout")
+		&& !clientSource.includes("摆回原位")
+		&& !clientSource.includes('"blocks"'),
 	"client",
+);
+check(
+	"尺寸仍然可调，内容按宽度自适应",
+	// 缩放：拖窗口边 -> 系统原生缩放循环；自适应：以首量宽度为基准按比例缩放字号，
+	// 并按新宽度重新折行（Update-CardScale + MaxHeight）。
+	popupSource.includes("SendMessage($handle, 0x00A1")
+		&& popupSource.includes("function Update-CardScale")
+		&& popupSource.includes("Set-CardTextScale -Root $Card -Factor")
+		&& popupSource.includes("$headlineBlock.TextWrapping = 'Wrap'")
+		&& popupSource.includes("$detail.TextWrapping = 'Wrap'"),
+	"resize + reflow",
 );
 
 const typingPage = renderClientPage();
@@ -1681,61 +1841,30 @@ check(
 );
 
 check(
-	"预览卡的拖动只在真动过时保存布局",
-	popupSource.includes("$script:blockMoved")
-		&& popupSource.includes("$touched = $script:blockMoved")
-		&& popupSource.includes("$node.IsMouseOver"),
-	"hold without moving must not write the layout file",
-);
-
-check(
-	"设置页的摆回原位标出移动了几块",
-	clientSource.includes("const movedCount")
-		&& clientSource.includes('"摆回原位（"'),
-	"movedCount",
-);
-
-check(
-	"布局写回走 volatile 叶子路径",
-	// blocks 容器本身不能标 volatile（标了 schemastery 会拒绝），所以整块写会被设置
-	// 服务判成「不是 volatile 字段」并抛错；而 mutate 是异步的，不 await 就成一条
-	// unhandled rejection，宿主会当成插件出错、提示重启 DSH。
-	!indexSource.includes('path: ["blocks"]')
-		&& indexSource.includes('path: ["blocks", role, key]')
-		&& indexSource.includes("await settingsApi.mutate")
-		// 调用点必须接住这个 promise：applyLayout 是 async，同步段抛错也会变成
-		// rejection，`void` 掉就没人处理，宿主在 load 阶段看到未处理 rejection
-		// 会直接判 fatal load failure。
-		&& indexSource.includes("applyLayout(dragged).catch("),
-	"layout must be written leaf by leaf and awaited",
-);
-
-check(
 	"设置服务出错不会把宿主带崩",
-	// 两处都在 load/apply 或定时器里执行，抛出去就是 fatal load failure：
-	// 1) apply 阶段的 settings.configure 包在 try 里；
-	// 2) applyLayout 的 promise 在调用点 .catch 掉。
+	// settings.configure 在 apply 阶段执行，抛出去就是 fatal load failure：包在 try 里。
+	// 卡片不再往配置里写布局，所以这里只剩这一处。
 	indexSource.includes("settings.configure skipped")
-		&& indexSource.includes("layout not saved")
-		&& !indexSource.includes("void applyLayout("),
+		&& !indexSource.includes("layout not saved"),
 	"a settings failure must be logged, never thrown",
 );
 
 check(
 	"预览卡的临时文件不会在临时目录里越攒越多",
-	// 每张预览卡两个文件（停止标记 + 布局），正常关掉时删掉，宿主被强杀时靠
-	// 下次启动的 pruneTempFiles() 按 PID 存活情况收尾。
-	indexSource.includes("const leftovers = [this.previewStopFile, this.layoutFile];")
+	// 每张预览卡一个停止标记，正常关掉时删掉，宿主被强杀时靠下次启动的
+	// pruneTempFiles() 按 PID 存活情况收尾（旧版遗留的 layout 文件也一起收）。
+	indexSource.includes("const leftover = this.previewStopFile;")
 		&& indexSource.includes("function pruneTempFiles()")
 		&& indexSource.includes("pruneTempFiles();")
-		&& indexSource.includes("process.kill(pid, 0)"),
+		&& indexSource.includes("process.kill(pid, 0)")
+		&& indexSource.includes("(?:preview|layout)"),
 	"preview temp files must be removed on close and pruned on start",
 );
 
 check(
 	"预览卡换外观时旧进程不会抹掉新卡的状态",
 	// 重画预览卡是先写停止标记再起新卡，旧进程的 exit 会晚到几百毫秒；它若照样
-	// 清 previewStopFile / layoutFile，新卡就关不掉、拖动结果也读不回来。
+	// 清 previewStopFile，新卡就关不掉。
 	indexSource.includes("this.previewToken = 0;")
 		&& indexSource.includes("token = ++this.previewToken;")
 		&& indexSource.includes("if (preview && this.previewToken === token)"),
@@ -1749,12 +1878,153 @@ const applySlice = (() => {
 check(
 	"设置页应用失败时不清草稿",
 	// 原来先把草稿清掉再写回：被宿主拒掉或抛错时用户的改动就白填了。
-	// 现在先收起草稿（界面立刻干净），失败按 backup 原样放回去。
+	// 现在先收起草稿（界面立刻干净），失败按 backup 增量放回去：
+	// 只放回这次提交的 path，等待期间用户新改的那些保留。
 	applySlice.includes("const backup = { ...draft };")
-		&& (applySlice.match(/setDraft\(backup\)/gu) ?? []).length >= 3
+		&& (applySlice.match(/setDraft\(rollback\)/gu) ?? []).length >= 3
+		&& applySlice.includes("const rollback = (current) =>")
+		&& applySlice.includes("if (Object.hasOwn(merged, path)) continue;")
 		&& applySlice.includes("form.mutate(ops, snapshot.revision)")
 		&& applySlice.includes("try {"),
 	"draft must survive a failed apply",
+);
+/* 同步抛错 + 逐项重试这两条以前都会静默：一条撞 TDZ 抛 ReferenceError，一条从不显示 bad。 */
+check(
+	"应用失败会说话，且不会撞 TDZ",
+	// retryOneByOne / rollback / revisionNow 必须都在 try 之前声明，否则同步抛错时
+	// catch 里调用它们是 ReferenceError（const 还在 TDZ 里）。
+	applySlice.indexOf("const retryOneByOne") < applySlice.indexOf("result = form.mutate(ops")
+		&& applySlice.indexOf("const rollback") < applySlice.indexOf("result = form.mutate(ops")
+		&& applySlice.includes("setFailure(`写入失败：")
+		&& applySlice.includes("宿主没接受这几项：")
+		&& !applySlice.includes("retryOneByOne(`写入失败：${error instanceof Error ? error.message : String(error)}；`);\n\t\t\t\t\treturn;"),
+	"retry must be declared before the try, and failures must be reported",
+);
+check(
+	"逐项重试每次取最新 revision",
+	applySlice.includes("const revisionNow = () =>")
+		&& applySlice.includes("form.mutate([item], revisionNow())"),
+	"stale revision must not be reused",
+);
+check(
+	"数字框清空后失焦回到原值，不会写成最小值",
+	clientSource.includes('if (String(draft).trim() === "") {')
+		&& clientSource.indexOf('String(draft).trim() === ""') < clientSource.indexOf("const clamped = Math.min(props.max"),
+	"empty input must not become min",
+);
+check(
+	"宿主半身缺席时设置页不崩",
+	clientSource.includes('status: "unavailable", value: undefined, writable: false, revision: 0')
+		&& clientSource.includes('typeof form.getSnapshot === "function"')
+		&& clientSource.includes('typeof form.subscribe === "function"'),
+	"missing configForm must degrade, not throw",
+);
+/* 会话事件监听器抛错会冒到宿主的事件派发里：插件出错只该少弹一张卡，不该带崩回合。 */
+check(
+	"会话事件处理整体兜底，抛错只记一条 debug",
+	indexSource.includes("const onSessionEvent = (session, raw) =>")
+		&& indexSource.includes('ctx.on("session/event", (session, raw) => {')
+		&& indexSource.includes("onSessionEvent(session, raw);")
+		&& indexSource.includes("session/event handler failed"),
+	"event listener must not throw into the host",
+);
+/* 三条兜底：调试文件轮转、payload 超长改走文件、猴补丁按实例注册与还原。 */
+check(
+	"调试落盘文件超过 5MB 会轮转成 .1",
+	indexSource.includes("const DEBUG_DUMP_LIMIT = 5 * 1024 * 1024;")
+		&& indexSource.includes("renameSync(file, `${file}.1`)")
+		&& indexSource.includes("if (size > DEBUG_DUMP_LIMIT)"),
+	"debug jsonl must rotate",
+);
+check(
+	"payload 超长时改走 -PayloadFile，退出时删掉",
+	indexSource.includes("const PAYLOAD_ARG_LIMIT = 24000;")
+		&& indexSource.includes("const usePayloadFile = this.scriptPath().length + b64.length > PAYLOAD_ARG_LIMIT;")
+		&& indexSource.includes('args.push("-PayloadFile", payloadFile)')
+		&& indexSource.includes("if (payloadFile !== \"\") {")
+		&& indexSource.includes("rmSync(payloadFile, { force: true })"),
+	"argv length guard + temp file cleanup",
+);
+check(
+	"userQuestions.ask 的包装按实例注册，最后一个卸载才还原",
+	indexSource.includes("const questionPatches = new WeakMap();")
+		&& indexSource.includes("entry.listeners.add(notifier)")
+		&& indexSource.includes("live.listeners.delete(notifier)")
+		&& indexSource.includes("if (live.listeners.size > 0) return;")
+		&& indexSource.includes("if (questions.ask === live.patched) questions.ask = live.original;")
+		&& !indexSource.includes("__sessionAlertPatched"),
+	"monkey patch must be ref-counted per service object",
+);
+check(
+	"watchdog 的最后一招：连 Close 都失败也能收场",
+	popupSource.includes("$script:forceQuit = {")
+		&& popupSource.includes("try { $script:appRef.Shutdown() } catch { }")
+		&& popupSource.includes("[System.Environment]::Exit(0)")
+		&& popupSource.includes("$script:appRef = $app"),
+	"force quit path",
+);
+/* 关掉上面的块之后，剩下的内容要自己顶到卡片的 padding 上，不能留着那块的上边距。 */
+check(
+	"顶上那一块不吃自己的上边距（真卡）",
+	popupSource.includes("$firstCarrier = $null")
+		&& popupSource.includes("if ($null -eq $firstCarrier) { $firstCarrier = $header }")
+		&& popupSource.includes("if ($null -eq $firstCarrier) { $firstCarrier = $divider }")
+		&& popupSource.includes("if ($null -eq $firstCarrier) { $firstCarrier = $footer }")
+		&& popupSource.includes("$firstCarrier.Margin = New-Object System.Windows.Thickness $carrierMargin.Left, 0, $carrierMargin.Right, $carrierMargin.Bottom"),
+	"first visible block must drop its top margin",
+);
+check(
+	"顶上那一块不吃自己的上边距（样卡）",
+	clientSource.includes(".dsh-nudge-card-body > *:first-child{margin-top:0}"),
+	"sample card must follow the same rule",
+);
+check(
+	"预览卡 400ms 一拍，改完设置不用等两秒",
+	indexSource.includes("const PREVIEW_WATCH_MS = 400;")
+		&& indexSource.includes("}, PREVIEW_WATCH_MS);"),
+	"preview watch cadence",
+);
+/* 预览卡改设置走「原地重画」而不是「关掉再起一张」：后者光冷启动就 ~900ms。 */
+check(
+	"预览卡原地重画：写 payload 文件，不重起进程",
+	popupSource.includes("function Update-CardInPlace {")
+		&& popupSource.includes("$script:payloadPoll = New-Object System.Windows.Threading.DispatcherTimer")
+		&& popupSource.includes("Update-CardInPlace -Payload $next -Window $window")
+		&& popupSource.includes("$Window.MinHeight = 90")
+		&& indexSource.includes("refreshPreview(payload) {")
+		&& indexSource.includes("center.runner.refreshPreview?.(previewPayload())")
+		&& indexSource.includes("this.previewPayloadFile = join(tmpdir(), `dsh-nudge-preview-payload-${process.pid}.json`)"),
+	"in-place preview refresh",
+);
+check(
+	"原地重画的临时文件也会被清掉",
+	indexSource.includes("const leftoverPayload = this.previewPayloadFile;")
+		&& indexSource.includes("for (const file of [leftover, leftoverPayload])"),
+	"preview payload temp file cleanup",
+);
+/* 记住的尺寸只该记住宽度：记住高度会让「关掉几块」的卡片留着底部空白。 */
+check(
+	"记住的尺寸只留宽度，高度跟着内容走",
+	popupSource.includes("if ($Preview -and $script:placement.ContainsKey('height'))")
+		&& popupSource.includes("$window.Width = [Math]::Round($wantWidth)")
+		&& !popupSource.includes("$window.Height = [Math]::Round($wantHeight)")
+			|| popupSource.includes("if ($Preview -and $script:placement.ContainsKey('height'))"),
+	"remembered height must not pin a reminder card",
+);
+/* 静音时段：页面的算法必须和宿主 inMuteRange 一致，不能把宿主真的会静音的行说成「会被跳过」。 */
+check(
+	"静音时段：越界行不当成跳过，而是说明实际怎么算",
+	clientSource.includes("function clockText(minutes)")
+		&& clientSource.includes("if (from > 1439 || to > 1439) odd.push({ line, from, to });")
+		&& clientSource.includes("宿主不会跳过、而是照原样算")
+		&& !clientSource.includes("if (from > 1439 || to > 1439) {\n\t\t\t\t\tbad.push(line);"),
+	"client mute parsing must match host inMuteRange",
+);
+check(
+	"导出 / 导入的键表覆盖页面上的每一项",
+	['"quietToolErrors",', '"visible",', '"rememberPosition",'].every((key) => clientSource.includes(key))
+		&& !clientSource.includes('"placementFile",'),
+	"CONFIG_KEYS must include quietToolErrors and visible (placementFile stays machine-local)",
 );
 check(
 	"设置页导入按叶子摊平",
@@ -1841,7 +2111,7 @@ check(
 	clientSource.includes("const CARD_PARTS = [")
 		&& clientSource.includes('"data-part": part,')
 		&& clientSource.includes('const partOn = (part) => raw("visible." + part) !== false;')
-		&& clientSource.includes('GROUP_DEFAULTS[0][1].push(["visible." + part, true]);')
+		&& clientSource.includes('cardGroup[1].push(["visible." + part, true]);')
 		&& clientSource.includes('partOn("footer") ? h('),
 );
 
