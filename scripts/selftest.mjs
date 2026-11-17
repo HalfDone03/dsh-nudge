@@ -1995,7 +1995,13 @@ check(
 		&& popupSource.includes("$firstCarrier.Margin = New-Object System.Windows.Thickness $carrierMargin.Left, 0, $carrierMargin.Right, $carrierMargin.Bottom"),
 	"first visible block must drop its top margin",
 );
-/* 语音：配置校验、文案拼装、helper 两条播放路径、设置页那一组。 */
+/* 改语音设置要能当场听到：sound 必须进预览卡的重画指纹，否则预览卡开着时改了没反应。 */
+check(
+	"语音设置进预览卡的重画指纹",
+	indexSource.includes("sound: cfg.sound ?? {}")
+		&& indexSource.indexOf("sound: cfg.sound ?? {}") < indexSource.indexOf("function styleKeyOf") + 900,
+	"styleKeyOf must include sound",
+);/* 语音：配置校验、文案拼装、helper 两条播放路径、设置页那一组。 */
 check(
 	"语音配置默认关着，非法值抛错",
 	DEFAULTS.sound.enabled === false
