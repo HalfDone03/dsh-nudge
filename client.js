@@ -33,7 +33,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-10.7";
+	const PANEL_REVISION = "2026-11-17.1";
 	/**
 	 * 分组导航：id 与下面每个分组容器的 id 对得上。
 	 * 顺序 = 你多久会动它一次：先看长什么样（预览），再调字、卡片、位置，
@@ -537,7 +537,7 @@ const ROLE_LOOK = {
 			]],
 		];
 		for (const [role] of FONT_ROLES) {
-			GROUP_DEFAULTS[0][1].push(["typography." + role + ".color", ""], ["typography." + role + ".size", 0]);
+			GROUP_DEFAULTS[0][1].push(["typography." + role + ".color", ""], ["typography." + role + ".size", 0], ["typography." + role + ".weight", ""]);
 		}
 		/** 卡片上可以关掉的那几块：键名与宿主 DEFAULTS.visible 一致。 */
 		const CARD_PARTS = [
@@ -1059,9 +1059,12 @@ const ROLE_LOOK = {
 						: accent !== null
 							? accent
 							: "color-mix(in srgb, currentColor " + Math.round(look.opacity * 100) + "%, transparent)";
+				// 字重三态：留空用这一类的版式默认，normal / bold 覆盖它。
+				const weightNow = text("typography." + role + ".weight");
+				const weight = weightNow === "bold" ? 700 : weightNow === "normal" ? 400 : look.weight;
 				return {
 					fontSize: roleSize(role) + "px",
-					fontWeight: look.weight,
+					fontWeight: weight,
 					color: tint,
 				};
 			};
@@ -1303,6 +1306,12 @@ const ROLE_LOOK = {
 						disabled,
 						onCommit: (next) => write("typography." + fontRole + ".size", next),
 					}),
+					h(SelectRow, { 						key: "weight", 						label: "字重（" + roleLabel(fontRole) + "）", 						// 微软雅黑没有真正的 SemiBold：半粗在显示上等同加粗，所以对默认半粗的类别
+						// （标题 / 项目名 / 状态词）「加粗」看不出变化，真正有用的是「常规」。
+						hint:
+							ROLE_LOOK[fontRole].weight >= 600
+								? "这一类默认半粗；字体没有真正的半粗，所以选「加粗」看不出差别，想更细选「常规」。"
+								: "这一类默认常规，选「加粗」会更醒目。", 						value: text("typography." + fontRole + ".weight"), 						options: [ 							{ value: "", label: "跟随版式" }, 							{ value: "normal", label: "常规" }, 							{ value: "bold", label: "加粗" }, 						], 						disabled, 						onChange: (next) => write("typography." + fontRole + ".weight", next), 					}),
 					h("div", { className: "dsh-nudge-swatches", key: "colors" }, COLOR_CHOICES.map(([value, name]) =>
 						h("button", {
 							key: value === "" ? "auto" : value,

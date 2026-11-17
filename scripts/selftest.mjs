@@ -1475,7 +1475,21 @@ check("设置页有回合中途报错开关",
 			&& popupSource.includes("Update-CardScale -Window $window -Card $card"),
 		"scale",
 	);
-check("配色是三个选项的下拉", clientControls.some((node) => node.type === "select") && clientNodes.filter((node) => node.type === "option").length === 3);
+/* 页面上现在有两个下拉：配色（auto/light/dark）与字重（跟随版式/常规/加粗）。 */
+const themeSelect = clientControls.find((node) => node.type === "select" && node.props["aria-label"] === "配色");
+const themeOptions = clientNodes.filter((node) => node.type === "option" && ["跟随系统", "浅色", "深色"].includes(node.props.children));
+const weightSelect = clientControls.find((node) => node.type === "select" && String(node.props["aria-label"] ?? "").startsWith("字重（"));
+const weightOptions = clientNodes.filter((node) => node.type === "option" && ["跟随版式", "常规", "加粗"].includes(node.props.children));
+check(
+	"配色是三个选项的下拉",
+	themeSelect !== undefined && themeOptions.length === 3,
+	"options=" + themeOptions.length,
+);
+check(
+	"字重是「跟随版式 / 常规 / 加粗」三态下拉",
+	weightSelect !== undefined && weightOptions.length === 3,
+	"weightOptions=" + weightOptions.length,
+);
 
 /** 再渲染一次设置页：改完 clientConfig 就能看到开关的影响（假表单每次 getSnapshot 都读最新值）。 */
 const renderClientPage = () => {
@@ -1973,7 +1987,33 @@ check(
 		&& popupSource.includes("$firstCarrier.Margin = New-Object System.Windows.Thickness $carrierMargin.Left, 0, $carrierMargin.Right, $carrierMargin.Bottom"),
 	"first visible block must drop its top margin",
 );
+/* 字重：三态配置 + 真卡与样卡都认它。 */
 check(
+	"字重是三态配置，非法值抛错",
+	DEFAULTS.typography.project.weight === ""
+		&& normalizeConfig({ typography: { project: { weight: "bold" } } }).typography.project.weight === "bold"
+		&& normalizeConfig({ typography: { task: { weight: "normal" } } }).typography.task.weight === "normal"
+		&& normalizeConfig({ typography: { task: {} } }).typography.task.weight === ""
+		&& (() => { try { normalizeConfig({ typography: { task: { weight: "heavy" } } }); return false; } catch { return true; } })(),
+	"weight must be '' / normal / bold",
+);
+check(
+	"真卡按 weight 设字重，默认值按类别回退",
+	popupSource.includes("function Get-FontWeight {")
+		&& popupSource.includes("if ($entry.Weight -eq 'bold') { return 'Bold' }")
+		&& popupSource.includes("$result[$role] = @{ Size = $size; Color = $color; Weight = $weight }")
+		&& (popupSource.match(/Get-FontWeight '/gu) ?? []).length >= 14,
+	"weight call sites=" + (popupSource.match(/Get-FontWeight '/gu) ?? []).length,
+);
+check(
+	"设置页有字重下拉，样卡跟着变粗",
+	clientSource.includes('label: "字重（" + roleLabel(fontRole) + "）"')
+		&& clientSource.includes('{ value: "", label: "跟随版式" }')
+		&& clientSource.includes('{ value: "bold", label: "加粗" }')
+		&& clientSource.includes('const weight = weightNow === "bold" ? 700 : weightNow === "normal" ? 400 : look.weight;')
+		&& clientSource.includes('["typography." + role + ".weight", ""]'),
+	"weight UI + sample",
+);check(
 	"顶上那一块不吃自己的上边距（样卡）",
 	clientSource.includes(".dsh-nudge-card-body > *:first-child{margin-top:0}"),
 	"sample card must follow the same rule",

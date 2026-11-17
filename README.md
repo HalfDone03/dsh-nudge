@@ -172,15 +172,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
       failed: true
     clickToFocus: true     # 点击卡片回到 DSH 并复制这批提醒
     clickThrough: false    # 鼠标穿透：卡片不接鼠标，点下去落到后面的窗口（纯提示）
-    typography:            # 每一类文字的字号与颜色；留空 / 0 用主题默认
-      title: { color: '', size: 0 }
-      project: { color: '', size: 0 }
-      task: { color: '', size: 0 }
-      reason: { color: '', size: 0 }
-      status: { color: '', size: 0 }
-      time: { color: '', size: 0 }
-      more: { color: '', size: 0 }
-      footer: { color: '', size: 0 }
+    typography:            # 每一类文字的字号、颜色与字重；留空 / 0 用版式默认
+      title: { color: '', size: 0, weight: '' }
+      project: { color: '', size: 0, weight: '' }
+      task: { color: '', size: 0, weight: '' }
+      reason: { color: '', size: 0, weight: '' }
+      status: { color: '', size: 0, weight: '' }
+      time: { color: '', size: 0, weight: '' }
+      more: { color: '', size: 0, weight: '' }
+      footer: { color: '', size: 0, weight: '' }
     visible:               # 卡片上要显示哪几块；关掉的不画也不占位
       title: true
       project: true
@@ -209,7 +209,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 | 分组 | 里面是什么 |
 | --- | --- |
 | 预览 | **不是配置项**，没有「恢复默认」：样卡与真卡用同一份配置、同一套尺寸。底边那颗「在桌面上弹一张看看」让真卡出现在桌面（点应用会当场重画）。点样卡上任一行跳到「文字」 |
-| 文字 | 8 类文字的字号与颜色：点名字切换，只显示当前那一类。字号框里填的是**现在实际用的值**（改成 0 才回默认），颜色是 11 颗色块 + 一个能写 `#RRGGBB` 的框 |
+| 文字 | 8 类文字的字号、颜色与**字重**：点名字切换，只显示当前那一类。字号框里填的是**现在实际用的值**（改成 0 才回默认）；颜色是 11 颗色块 + 一个能写 `#RRGGBB` 的框；字重是「跟随版式 / 常规 / 加粗」三态。**微软雅黑没有真正的半粗**，所以对默认半粗的类别（标题 / 项目名 / 状态词）选「加粗」看不出差别，真正有用的是「常规」 |
 | 卡片 | 显示哪几块（7 颗开关）、宽度、配色（auto / light / dark）、卡片底色、左侧竖条 |
 | 位置与停留 | 落点九宫格、停留秒数、距屏幕边缘、记住拖过的位置 |
 | 提醒 | 总开关 + 三类提醒 |
@@ -307,6 +307,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 
 | 版本 | 日期 | 一句话 |
 | --- | --- | --- |
+| 1.7.0 | 2026-11-17 | 每类文字能单独设字重（跟随版式 / 常规 / 加粗） |
 | 1.6.1 | 2026-11-13 | 记住的尺寸只留宽度，高度跟着内容走（关掉几块不留白） |
 | 1.6.0 | 2026-11-10 | 关掉某块后内容自己顶上；预览卡改设置原地重画（~0.3s） |
 | 1.5.2 | 2026-11-10 | 导航亮起当前那一组；页尾加「全部恢复默认」（点两下） |

@@ -324,8 +324,15 @@ function Resolve-Typography {
         $color = ''
         try { $color = [string]$entry.color } catch { $color = '' }
         $color = $color.Trim()
-        if ($size -le 0 -and [string]::IsNullOrEmpty($color)) { continue }
-        $result[$role] = @{ Size = $size; Color = $color }
+        # Weight is tri-state: empty keeps the built-in weight for that role,
+        # "normal" / "bold" override it. Only "normal" and "bold" are accepted;
+        # anything else falls back to the built-in so a bad value cannot make text
+        # disappear.
+        $weight = ''
+        try { $weight = ([string]$entry.weight).Trim().ToLowerInvariant() } catch { $weight = '' }
+        if ($weight -ne 'normal' -and $weight -ne 'bold') { $weight = '' }
+        if ($size -le 0 -and [string]::IsNullOrEmpty($color) -and $weight -eq '') { continue }
+        $result[$role] = @{ Size = $size; Color = $color; Weight = $weight }
     }
     return $result
 }
@@ -341,6 +348,18 @@ function Get-FontColor {
     param([string]$Role, [string]$Fallback)
     $entry = $script:Fonts[$Role]
     if ($null -ne $entry -and -not [string]::IsNullOrEmpty($entry.Color)) { return $entry.Color }
+    return $Fallback
+}
+
+# A role's weight: the user's choice when set, otherwise the weight that role was
+# designed with (project names and status words are SemiBold, body copy is Normal).
+function Get-FontWeight {
+    param([string]$Role, [string]$Fallback)
+    $entry = $script:Fonts[$Role]
+    if ($null -ne $entry -and -not [string]::IsNullOrEmpty($entry.Weight)) {
+        if ($entry.Weight -eq 'bold') { return 'Bold' }
+        return 'Normal'
+    }
     return $Fallback
 }
 
@@ -626,7 +645,7 @@ function New-CountPill {
     $pill.Margin = New-Object System.Windows.Thickness 8,0,0,0
     $pill.VerticalAlignment = 'Center'
     $pill.SnapsToDevicePixels = $true
-    $pill.Child = (New-Text -Text ([string]$Count) -Size (Get-FontSize 'status' 10) -Color (Get-FontColor 'status' $Accent) -Weight 'SemiBold')
+    $pill.Child = (New-Text -Text ([string]$Count) -Size (Get-FontSize 'status' 10) -Color (Get-FontColor 'status' $Accent) -Weight (Get-FontWeight 'status' 'SemiBold'))
     return $pill
 }
 
@@ -666,14 +685,14 @@ function New-ItemRow {
     # leads on size alone, and the 16px the icon took is now text width.
     $rowProject = [string]$Item.rowProject
     if (-not [string]::IsNullOrWhiteSpace($rowProject)) {
-        $projectLabel = New-Text -Text $rowProject -Size (Get-FontSize 'project' 15) -Color (Get-FontColor 'project' $script:TextPrimary) -Weight 'SemiBold'
+        $projectLabel = New-Text -Text $rowProject -Size (Get-FontSize 'project' 15) -Color (Get-FontColor 'project' $script:TextPrimary) -Weight (Get-FontWeight 'project' 'SemiBold')
         $projectLabel.TextTrimming = 'CharacterEllipsis'
         $projectLabel.TextWrapping = 'NoWrap'
         $projectLabel.HorizontalAlignment = 'Left'
         [void]$stack.Children.Add($projectLabel)
     }
 
-    $title = New-Text -Text ("$($Item.title)$suffix") -Size (Get-FontSize 'task' 12.5) -Color (Get-FontColor 'task' $script:TextBody)
+    $title = New-Text -Text ("$($Item.title)$suffix") -Size (Get-FontSize 'task' 12.5) -Color (Get-FontColor 'task' $script:TextBody) -Weight (Get-FontWeight 'task' 'Normal')
     $title.TextTrimming = 'CharacterEllipsis'
     $title.TextWrapping = 'NoWrap'
     $title.HorizontalAlignment = 'Left'
@@ -688,7 +707,7 @@ function New-ItemRow {
     # already passes down (infinite height, finite width).
     $metaText = [string]$Item.detail
     if (-not [string]::IsNullOrWhiteSpace($metaText)) {
-        $detail = New-Text -Text $metaText -Size (Get-FontSize 'reason' 10.5) -Color (Get-FontColor 'reason' $script:TextMuted)
+        $detail = New-Text -Text $metaText -Size (Get-FontSize 'reason' 10.5) -Color (Get-FontColor 'reason' $script:TextMuted) -Weight (Get-FontWeight 'reason' 'Normal')
         $detail.TextWrapping = 'Wrap'
         $detail.LineHeight = 15
         $detail.LineStackingStrategy = 'BlockLineHeight'
@@ -713,11 +732,11 @@ function New-ItemRow {
     $timeBox.Margin = New-Object System.Windows.Thickness 10,1,0,0
     $kindWord = [string]$Item.rowKind
     if (-not [string]::IsNullOrWhiteSpace($kindWord)) {
-        $kindText = New-Text -Text $kindWord -Size (Get-FontSize 'status' 9.5) -Color (Get-FontColor 'status' $accent)
+        $kindText = New-Text -Text $kindWord -Size (Get-FontSize 'status' 9.5) -Color (Get-FontColor 'status' $accent) -Weight (Get-FontWeight 'status' 'Normal')
         $kindText.HorizontalAlignment = 'Right'
         [void]$timeBox.Children.Add($kindText)
     }
-    $time = New-Text -Text ([string]$Item.at) -Size (Get-FontSize 'time' 10) -Color (Get-FontColor 'time' $script:TextGhost)
+    $time = New-Text -Text ([string]$Item.at) -Size (Get-FontSize 'time' 10) -Color (Get-FontColor 'time' $script:TextGhost) -Weight (Get-FontWeight 'time' 'Normal')
     $time.HorizontalAlignment = 'Right'
     $time.Margin = New-Object System.Windows.Thickness 0,1,0,0
     [void]$timeBox.Children.Add($time)
@@ -769,7 +788,7 @@ function Fill-CardBody {
     $badge.VerticalAlignment = 'Center'
     [System.Windows.Controls.Grid]::SetColumn($badge, 0)
     [void]$titleLine.Children.Add($badge)
-    $labelText = New-Text -Text ([string]$Payload.label) -Size (Get-FontSize 'title' 14) -Color (Get-FontColor 'title' $script:TextPrimary) -Weight 'SemiBold'
+    $labelText = New-Text -Text ([string]$Payload.label) -Size (Get-FontSize 'title' 14) -Color (Get-FontColor 'title' $script:TextPrimary) -Weight (Get-FontWeight 'title' 'SemiBold')
     $labelText.TextTrimming = 'CharacterEllipsis'
     $labelText.TextWrapping = 'NoWrap'
     $labelText.VerticalAlignment = 'Center'
@@ -788,7 +807,7 @@ function Fill-CardBody {
     if ($items.Count -gt 0) { $newest = [string]$items[0].at }
     if ([string]::IsNullOrWhiteSpace($newest)) { $newest = [string]$Payload.at }
     if (-not [string]::IsNullOrWhiteSpace($newest)) {
-        $headTime = New-Text -Text $newest -Size (Get-FontSize 'time' 10) -Color (Get-FontColor 'time' $script:TextFaint)
+        $headTime = New-Text -Text $newest -Size (Get-FontSize 'time' 10) -Color (Get-FontColor 'time' $script:TextFaint) -Weight (Get-FontWeight 'time' 'Normal')
         $headTime.VerticalAlignment = 'Center'
         $headTime.Margin = New-Object System.Windows.Thickness 8,0,0,0
         [System.Windows.Controls.Grid]::SetColumn($headTime, 1)
@@ -806,7 +825,7 @@ function Fill-CardBody {
     # and an icon-font square in front of it just read as a box and stole width.
     $contextText = [string]$Payload.context
     if ($items.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($contextText)) {
-        $contextLabel = New-Text -Text $contextText -Size (Get-FontSize 'project' 15.5) -Color (Get-FontColor 'project' $script:TextPrimary) -Weight 'SemiBold'
+        $contextLabel = New-Text -Text $contextText -Size (Get-FontSize 'project' 15.5) -Color (Get-FontColor 'project' $script:TextPrimary) -Weight (Get-FontWeight 'project' 'SemiBold')
         $contextLabel.TextTrimming = 'CharacterEllipsis'
         $contextLabel.TextWrapping = 'NoWrap'
         $contextLabel.HorizontalAlignment = 'Left'
@@ -820,7 +839,7 @@ function Fill-CardBody {
     # One rung down: which task inside that project.
     $headlineText = [string]$Payload.headline
     if (-not [string]::IsNullOrWhiteSpace($headlineText)) {
-        $headlineBlock = New-Text -Text $headlineText -Size (Get-FontSize 'task' 12.5) -Color (Get-FontColor 'task' $script:TextBody)
+        $headlineBlock = New-Text -Text $headlineText -Size (Get-FontSize 'task' 12.5) -Color (Get-FontColor 'task' $script:TextBody) -Weight (Get-FontWeight 'task' 'Normal')
         $headlineBlock.TextWrapping = 'Wrap'
         $headlineBlock.TextTrimming = 'CharacterEllipsis'
         $headlineBlock.LineHeight = 18
@@ -851,13 +870,13 @@ function Fill-CardBody {
             # word alone reads fine, with a colon and nothing after it it does not.
             $verdictLabelText = $verdictKind
             if (-not [string]::IsNullOrWhiteSpace($verdictText)) { $verdictLabelText = $verdictKind + [string][char]0xFF1A }
-            $verdictLabel = New-Text -Text $verdictLabelText -Size (Get-FontSize 'status' 10.5) -Color (Get-FontColor 'status' (Get-KindAccent ([string]$Payload.kind))) -Weight 'SemiBold'
+            $verdictLabel = New-Text -Text $verdictLabelText -Size (Get-FontSize 'status' 10.5) -Color (Get-FontColor 'status' (Get-KindAccent ([string]$Payload.kind))) -Weight (Get-FontWeight 'status' 'SemiBold')
             $verdictLabel.VerticalAlignment = 'Top'
             [System.Windows.Controls.Grid]::SetColumn($verdictLabel, 0)
             [void]$verdictRow.Children.Add($verdictLabel)
         }
         if (-not [string]::IsNullOrWhiteSpace($verdictText)) {
-            $verdictBody = New-Text -Text $verdictText -Size (Get-FontSize 'reason' 10.5) -Color (Get-FontColor 'reason' $script:VerdictText)
+            $verdictBody = New-Text -Text $verdictText -Size (Get-FontSize 'reason' 10.5) -Color (Get-FontColor 'reason' $script:VerdictText) -Weight (Get-FontWeight 'reason' 'Normal')
             $verdictBody.TextWrapping = 'Wrap'
             $verdictBody.TextTrimming = 'CharacterEllipsis'
             $verdictBody.LineHeight = 15
@@ -908,7 +927,7 @@ function Fill-CardBody {
 
     $more = [string]$Payload.more
     if (-not [string]::IsNullOrWhiteSpace($more) -and (Test-PartVisible $Payload 'more')) {
-        $moreText = New-Text -Text $more -Size (Get-FontSize 'more' 10.5) -Color (Get-FontColor 'more' $script:MoreText)
+        $moreText = New-Text -Text $more -Size (Get-FontSize 'more' 10.5) -Color (Get-FontColor 'more' $script:MoreText) -Weight (Get-FontWeight 'more' 'Normal')
         $moreText.Margin = New-Object System.Windows.Thickness 0,8,0,0
         if ($null -eq $firstCarrier) { $firstCarrier = $moreText }
         [void]$Body.Children.Add($moreText)
@@ -916,7 +935,7 @@ function Fill-CardBody {
 
     $footerText = [string]$Payload.footer
     if (-not [string]::IsNullOrWhiteSpace($footerText) -and (Test-PartVisible $Payload 'footer')) {
-        $footer = New-Text -Text $footerText -Size (Get-FontSize 'footer' 10) -Color (Get-FontColor 'footer' $script:FooterText)
+        $footer = New-Text -Text $footerText -Size (Get-FontSize 'footer' 10) -Color (Get-FontColor 'footer' $script:FooterText) -Weight (Get-FontWeight 'footer' 'Normal')
         $footer.Margin = New-Object System.Windows.Thickness 0,12,0,0
         if ($null -eq $firstCarrier) { $firstCarrier = $footer }
         [void]$Body.Children.Add($footer)
