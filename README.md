@@ -312,7 +312,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 
 ## 版本
 
-当前 **1.7.0**（2026-11-17）。逐条改动看 [CHANGELOG.md](CHANGELOG.md)，
+当前 **1.8.0**（2026-11-18）。逐条改动看 [CHANGELOG.md](CHANGELOG.md)，
 带说明的发布记录在 [Releases](https://github.com/HalfDone03/dsh-nudge/releases)。
 
 | 版本 | 日期 | 一句话 |
