@@ -314,11 +314,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 
 ## 版本
 
-当前 **1.8.1**（2026-11-18）。逐条改动看 [CHANGELOG.md](CHANGELOG.md)，
+当前 **1.8.2**（2026-11-18）。逐条改动看 [CHANGELOG.md](CHANGELOG.md)，
 带说明的发布记录在 [Releases](https://github.com/HalfDone03/dsh-nudge/releases)。
 
 | 版本 | 日期 | 一句话 |
-| --- | --- | --- |
+| --- | --- | --- |
+| 1.8.2 | 2026-11-18 | 语音组加试听按钮 |
 
 | 1.8.1 | 2026-11-18 | 改语音设置后预览卡当场重念 |
 | 1.8.0 | 2026-11-18 | 语音提示：TTS 朗读或播本地音频，可在设置里导入 |
