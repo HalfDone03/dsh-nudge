@@ -548,6 +548,106 @@ function Set-CardTextScale {
 # Rebuilds a resident preview card's content in place. The window, its position, its
 # size and every handler stay exactly as they are: only the card inside changes, so a
 # settings change shows up in ~250ms instead of a fresh helper's ~900ms startup.
+# ---------------- voice ----------------
+# Two sources, both optional: SAPI speech (nothing is bundled, Windows already has it)
+# and a local audio file played through WPF's MediaPlayer. Everything here is
+# best-effort: a missing voice or a bad path must never cost the user their card,
+# so every failure just writes a status line and returns.
+$script:Sound = @{ Enabled = $false; Source = 'tts'; File = ''; Voice = ''; Rate = 0; Volume = 80; Text = '' }
+$script:synth = $null
+$script:media = $null
+
+function Resolve-Sound {
+    param($Source)
+    $result = @{ Enabled = $false; Source = 'tts'; File = ''; Voice = ''; Rate = 0; Volume = 80; Text = '' }
+    if ($null -eq $Source) { return $result }
+    try { $result.Enabled = [bool]$Source.enabled } catch { $result.Enabled = $false }
+    if (-not $result.Enabled) { return $result }
+    try { if ([string]$Source.source -eq 'file') { $result.Source = 'file' } } catch { }
+    try { $result.File = [string]$Source.file } catch { $result.File = '' }
+    try { $result.Voice = [string]$Source.voice } catch { $result.Voice = '' }
+    try { $result.Rate = [int]$Source.rate } catch { $result.Rate = 0 }
+    if ($result.Rate -lt -10) { $result.Rate = -10 }
+    if ($result.Rate -gt 10) { $result.Rate = 10 }
+    try { $result.Volume = [int]$Source.volume } catch { $result.Volume = 80 }
+    if ($result.Volume -lt 0) { $result.Volume = 0 }
+    if ($result.Volume -gt 100) { $result.Volume = 100 }
+    try { $result.Text = ([string]$Source.text).Trim() } catch { $result.Text = '' }
+    return $result
+}
+
+# Stops whatever is playing. Called on close so a 20-second sentence does not keep
+# talking after the card is gone (the process is about to exit, but the user may
+# still be reading a replaced card).
+function Stop-CardSound {
+    if ($null -ne $script:synth) {
+        try { $script:synth.SpeakAsyncCancelAll() } catch { }
+        try { $script:synth.Dispose() } catch { }
+        $script:synth = $null
+    }
+    if ($null -ne $script:media) {
+        try { $script:media.Stop() } catch { }
+        try { $script:media.Close() } catch { }
+        $script:media = $null
+    }
+}
+
+function Start-CardSound {
+    if (-not $script:Sound.Enabled) { return }
+    if ($script:Sound.Source -eq 'file') {
+        $path = $script:Sound.File
+        if ([string]::IsNullOrWhiteSpace($path)) {
+            Write-Status @{ type = 'sound'; mode = 'file'; ok = $false; reason = 'no-file' }
+            return
+        }
+        if (-not (Test-Path -LiteralPath $path)) {
+            Write-Status @{ type = 'sound'; mode = 'file'; ok = $false; reason = 'missing' }
+            return
+        }
+        try {
+            $player = New-Object System.Windows.Media.MediaPlayer
+            $player.Volume = [double]$script:Sound.Volume / 100.0
+            $player.Open((New-Object System.Uri -ArgumentList $path))
+            $player.Play()
+            $script:media = $player
+            Write-Status @{ type = 'sound'; mode = 'file'; ok = $true }
+        } catch {
+            Write-Status @{ type = 'sound'; mode = 'file'; ok = $false; reason = 'error' }
+        }
+        return
+    }
+    if ([string]::IsNullOrWhiteSpace($script:Sound.Text)) {
+        Write-Status @{ type = 'sound'; mode = 'tts'; ok = $false; reason = 'no-text' }
+        return
+    }
+    try {
+        Add-Type -AssemblyName System.Speech -ErrorAction Stop
+        $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+        $synth.Volume = $script:Sound.Volume
+        $synth.Rate = $script:Sound.Rate
+        $wanted = $script:Sound.Voice
+        if (-not [string]::IsNullOrWhiteSpace($wanted)) {
+            $picked = ''
+            try {
+                foreach ($installed in $synth.GetInstalledVoices()) {
+                    if (-not $installed.Enabled) { continue }
+                    $name = [string]$installed.VoiceInfo.Name
+                    if ($name -like ('*' + $wanted + '*')) { $picked = $name; break }
+                }
+            } catch { }
+            if ($picked -ne '') { try { $synth.SelectVoice($picked) } catch { } }
+        }
+        $script:synth = $synth
+        $voiceName = ''
+        try { $voiceName = [string]$synth.Voice.Name } catch { }
+        $synth.SpeakAsync($script:Sound.Text) | Out-Null
+        Write-Status @{ type = 'sound'; mode = 'tts'; ok = $true; voice = $voiceName }
+    } catch {
+        # No System.Speech, no Chinese voice, or a hostile policy: stay silent.
+        Write-Status @{ type = 'sound'; mode = 'tts'; ok = $false; reason = $_.Exception.Message }
+    }
+}
+
 function Update-CardInPlace {
     param($Payload, $Window, [int]$KeepWidth = 0)
     if ($null -eq $Window -or $null -eq $Payload) { return }
@@ -558,6 +658,11 @@ function Update-CardInPlace {
     if ($width -lt 260) { $width = 260 }
     $next = New-Card $Payload -Width $width
     $size = Measure-Card $next
+    # The rebuild carries new sound settings too: stop whatever is still talking, take
+    # the new payload's voice config, and speak again. This is what makes the settings
+    # page's preview card a "listen to it" button.
+    try { Stop-CardSound } catch { }
+    $script:Sound = Resolve-Sound $Payload.sound
     # The type is laid out for this width; every other width is a ratio of it.
     $script:scaleBase = [double]$size.Width
     $next.Width = [double]::NaN
@@ -573,6 +678,7 @@ function Update-CardInPlace {
     try { $Window.Height = [double]$size.Height } catch { }
     try { Update-CardScale -Window $Window -Card $next } catch { }
     try { $Window.UpdateLayout() } catch { }
+    try { Start-CardSound } catch { }
 }
 
 function Update-CardScale {
@@ -1352,6 +1458,7 @@ if (-not [string]::IsNullOrWhiteSpace($Snapshot)) {
     # The payload may pin its own theme; the CLI switch keeps the last word.
     Set-CardTheme (Resolve-Theme -Requested $Theme -FromPayload ([string]$payload.theme))
     $script:Fonts = Resolve-Typography $payload.typography
+    $script:Sound = Resolve-Sound $payload.sound
     Initialize-UiRuntime
     Write-Trace 'snapshot-ui'
     $cardWidth = if ($SnapshotWidth -gt 0) { $SnapshotWidth } else { $script:CardWidth }
@@ -1390,6 +1497,7 @@ if ($null -ne $payload) {
     # payload is the only place the plugin's config could say otherwise.
     Set-CardTheme (Resolve-Theme -Requested $Theme -FromPayload ([string]$payload.theme))
     $script:Fonts = Resolve-Typography $payload.typography
+    $script:Sound = Resolve-Sound $payload.sound
 
     if ($SuppressWhenForeground -and (Test-ForegroundIsDs)) {
         Write-Status @{ type = 'suppressed'; reason = 'foreground'; state = 0; theme = $script:ThemeName }
@@ -1817,6 +1925,7 @@ $script:configAnchor = 'bottom-right'
             try { $script:closeReason = 'watchdog' } catch { }
             try { $script:watchdog.Stop() } catch { }
             try { $timer.Stop() } catch { }
+            try { Stop-CardSound } catch { }
             try { $script:replacePoll.Stop() } catch { }
             try { if ($null -ne $script:stopPoll) { $script:stopPoll.Stop() } } catch { }
             try { $window.Close() } catch { }
@@ -1996,6 +2105,9 @@ $script:configAnchor = 'bottom-right'
             [void](Resolve-OwnerWindow)
             Write-Trace 'shown'
             Write-Status @{ type = 'shown'; count = [int]$payload.count; theme = $script:ThemeName; left = [int]$window.Left; top = [int]$window.Top; placedLeft = [int]$script:placedLeft; placedTop = [int]$script:placedTop; placement = $(if ($script:placementUsed) { 'remembered' } else { 'corner' }); width = [int]$window.Width; height = [int]$window.Height; dpi = $script:DpiMode; scale = [double]$script:scale; marginPx = [int]$script:marginPx; padPx = [int]$script:padPx; owner = [int]$script:ownerPid; ownerSrc = $script:ownerSource; clickThrough = [bool]$script:clickThrough; clickToFocus = [bool]$script:clickToFocus; slot = $(if ($script:slotState.took) { 'replaced' } elseif ($script:slotState.owned) { 'owner' } else { 'parallel' }) }
+            # Speak / play once the card is actually on screen: a suppressed or failed
+            # card must stay silent.
+            try { Start-CardSound } catch { }
         })
     # By the time Closed runs the window handle is gone, so GetWindowRect cannot read
     # the final geometry: save once here, where the handle still works.

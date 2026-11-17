@@ -33,7 +33,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-17.1";
+	const PANEL_REVISION = "2026-11-18.1";
 	/**
 	 * 分组导航：id 与下面每个分组容器的 id 对得上。
 	 * 顺序 = 你多久会动它一次：先看长什么样（预览），再调字、卡片、位置，
@@ -47,6 +47,7 @@ window.__ModuleLoader__.load({
 		["place", "位置"],
 		["basic", "提醒"],
 		["click", "点击"],
+		["voice", "语音"],
 		["when", "时机"],
 		["merge", "合并"],
 		["debug", "调试"],
@@ -444,6 +445,19 @@ function SwitchRow(props) {
 		/** 每一类文字的默认字号：和 lib/popup.ps1 里 New-Text 的兜底值一致，样卡才画得像真的。 */
 		const ROLE_SIZE = { title: 14, project: 15.5, task: 12.5, reason: 10.5, status: 10.5, time: 10, more: 10.5, footer: 10 };
 		/** 九宫格：九个位置，按 CSS 网格的顺序排成三行三列。 */
+		/**
+		 * 常见的中文 SAPI 语音 + 「系统默认」+「自定义」。
+		 * Windows 里实际装了哪些由 helper 去挑（子串匹配），这里只给几个好点的名字；
+		 * 挑不到就回落到系统默认，不会因为名字写错就不出声。
+		 */
+		const VOICE_PRESETS = [
+			["", "系统默认"],
+			["Huihui", "Microsoft Huihui（女声·中文）"],
+			["Yaoyao", "Microsoft Yaoyao（女声·中文）"],
+			["Kangkang", "Microsoft Kangkang（男声·中文）"],
+			["custom", "自定义（在下面写名字）"],
+		];
+
 const ANCHOR_CELLS = [
 	{ id: "top-left", hint: "左上角" },
 	{ id: "top-center", hint: "上边中间" },
@@ -518,6 +532,17 @@ const ROLE_LOOK = {
 			["click", [
 				["clickToFocus", true],
 				["clickThrough", false],
+			]],
+			["voice", [
+				["sound.enabled", false],
+				["sound.source", "tts"],
+				["sound.phrase", "auto"],
+				["sound.template", ""],
+				["sound.file", ""],
+				["sound.voice", ""],
+				["sound.rate", 0],
+				["sound.volume", 80],
+				["sound.maxChars", 60],
 			]],
 			["when", [
 				["showWhenFocused", true],
@@ -968,6 +993,7 @@ const ROLE_LOOK = {
 				"debugPayload",
 				"debugFile",
 				"rememberPosition",
+				"sound",
 			];
 
 			/** 把当前配置变成一段文本，塞进下面的框里。 */
@@ -1089,7 +1115,20 @@ const ROLE_LOOK = {
 				if (on.length === names.length) return "三类都弹";
 				return on.length === 0 ? "三类都不弹" : "只弹 " + on.join(" / ");
 			})();
-			const clickLabel = bool("clickThrough") ? "穿透：只当提示" : bool("clickToFocus") ? "点击回到 DSH" : "点击只收起";
+			/** 语音组标题右边那行小字：一眼看出现在是什么状态。 */
+			const voiceLabel = (() => {
+				if (!bool("sound.enabled")) return "不出声";
+				if (text("sound.source") === "file") {
+					const file = text("sound.file");
+					if (file === "") return "未选文件";
+					const name = file.split(/[\\/]/u).filter((part) => part !== "").pop() ?? file;
+					return "本地音频 · " + name;
+				}
+				const phrase = text("sound.phrase");
+				const what = phrase === "detail" ? "带任务名" : phrase === "custom" ? "自定义模板" : "只报类别";
+				const voice = text("sound.voice") === "" ? "系统默认语音" : text("sound.voice");
+				return what + " · " + voice + " · " + num("sound.volume");
+			})();			const clickLabel = bool("clickThrough") ? "穿透：只当提示" : bool("clickToFocus") ? "点击回到 DSH" : "点击只收起";
 			const whenLabel = (() => {
 				const parts = [];
 				if (!bool("showWhenFocused")) parts.push("前台不弹");
@@ -1520,6 +1559,136 @@ const ROLE_LOOK = {
 						disabled,
 						onChange: (next) => write("clickThrough", next),
 					}),
+				]),
+
+				/* ---------------- 语音：卡片弹出时念一句，或者播一段自己的音频 ---------------- */
+				h("div", { className: "dsh-nudge-group", key: "voice", id: "dsh-nudge-g-voice", "data-dirty": groupDirty("voice") > 0 ? "1" : "0" }, [
+					h("div", { className: "dsh-nudge-group-head", key: "head" }, [
+						h("p", { className: "dsh-nudge-group-title", key: "title" }, "语音"),
+						h("span", { className: "dsh-nudge-hint", key: "note" }, voiceLabel),
+						h(ResetRow, { key: "reset", group: "voice", disabled, onReset: resetGroup }),
+					]),
+					h(SwitchRow, {
+						key: "sound.enabled",
+						label: "卡片弹出时出声",
+						hint: "只在卡片真的弹出来时响：静音时段、全屏、被开关拦下的那些都不会出声。",
+						checked: bool("sound.enabled"),
+						disabled,
+						onChange: (next) => write("sound.enabled", next),
+					}),
+					h(SelectRow, {
+						key: "sound.source",
+						label: "声音来源",
+						hint: "系统朗读不占空间（中文需要 Windows 里装了中文语音）；本地文件支持 wav / mp3 / m4a。",
+						value: text("sound.source") === "file" ? "file" : "tts",
+						options: [
+							{ value: "tts", label: "系统朗读（TTS）" },
+							{ value: "file", label: "本地音频文件" },
+						],
+						disabled,
+						onChange: (next) => write("sound.source", next),
+					}),
+					text("sound.source") === "file"
+						? h(TextRow, {
+								key: "sound.file",
+								label: "音频文件",
+								hint: "填绝对路径；找不到文件就静默跳过，卡片照常显示。",
+								value: text("sound.file"),
+								placeholder: "D:\sounds\ding.mp3",
+								disabled,
+								onCommit: (next) => write("sound.file", next),
+							})
+						: h(SelectRow, {
+								key: "sound.phrase",
+								label: "念什么",
+								hint: "「只报类别」最简短；「带任务名」能听出是哪一摊活；「自定义」用下面的模板。",
+								value: text("sound.phrase") === "" ? "auto" : text("sound.phrase"),
+								options: [
+									{ value: "auto", label: "只报类别（任务完成 / 需要你选择 / 执行失败）" },
+									{ value: "detail", label: "带任务名" },
+									{ value: "custom", label: "自定义模板" },
+								],
+								disabled,
+								onChange: (next) => write("sound.phrase", next),
+							}),
+					text("sound.source") !== "file" && text("sound.phrase") === "custom"
+						? h(TextRow, {
+								key: "sound.template",
+								label: "播报模板",
+								hint: "可用 {kind} 类别、{project} 项目名、{task} 任务名、{count} 条数；留空就等于「只报类别」。",
+								value: text("sound.template"),
+								placeholder: "{project} {kind}：{task}",
+								disabled,
+								onCommit: (next) => write("sound.template", next),
+							})
+						: null,
+					text("sound.source") !== "file"
+						? h(SelectRow, {
+								key: "sound.voice",
+								label: "朗读语音",
+								hint: "系统里装的语音；列出来的是常见的几个，也可以用下面的框写任意名字（子串匹配）。",
+								value: VOICE_PRESETS.some(([id]) => id === text("sound.voice")) ? text("sound.voice") : text("sound.voice") === "" ? "" : "custom",
+								options: VOICE_PRESETS.map(([id, label]) => ({ value: id, label })),
+								disabled,
+								onChange: (next) => {
+									// 「自定义」不直接写配置，交给下面那个文本框。
+									if (next === "custom") return;
+									write("sound.voice", next);
+								},
+							})
+						: null,
+					text("sound.source") !== "file"
+						? h(TextRow, {
+								key: "sound.voice.custom",
+								label: "自定义语音名",
+								hint: "留空用上面的选择；写名字的一部分即可，比如 Huihui。",
+								value: VOICE_PRESETS.some(([id]) => id === text("sound.voice")) ? "" : text("sound.voice"),
+								placeholder: "Huihui",
+								disabled,
+								onCommit: (next) => write("sound.voice", next),
+							})
+						: null,
+					h(NumberRow, {
+						key: "sound.volume",
+						label: "音量（0–100）",
+						hint: "只影响这一声，不动系统音量。",
+						value: num("sound.volume"),
+						min: 0,
+						max: 100,
+						step: 5,
+						disabled,
+						onCommit: (next) => write("sound.volume", next),
+					}),
+					text("sound.source") !== "file"
+						? h(NumberRow, {
+								key: "sound.rate",
+								label: "语速（-10–10）",
+								hint: "0 是正常；负数更慢，正数更快。",
+								value: num("sound.rate"),
+								min: -10,
+								max: 10,
+								disabled,
+								onCommit: (next) => write("sound.rate", next),
+							})
+						: null,
+					text("sound.source") !== "file"
+						? h(NumberRow, {
+								key: "sound.maxChars",
+								label: "最多念几个字",
+								hint: "10–200；太长的报错不该念半分钟。",
+								value: num("sound.maxChars"),
+								min: 10,
+								max: 200,
+								step: 10,
+								disabled,
+								onCommit: (next) => write("sound.maxChars", next),
+							})
+						: null,
+					h(
+						"p",
+						{ className: "dsh-nudge-intro", key: "tryhint" },
+						"想试听：回「预览」组点「在桌面上弹一张看看」——预览卡也会按这里的设置念一遍，改完语音再点一次即可。",
+					),
 				]),
 
 				/* ---------------- 时机：什么时候别弹 ---------------- */

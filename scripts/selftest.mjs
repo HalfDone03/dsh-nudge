@@ -26,7 +26,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import vm from "node:vm";
 import { inflateSync } from "node:zlib";
 
-import { AlertCenter, DEFAULTS, PopupRunner, buildConfigSchema, createPlugin, footerOf, inMuteRange, isVolatileRef, liveConfig, normalizeConfig } from "../lib/index.js";
+import { AlertCenter, DEFAULTS, PopupRunner, buildConfigSchema, createPlugin, footerOf, inMuteRange, isVolatileRef, liveConfig, normalizeConfig, speechTextOf } from "../lib/index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -1043,7 +1043,7 @@ check("原生类型只编译一次，之后从磁盘缓存 LoadFile",
 check("WPF 程序集推迟到真画卡时才加载，且不再碰 System.Drawing",
 	popupSource.includes("function Initialize-UiRuntime")
 		&& popupSource.includes("$script:uiReady")
-		&& (popupSource.match(/-AssemblyName/g) || []).length === 3
+		&& (popupSource.match(/-AssemblyName/g) || []).length === 4
 		&& !popupSource.includes("System.Drawing"),
 	"lazy ui");
 check("弹窗脚本能打阶段耗时：-Trace 写 stderr",
@@ -1270,7 +1270,7 @@ for (const [path, value] of groupDefaults) {
 }
 check(
 	"恢复默认的取值和宿主 DEFAULTS 一致",
-	clientExports.groupDefaults?.length === 8 && groupDefaults.size >= 40 && defaultDrift.length === 0,
+	clientExports.groupDefaults?.length === 9 && groupDefaults.size >= 60 && defaultDrift.length === 0,
 	"groups=" + (clientExports.groupDefaults?.length ?? 0) + " keys=" + groupDefaults.size + " " + defaultDrift.join("; "),
 );
 
@@ -1316,7 +1316,7 @@ check("设置页有三类提醒与主要分组", ["任务完成", "需要你选�
 check("设置页控件数量", clientControls.length >= 14, "controls=" + clientControls.length);
 	const clientCheckboxes = clientControls.filter((node) => node.props.type === "checkbox");
 	// 10 个原开关（含搬进「位置」组的「记住拖过的位置」）+「点击卡片回到 DSH」+「鼠标穿透」。预览卡只有一个入口，不算开关。
-	check("设置页开关是 checkbox", clientCheckboxes.length === 11, "boxes=" + clientCheckboxes.length);
+	check("设置页开关是 checkbox", clientCheckboxes.length === 12, "boxes=" + clientCheckboxes.length);
 	check(
 		"点击行为有两颗开关，默认照旧回 DSH、不穿透",
 		clientTexts.includes("点击卡片回到 DSH")
@@ -1343,7 +1343,7 @@ check("设置页控件数量", clientControls.length >= 14, "controls=" + client
 	const clientResetButtons = clientNodes.filter((node) => node.type === "button" && node.props.children === "恢复默认");
 	check(
 		"每一组都有恢复默认",
-		clientResetButtons.length === 8 && new Set(clientResetButtons.map((node) => node.props["data-group"])).size === 8,
+		clientResetButtons.length === 9 && new Set(clientResetButtons.map((node) => node.props["data-group"])).size === 9,
 		"buttons=" + clientResetButtons.length + " groups=" + clientResetButtons.map((node) => node.props["data-group"]).join(","),
 	);
 	/*
@@ -1377,6 +1377,7 @@ check("设置页控件数量", clientControls.length >= 14, "controls=" + client
 		["place", "位置与停留", "位置", true],
 		["basic", "提醒", "提醒", true],
 		["click", "点击", "点击", true],
+		["voice", "语音", "语音", true],
 		["when", "什么时候弹", "时机", true],
 		["merge", "合并与静音", "合并", true],
 		["debug", "调试（点一下展开）", "调试", true],
@@ -1529,7 +1530,7 @@ check(
 );
 check(
 	"顶部有分组导航和修订标记",
-	clientNodes.filter((node) => node.type === "button" && String(node.props.className ?? "") === "dsh-nudge-navbtn").length === 9
+	clientNodes.filter((node) => node.type === "button" && String(node.props.className ?? "") === "dsh-nudge-navbtn").length === 10
 		&& clientNodes.some((node) => typeof node.props.children === "string" && node.props.children.startsWith("提醒弹窗设置页 · 修订 ")),
 	"nav=" + clientNodes.filter((node) => node.type === "button" && String(node.props.className ?? "") === "dsh-nudge-navbtn").length,
 );
@@ -1743,7 +1744,7 @@ const sizeRows = sizePage.components.filter((item) => item.type.name === "Number
 const sizeLabels = sizeRows.map((item) => item.props.label).filter((label) => typeof label === "string" && label.startsWith("字号（"));
 check(
 	"字号只画选中的那一类，八类都点得到",
-	sizeRows.length === 6 && roleButtons(sizePage.nodes).length === 8 && sizeLabels.length === 1 && sizeLabels[0] === "字号（项目名）",
+	sizeRows.length === 9 && roleButtons(sizePage.nodes).length === 8 && sizeLabels.length === 1 && sizeLabels[0] === "字号（项目名）",
 	"rows=" + sizeRows.length + " labels=" + sizeLabels.join("|"),
 );
 check(
@@ -1994,7 +1995,64 @@ check(
 		&& popupSource.includes("$firstCarrier.Margin = New-Object System.Windows.Thickness $carrierMargin.Left, 0, $carrierMargin.Right, $carrierMargin.Bottom"),
 	"first visible block must drop its top margin",
 );
-/* 字重：三态配置 + 真卡与样卡都认它。 */
+/* 语音：配置校验、文案拼装、helper 两条播放路径、设置页那一组。 */
+check(
+	"语音配置默认关着，非法值抛错",
+	DEFAULTS.sound.enabled === false
+		&& DEFAULTS.sound.source === "tts"
+		&& DEFAULTS.sound.phrase === "auto"
+		&& normalizeConfig({ sound: { enabled: true, volume: 55 } }).sound.volume === 55
+		&& (() => { try { normalizeConfig({ sound: { source: "x" } }); return false; } catch { return true; } })()
+		&& (() => { try { normalizeConfig({ sound: { rate: 99 } }); return false; } catch { return true; } })()
+		&& (() => { try { normalizeConfig({ sound: [] }); return false; } catch { return true; } })(),
+	"sound config",
+);
+check(
+	"播报文案：三档 + 多条计数 + 截断",
+	speechTextOf(normalizeConfig({ sound: { enabled: true, phrase: "auto" } }), { kind: "failed", label: "执行失败", count: 1 }) === "执行失败"
+		&& speechTextOf(normalizeConfig({ sound: { enabled: true, phrase: "detail" } }), { kind: "failed", label: "执行失败", headline: "修构建脚本", count: 1 }) === "执行失败：修构建脚本"
+		// 多条时前面会加「N 条提醒，」前缀，自定义模板也照这个规矩。
+		&& speechTextOf(normalizeConfig({ sound: { enabled: true, phrase: "custom", template: "{project}/{count}/{kind}" } }), { kind: "completed", label: "任务完成", context: "dsh-nudge", count: 1 }) === "dsh-nudge/1/任务完成"
+		&& speechTextOf(normalizeConfig({ sound: { enabled: true, phrase: "auto" } }), { kind: "failed", label: "执行失败", count: 4 }) === "4 条提醒，执行失败"
+		&& speechTextOf(normalizeConfig({}), { kind: "failed", label: "执行失败" }) === ""
+		&& speechTextOf(normalizeConfig({ sound: { enabled: true, phrase: "detail", maxChars: 12 } }), { kind: "failed", label: "执行失败", headline: "一二三四五六七八九十十一十二", count: 1 }).length === 12,
+	"speech text",
+);
+check(
+	"payload 带 sound，念的是这一批的类别与任务",
+	indexSource.includes("text: speechTextOf(this.config, {")
+		&& indexSource.includes("sound: {")
+		&& indexSource.includes("source: this.config.sound.source === \"file\" ? \"file\" : \"tts\""),
+	"payload.sound",
+);
+check(
+	"helper 两条播放路径 + 失败静默 + 关窗即停",
+	popupSource.includes("function Resolve-Sound {")
+		&& popupSource.includes("function Start-CardSound {")
+		&& popupSource.includes("function Stop-CardSound {")
+		&& popupSource.includes("Add-Type -AssemblyName System.Speech -ErrorAction Stop")
+		&& popupSource.includes("$synth.SpeakAsync($script:Sound.Text)")
+		&& popupSource.includes("New-Object System.Windows.Media.MediaPlayer")
+		&& popupSource.includes("reason = 'missing'")
+		&& popupSource.includes("try { Stop-CardSound } catch { }")
+		// 必须在 shown 之后才开始出声
+		// Update-CardInPlace 里也有一处调用（原地重画后重念），所以要比最后一处。
+		&& popupSource.indexOf("Write-Status @{ type = 'shown'") < popupSource.lastIndexOf("try { Start-CardSound } catch { }"),
+	"helper voice",
+);
+check(
+	"设置页有语音组：开关、来源、念什么、语音、音量、语速",
+	clientSource.includes('key: "voice", id: "dsh-nudge-g-voice"')
+		&& clientSource.includes('label: "卡片弹出时出声"')
+		&& clientSource.includes('{ value: "tts", label: "系统朗读（TTS）" }')
+		&& clientSource.includes('{ value: "file", label: "本地音频文件" }')
+		&& clientSource.includes('label: "念什么"')
+		&& clientSource.includes("const VOICE_PRESETS = [")
+		&& clientSource.includes('label: "音量（0–100）"')
+		&& clientSource.includes('label: "语速（-10–10）"')
+		&& clientSource.includes("const voiceLabel = (() => {"),
+	"voice UI",
+);/* 字重：三态配置 + 真卡与样卡都认它。 */
 check(
 	"字重是三态配置，非法值抛错",
 	DEFAULTS.typography.project.weight === ""

@@ -192,7 +192,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
     debugPreview: false    # 预览卡：常驻、可拖位置、拖边改尺寸
     debugPayload: false    # 把每次弹出的 payload 追加落盘
     debugFile: ''          # 落盘文件；留空 = %TEMP%\dsh-nudge-payloads.jsonl（超 5MB 轮转成 .1）
-    popupScript: ''        # 自定义弹窗脚本；留空用包内 lib/popup.ps1（这项不 volatile，改了要重启）
+    sound:                 # 语音提示：默认关着
+      enabled: false       # 打开后卡片弹出时出声
+      source: tts          # tts = Windows 朗读；file = 本地音频
+      phrase: auto         # auto 只报类别 / detail 带任务名 / custom 用 template
+      template: ''         # custom 的模板，支持 {kind} {project} {task} {count}
+      file: ''             # source=file 时的音频路径（wav / mp3 / m4a）
+      voice: ''            # 朗读语音名（子串匹配），留空用系统默认
+      rate: 0              # 语速 -10..10
+      volume: 80           # 音量 0..100（只影响这一声）
+      maxChars: 60         # 一次最多念几个字    popupScript: ''        # 自定义弹窗脚本；留空用包内 lib/popup.ps1（这项不 volatile，改了要重启）
 ```
 
 非法配置在插件加载时报错（`staySeconds` 越界、`muteRanges` 格式不对等），不会静默失效；
@@ -214,6 +223,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 | 位置与停留 | 落点九宫格、停留秒数、距屏幕边缘、记住拖过的位置 |
 | 提醒 | 总开关 + 三类提醒 |
 | 点击 | 「点击卡片回到 DSH」与「鼠标穿透（纯提示）」 |
+| 语音 | `sound.*`：**卡片弹出时出声**（默认关）、来源（系统朗读 / 本地音频文件）、念什么（只报类别 / 带任务名 / 自定义模板）、朗读语音（预设 Huihui / Yaoyao / Kangkang + 自定义名字）、音量、语速、最多念几个字。标题右边写当前状态（「带任务名 · Huihui · 80」）。想试听就回「预览」组点那颗按钮——预览卡也会念，改完再点一次即可 |
 | 什么时候弹 | 前台也弹 / 全屏不打扰 / 中途报错先忍 / 工具报错单独提醒 |
 | 合并与静音 | 合并窗口、清单最多几条、静音时段（写错的行当场红字标出，下面还有「现在是否静音」） |
 | 调试 | 默认收起：payload 落盘、落盘路径、配置导出 / 导入 |
@@ -302,11 +312,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 
 ## 版本
 
-当前 **1.7.0**（2026-11-17）。逐条改动看 [CHANGELOG.md](CHANGELOG.md)，
+当前 **1.8.0**（2026-11-18）。逐条改动看 [CHANGELOG.md](CHANGELOG.md)，
 带说明的发布记录在 [Releases](https://github.com/HalfDone03/dsh-nudge/releases)。
 
 | 版本 | 日期 | 一句话 |
 | --- | --- | --- |
+| 1.8.0 | 2026-11-18 | 语音提示：TTS 朗读或播本地音频，可在设置里导入 |
 | 1.7.0 | 2026-11-17 | 每类文字能单独设字重（跟随版式 / 常规 / 加粗） |
 | 1.6.1 | 2026-11-13 | 记住的尺寸只留宽度，高度跟着内容走（关掉几块不留白） |
 | 1.6.0 | 2026-11-10 | 关掉某块后内容自己顶上；预览卡改设置原地重画（~0.3s） |
