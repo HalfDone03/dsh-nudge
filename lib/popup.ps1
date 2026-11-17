@@ -1303,9 +1303,15 @@ function Initialize-CardSlot {
         $slot.owned = $true
         return $slot
     }
+    # A test run must not fight the user's live card for this slot: the self test sets
+    # DSH_NUDGE_SLOT_SUFFIX so its cards elect among themselves and never touch the
+    # mutex the running harness holds. Without the variable the names are unchanged.
+    $slotSuffix = ''
+    try { $slotSuffix = [string]$env:DSH_NUDGE_SLOT_SUFFIX } catch { $slotSuffix = '' }
+    if ($null -eq $slotSuffix) { $slotSuffix = '' }
     try {
-        $script:slotMutex = New-Object -TypeName System.Threading.Mutex -ArgumentList $false, 'Local\dsh-nudge-card'
-        $script:slotEvent = New-Object -TypeName System.Threading.EventWaitHandle -ArgumentList $false, ([System.Threading.EventResetMode]::AutoReset), 'Local\dsh-nudge-replace'
+        $script:slotMutex = New-Object -TypeName System.Threading.Mutex -ArgumentList $false, ('Local\dsh-nudge-card' + $slotSuffix)
+        $script:slotEvent = New-Object -TypeName System.Threading.EventWaitHandle -ArgumentList $false, ([System.Threading.EventResetMode]::AutoReset), ('Local\dsh-nudge-replace' + $slotSuffix)
     } catch {
         $slot.owned = $true
         return $slot

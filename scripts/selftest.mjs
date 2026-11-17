@@ -34,6 +34,13 @@ const popupScript = join(root, "lib", "popup.ps1");
 const shotDir = join(root, "screenshots");
 const baselineFile = join(root, "tools", "snapshot-baseline.json");
 
+/*
+ * 自测起的卡片用一套独立的单卡槽位名：真实 DSH 可能正弹着一张卡，占着
+ * Local\dsh-nudge-card，那样「先来的拿到槽位」这条会假红。带上进程号后缀，
+ * 自测的几张卡只在彼此之间抢槽位，不碰用户正在用的那张。
+ */
+process.env.DSH_NUDGE_SLOT_SUFFIX = `-selftest-${process.pid}`;
+
 const argv = process.argv.slice(2);
 const noLive = argv.includes("--no-live");
 const updateBaseline = argv.includes("--update-baseline");
