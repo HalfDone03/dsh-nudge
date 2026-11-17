@@ -33,7 +33,7 @@ window.__ModuleLoader__.load({
 		/** 设置页在导航里的位置：排在「插件」(15) 后面。 */
 		const ORDER = 20;
 	/** 设置页的修订标记：这一页的界面改了就换一个，用来确认加载的是新代码。 */
-	const PANEL_REVISION = "2026-11-18.1";
+	const PANEL_REVISION = "2026-11-18.2";
 	/**
 	 * 分组导航：id 与下面每个分组容器的 id 对得上。
 	 * 顺序 = 你多久会动它一次：先看长什么样（预览），再调字、卡片、位置，
@@ -1684,10 +1684,25 @@ const ROLE_LOOK = {
 								onCommit: (next) => write("sound.maxChars", next),
 							})
 						: null,
+					/* 试听：写一个时间戳，宿主看到变化就播一次（不留卡片、不占槽位）。 */
+					h("div", { className: "dsh-nudge-actions", key: "trysound" }, [
+						h(
+							"button",
+							{
+								key: "listen",
+								type: "button",
+								className: "dsh-nudge-btn",
+								disabled: disabled || !bool("sound.enabled"),
+								title: bool("sound.enabled") ? "按现在的设置播一次" : "先把「卡片弹出时出声」打开",
+								onClick: () => writeNow("sound.previewNonce", String(Date.now())),
+							},
+							"试听",
+						),
+					]),
 					h(
 						"p",
 						{ className: "dsh-nudge-intro", key: "tryhint" },
-						"想试听：回「预览」组点「在桌面上弹一张看看」——预览卡也会按这里的设置念一遍，改完语音再点一次即可。",
+						"「试听」会按现在的设置播一次，不弹卡片、也不占卡片槽位；改了语音再点一次就能听新的。",
 					),
 				]),
 

@@ -38,6 +38,9 @@ param(
     [string]$PayloadB64 = '',
     [int]$SnapshotWidth = 0,
     [switch]$Preview,
+    # Sound-only: play the payload's sound and exit, no window. Used by the settings
+    # page's "listen" button, which must not leave a card behind.
+    [switch]$SoundOnly,
     [string]$StopFile = '',
     [switch]$Trace
 )
@@ -1447,6 +1450,98 @@ function Test-CardSlotTakenOver {
 # Resolved once, before any surface is built: -Theme wins, then the payload
 # (plugin config), then "auto" (follow the Windows app-mode setting).
 Set-CardTheme (Resolve-Theme -Requested $Theme -FromPayload '')
+
+# ---------------- sound-only mode ----------------
+# Play the payload's sound and exit: no window, no card, no slot. The settings page's
+# "listen" button goes through this, so a test must not leave anything on screen.
+# Speech and file playback both run synchronously here on purpose - the process is the
+# player, so exiting early would cut the sound off mid-sentence.
+if ($SoundOnly) {
+    $payload = Resolve-Payload -B64 $PayloadB64 -File $PayloadFile
+    if ($null -eq $payload) {
+        Write-Status @{ type = 'error'; message = 'sound-only: no payload' }
+        exit 2
+    }
+    $script:Sound = Resolve-Sound $payload.sound
+    if (-not $script:Sound.Enabled) {
+        Write-Status @{ type = 'sound'; mode = 'none'; ok = $false; reason = 'disabled' }
+        exit 0
+    }
+    if ($script:Sound.Source -eq 'file') {
+        $path = $script:Sound.File
+        if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path -LiteralPath $path)) {
+            Write-Status @{ type = 'sound'; mode = 'file'; ok = $false; reason = 'missing' }
+            exit 0
+        }
+        try {
+            # WAV goes through SoundPlayer (PlaySync blocks until done, which is exactly
+            # what a short-lived player wants). Anything else needs WPF's MediaPlayer,
+            # which is asynchronous, so pump the dispatcher until it ends or times out.
+            if ([System.IO.Path]::GetExtension($path).ToLowerInvariant() -eq '.wav') {
+                $player = New-Object System.Media.SoundPlayer $path
+                $player.PlaySync()
+                Write-Status @{ type = 'sound'; mode = 'file'; ok = $true }
+                exit 0
+            }
+            Add-Type -AssemblyName PresentationCore -ErrorAction Stop
+            $media = New-Object System.Windows.Media.MediaPlayer
+            $media.Volume = [double]$script:Sound.Volume / 100.0
+            $ended = $false
+            $media.Add_MediaEnded({ $script:mediaEnded = $true })
+            $media.Add_MediaFailed({ $script:mediaEnded = $true })
+            $script:mediaEnded = $false
+            $media.Open((New-Object System.Uri -ArgumentList $path))
+            $media.Play()
+            $deadline = [DateTime]::UtcNow.AddSeconds(30)
+            while (-not $script:mediaEnded -and [DateTime]::UtcNow -lt $deadline) {
+                [System.Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke(
+                    [System.Windows.Threading.DispatcherPriority]::Background,
+                    [action] { }
+                )
+                Start-Sleep -Milliseconds 50
+            }
+            try { $media.Stop() } catch { }
+            try { $media.Close() } catch { }
+            Write-Status @{ type = 'sound'; mode = 'file'; ok = $true }
+            exit 0
+        } catch {
+            Write-Status @{ type = 'sound'; mode = 'file'; ok = $false; reason = $_.Exception.Message }
+            exit 0
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($script:Sound.Text)) {
+        Write-Status @{ type = 'sound'; mode = 'tts'; ok = $false; reason = 'no-text' }
+        exit 0
+    }
+    try {
+        Add-Type -AssemblyName System.Speech -ErrorAction Stop
+        $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+        $synth.Volume = $script:Sound.Volume
+        $synth.Rate = $script:Sound.Rate
+        $wanted = $script:Sound.Voice
+        if (-not [string]::IsNullOrWhiteSpace($wanted)) {
+            $picked = ''
+            try {
+                foreach ($installed in $synth.GetInstalledVoices()) {
+                    if (-not $installed.Enabled) { continue }
+                    $name = [string]$installed.VoiceInfo.Name
+                    if ($name -like ('*' + $wanted + '*')) { $picked = $name; break }
+                }
+            } catch { }
+            if ($picked -ne '') { try { $synth.SelectVoice($picked) } catch { } }
+        }
+        $voiceName = ''
+        try { $voiceName = [string]$synth.Voice.Name } catch { }
+        # Speak() blocks until the sentence is done: the process *is* the player.
+        $synth.Speak($script:Sound.Text)
+        Write-Status @{ type = 'sound'; mode = 'tts'; ok = $true; voice = $voiceName }
+        try { $synth.Dispose() } catch { }
+        exit 0
+    } catch {
+        Write-Status @{ type = 'sound'; mode = 'tts'; ok = $false; reason = $_.Exception.Message }
+        exit 0
+    }
+}
 
 # ---------------- snapshot mode ----------------
 if (-not [string]::IsNullOrWhiteSpace($Snapshot)) {

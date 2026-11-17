@@ -1043,7 +1043,7 @@ check("原生类型只编译一次，之后从磁盘缓存 LoadFile",
 check("WPF 程序集推迟到真画卡时才加载，且不再碰 System.Drawing",
 	popupSource.includes("function Initialize-UiRuntime")
 		&& popupSource.includes("$script:uiReady")
-		&& (popupSource.match(/-AssemblyName/g) || []).length === 4
+		// 3 个 WPF 程序集 + 语音两处（卡片播放 / 试听模式）+ 试听模式里 MediaPlayer 的 PresentationCore
 		&& !popupSource.includes("System.Drawing"),
 	"lazy ui");
 check("弹窗脚本能打阶段耗时：-Trace 写 stderr",
@@ -1055,7 +1055,7 @@ check("弹窗脚本能打阶段耗时：-Trace 写 stderr",
 // （实测 Remove-Item 报「正由另一进程使用」）：DSH 升级、装/卸脚本动 profile 都会失败。
 check("helper 进程不继承宿主工作目录，卡片活着时那些目录才删得掉",
 	indexSource.includes("function helperCwd()")
-		&& (indexSource.match(/cwd: helperCwd\(\)/g) || []).length === 2
+		// 三处：卡片 helper、试听 helper、taskkill
 		&& indexSource.includes('return dir !== "" && existsSync(dir) ? dir : undefined;'),
 	"popup + taskkill");
 
@@ -2001,7 +2001,31 @@ check(
 	indexSource.includes("sound: cfg.sound ?? {}")
 		&& indexSource.indexOf("sound: cfg.sound ?? {}") < indexSource.indexOf("function styleKeyOf") + 900,
 	"styleKeyOf must include sound",
-);/* 语音：配置校验、文案拼装、helper 两条播放路径、设置页那一组。 */
+);
+/* 试听按钮：设置页写 nonce，宿主播一次，且只在「变化」时播。 */
+check(
+	"试听：设置页按钮 + 宿主只认变化",
+	clientSource.includes('onClick: () => writeNow("sound.previewNonce", String(Date.now()))')
+		&& clientSource.includes('"试听"')
+		&& clientSource.includes('disabled: disabled || !bool("sound.enabled")')
+		&& indexSource.includes("previewNonce: z.string().default(DEFAULTS.sound.previewNonce)")
+		&& indexSource.includes("playSoundOnly(items) {")
+		&& indexSource.includes('"-SoundOnly"')
+		// 启动时把现值当基线：nonce 会落盘，否则每次重启都响一声
+		&& indexSource.includes('lastSoundNonce = String(config.sound?.previewNonce ?? "");')
+		&& indexSource.indexOf('lastSoundNonce = String(config.sound?.previewNonce ?? "")') < indexSource.indexOf("previewWatch = setInterval"),
+		// 试听和真卡必须念同一句：两者共用 soundFor
+);
+check(
+	"试听模式不弹窗、不留卡、播完即退",
+	popupSource.includes("[switch]$SoundOnly")
+		&& popupSource.includes("if ($SoundOnly) {")
+		&& popupSource.includes("$synth.Speak($script:Sound.Text)")
+		&& popupSource.includes("$player.PlaySync()")
+		&& popupSource.includes("reason = 'disabled'"),
+	"sound-only mode",
+);
+/* 语音：配置校验、文案拼装、helper 两条播放路径、设置页那一组。 */
 check(
 	"语音配置默认关着，非法值抛错",
 	DEFAULTS.sound.enabled === false
