@@ -346,7 +346,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -ListVoices
 
 ## 版本
 
-当前 **1.8.2**（2026-11-18）。逐条改动看 [CHANGELOG.md](CHANGELOG.md)，
+当前 **1.9.0**（2026-11-19）。逐条改动看 [CHANGELOG.md](CHANGELOG.md)，
 带说明的发布记录在 [Releases](https://github.com/HalfDone03/dsh-nudge/releases)。
 
 | 版本 | 日期 | 一句话 |
