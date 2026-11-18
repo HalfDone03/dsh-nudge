@@ -41,6 +41,8 @@ param(
     # Sound-only: play the payload's sound and exit, no window. Used by the settings
     # page's "listen" button, which must not leave a card behind.
     [switch]$SoundOnly,
+    # Print the installed voices as JSON and exit (diagnostics).
+    [switch]$ListVoices,
     [string]$StopFile = '',
     [switch]$Trace
 )
@@ -562,11 +564,18 @@ $script:media = $null
 
 function Resolve-Sound {
     param($Source)
-    $result = @{ Enabled = $false; Source = 'tts'; File = ''; Voice = ''; Rate = 0; Volume = 80; Text = '' }
+    $result = @{ Enabled = $false; Source = 'tts'; File = ''; Voice = ''; Rate = 0; Volume = 80; Text = ''; PresetDir = ''; PresetVoice = ''; Kind = '' }
     if ($null -eq $Source) { return $result }
     try { $result.Enabled = [bool]$Source.enabled } catch { $result.Enabled = $false }
     if (-not $result.Enabled) { return $result }
-    try { if ([string]$Source.source -eq 'file') { $result.Source = 'file' } } catch { }
+    try {
+        $wanted = [string]$Source.source
+        if ($wanted -eq 'file') { $result.Source = 'file' }
+        elseif ($wanted -eq 'preset') { $result.Source = 'preset' }
+    } catch { }
+    try { $result.PresetDir = [string]$Source.presetDir } catch { $result.PresetDir = '' }
+    try { $result.PresetVoice = [string]$Source.presetVoice } catch { $result.PresetVoice = '' }
+    try { $result.Kind = [string]$Source.kind } catch { $result.Kind = '' }
     try { $result.File = [string]$Source.file } catch { $result.File = '' }
     try { $result.Voice = [string]$Source.voice } catch { $result.Voice = '' }
     try { $result.Rate = [int]$Source.rate } catch { $result.Rate = 0 }
@@ -595,8 +604,66 @@ function Stop-CardSound {
     }
 }
 
+# A preset clip is a short, fixed sentence rendered ahead of time with a neural voice
+# (scripts/make-voice-presets.ps1 does that on the user's machine). It lives outside the
+# package on purpose: the audio is not redistributed, only generated locally.
+# Returns the path it played, or '' when there is nothing to play.
+function Get-PresetClipPath {
+    $kind = $script:Sound.Kind
+    if ([string]::IsNullOrWhiteSpace($kind)) { return '' }
+    # Two places, in this order: the user's own data dir (so a re-render with another
+    # voice wins) and the clips that ship inside the package next to this script.
+    $roots = @()
+    if (-not [string]::IsNullOrWhiteSpace($script:Sound.PresetDir)) { $roots += $script:Sound.PresetDir }
+    if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) { $roots += (Join-Path $PSScriptRoot 'voices') }
+    if ($roots.Count -eq 0) { return '' }
+    $voices = @()
+    if (-not [string]::IsNullOrWhiteSpace($script:Sound.PresetVoice)) { $voices += $script:Sound.PresetVoice }
+    # Fall back to whatever sets exist, so a renamed voice does not silence the card.
+    foreach ($root in $roots) {
+        try {
+            if (Test-Path -LiteralPath $root) {
+                foreach ($dir in (Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue)) {
+                    if (-not ($voices -contains $dir.Name)) { $voices += $dir.Name }
+                }
+            }
+        } catch { }
+    }
+    foreach ($voice in $voices) {
+        foreach ($root in $roots) {
+            foreach ($ext in @('.mp3', '.wav', '.m4a')) {
+                $candidate = Join-Path (Join-Path $root $voice) ($kind + $ext)
+                if (Test-Path -LiteralPath $candidate) { return $candidate }
+            }
+        }
+    }
+    return ''
+}
+
+function Play-PresetClip {
+    $clip = Get-PresetClipPath
+    if ($clip -eq '') { return $false }
+    try {
+        $player = New-Object System.Windows.Media.MediaPlayer
+        $player.Volume = [double]$script:Sound.Volume / 100.0
+        $player.Open((New-Object System.Uri -ArgumentList $clip))
+        $player.Play()
+        $script:media = $player
+        Write-Status @{ type = 'sound'; mode = 'preset'; ok = $true; clip = (Split-Path -Leaf $clip) }
+        return $true
+    } catch {
+        Write-Status @{ type = 'sound'; mode = 'preset'; ok = $false; reason = 'error' }
+        return $false
+    }
+}
+
 function Start-CardSound {
     if (-not $script:Sound.Enabled) { return }
+    if ($script:Sound.Source -eq 'preset') {
+        if (Play-PresetClip) { return }
+        # No clip for this kind/voice: fall back to speech so the card is not silent.
+        Write-Status @{ type = 'sound'; mode = 'preset'; ok = $false; reason = 'missing' }
+    }
     if ($script:Sound.Source -eq 'file') {
         $path = $script:Sound.File
         if ([string]::IsNullOrWhiteSpace($path)) {
@@ -1451,6 +1518,31 @@ function Test-CardSlotTakenOver {
 # (plugin config), then "auto" (follow the Windows app-mode setting).
 Set-CardTheme (Resolve-Theme -Requested $Theme -FromPayload '')
 
+# ---------------- voice inventory ----------------
+# Prints what the machine actually has, so a user can see why a name they typed is not
+# found. SAPI and OneCore keep separate lists: OneCore carries the newer voices, but on
+# a plain Windows install the Chinese entries are the same old Huihui/Yaoyao/Kangkang.
+if ($ListVoices) {
+    $sapiNames = @()
+    try {
+        Add-Type -AssemblyName System.Speech -ErrorAction Stop
+        $sapiSynth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+        foreach ($v in $sapiSynth.GetInstalledVoices()) {
+            $sapiNames += [string]$v.VoiceInfo.Name
+        }
+        $sapiSynth.Dispose()
+    } catch { }
+    $oneCoreNames = @()
+    try {
+        Add-Type -AssemblyName System.Runtime.WindowsRuntime -ErrorAction Stop
+        [void][Windows.Media.SpeechSynthesis.SpeechSynthesizer, Windows.Media, ContentType = WindowsRuntime]
+        foreach ($v in [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices) {
+            $oneCoreNames += [string]$v.DisplayName
+        }
+    } catch { }
+    Write-Status @{ type = 'voices'; sapi = $sapiNames; onecore = $oneCoreNames }
+    exit 0
+}
 # ---------------- sound-only mode ----------------
 # Play the payload's sound and exit: no window, no card, no slot. The settings page's
 # "listen" button goes through this, so a test must not leave anything on screen.
@@ -1466,6 +1558,44 @@ if ($SoundOnly) {
     if (-not $script:Sound.Enabled) {
         Write-Status @{ type = 'sound'; mode = 'none'; ok = $false; reason = 'disabled' }
         exit 0
+    }
+    $presetClip = ''
+    if ($script:Sound.Source -eq 'preset') {
+        $presetClip = Get-PresetClipPath
+        if ($presetClip -eq '') {
+            # No clip for this kind/voice: fall through to speech, exactly like the card
+            # does, so a half-installed preset set never makes the button silent.
+            Write-Status @{ type = 'sound'; mode = 'preset'; ok = $false; reason = 'missing' }
+        }
+    }
+    if ($presetClip -ne '') {
+        $clip = $presetClip
+        try {
+            # Blocking on purpose: this process is the player (see the header).
+            Add-Type -AssemblyName PresentationCore -ErrorAction Stop
+            $media = New-Object System.Windows.Media.MediaPlayer
+            $media.Volume = [double]$script:Sound.Volume / 100.0
+            $script:mediaEnded = $false
+            $media.Add_MediaEnded({ $script:mediaEnded = $true })
+            $media.Add_MediaFailed({ $script:mediaEnded = $true })
+            $media.Open((New-Object System.Uri -ArgumentList $clip))
+            $media.Play()
+            $deadline = [DateTime]::UtcNow.AddSeconds(15)
+            while (-not $script:mediaEnded -and [DateTime]::UtcNow -lt $deadline) {
+                [System.Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke(
+                    [System.Windows.Threading.DispatcherPriority]::Background,
+                    [action] { }
+                )
+                Start-Sleep -Milliseconds 40
+            }
+            try { $media.Stop() } catch { }
+            try { $media.Close() } catch { }
+            Write-Status @{ type = 'sound'; mode = 'preset'; ok = $true; clip = (Split-Path -Leaf $clip) }
+            exit 0
+        } catch {
+            Write-Status @{ type = 'sound'; mode = 'preset'; ok = $false; reason = $_.Exception.Message }
+            exit 0
+        }
     }
     if ($script:Sound.Source -eq 'file') {
         $path = $script:Sound.File

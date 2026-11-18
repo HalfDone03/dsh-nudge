@@ -1744,7 +1744,7 @@ const sizeRows = sizePage.components.filter((item) => item.type.name === "Number
 const sizeLabels = sizeRows.map((item) => item.props.label).filter((label) => typeof label === "string" && label.startsWith("字号（"));
 check(
 	"字号只画选中的那一类，八类都点得到",
-	sizeRows.length === 9 && roleButtons(sizePage.nodes).length === 8 && sizeLabels.length === 1 && sizeLabels[0] === "字号（项目名）",
+	sizeRows.length === 7 && roleButtons(sizePage.nodes).length === 8 && sizeLabels.length === 1 && sizeLabels[0] === "字号（项目名）",
 	"rows=" + sizeRows.length + " labels=" + sizeLabels.join("|"),
 );
 check(
@@ -2029,7 +2029,7 @@ check(
 check(
 	"语音配置默认关着，非法值抛错",
 	DEFAULTS.sound.enabled === false
-		&& DEFAULTS.sound.source === "tts"
+		&& DEFAULTS.sound.source === "preset"
 		&& DEFAULTS.sound.phrase === "auto"
 		&& normalizeConfig({ sound: { enabled: true, volume: 55 } }).sound.volume === 55
 		&& (() => { try { normalizeConfig({ sound: { source: "x" } }); return false; } catch { return true; } })()
@@ -2050,9 +2050,10 @@ check(
 );
 check(
 	"payload 带 sound，念的是这一批的类别与任务",
-	indexSource.includes("text: speechTextOf(this.config, {")
-		&& indexSource.includes("sound: {")
-		&& indexSource.includes("source: this.config.sound.source === \"file\" ? \"file\" : \"tts\""),
+	indexSource.includes("sound: this.soundFor(")
+		&& indexSource.includes("text: speechTextOf(this.config, { kind, label, headline, context, count })")
+		&& indexSource.includes("presetDir: presetVoiceDir(),")
+		&& indexSource.includes("presetVoice: this.config.sound.presetVoice,"),
 	"payload.sound",
 );
 check(
@@ -2074,15 +2075,62 @@ check(
 	"设置页有语音组：开关、来源、念什么、语音、音量、语速",
 	clientSource.includes('key: "voice", id: "dsh-nudge-g-voice"')
 		&& clientSource.includes('label: "卡片弹出时出声"')
-		&& clientSource.includes('{ value: "tts", label: "系统朗读（TTS）" }')
+		&& clientSource.includes('{ value: "preset", label: "预制语音（自然，推荐）" }')
+		&& clientSource.includes('{ value: "tts", label: "系统朗读（TTS，机器味重）" }')
 		&& clientSource.includes('{ value: "file", label: "本地音频文件" }')
 		&& clientSource.includes('label: "念什么"')
 		&& clientSource.includes("const VOICE_PRESETS = [")
+		&& clientSource.includes("const PRESET_VOICES = [")
+		&& clientSource.includes('key: "sound.presetVoice"')
 		&& clientSource.includes('label: "音量（0–100）"')
 		&& clientSource.includes('label: "语速（-10–10）"')
 		&& clientSource.includes("const voiceLabel = (() => {"),
 	"voice UI",
-);/* 字重：三态配置 + 真卡与样卡都认它。 */
+);/* 预制语音：素材在本机、不进包；缺了要能回落，不能哑掉。 */
+check(
+	"预制语音：source 三选一 + presetVoice 校验",
+	["tts", "preset", "file"].every((value) => normalizeConfig({ sound: { source: value } }).sound.source === value)
+		&& normalizeConfig({ sound: { presetVoice: "yunxi" } }).sound.presetVoice === "yunxi"
+		&& DEFAULTS.sound.presetVoice === "xiaoxiao"
+		&& DEFAULTS.sound.source === "preset"
+		&& (() => { try { normalizeConfig({ sound: { source: "bogus" } }); return false; } catch { return true; } })(),
+	"preset config",
+);
+check(
+	"预制语音：包内自带 + 用户目录优先",
+	indexSource.includes("export function presetVoiceDir() {")
+		&& indexSource.includes('process.env.LOCALAPPDATA')
+		&& indexSource.includes('join(base, "dsh-nudge", "voices")')
+		// 包内自带 9 段（3 声音 x 3 类别），lib 在 files 白名单里所以会随包发布
+		&& ["xiaoxiao", "yunxi", "xiaoyi"].every((voice) =>
+			["completed", "needs_choice", "failed"].every((kind) =>
+				existsSync(join(root, "lib", "voices", voice, kind + ".mp3")),
+			),
+		)
+		&& readmeSource.includes("make-voice-presets.ps1"),
+	"bundled clips + user override",
+);
+check(
+	"预制语音：helper 找片段、缺片回落 TTS、关窗停播",
+	popupSource.includes("function Get-PresetClipPath {")
+		&& popupSource.includes("function Play-PresetClip {")
+		&& popupSource.includes("if ($script:Sound.Source -eq 'preset') {")
+		&& popupSource.includes("if (Play-PresetClip) { return }")
+		&& popupSource.includes("foreach ($ext in @('.mp3', '.wav', '.m4a'))")
+		// 试听模式也要能放片段，且缺片时继续往下走（回落 TTS），不能直接 exit
+		&& popupSource.includes("$presetClip = Get-PresetClipPath")
+		&& popupSource.includes("if ($presetClip -ne '') {"),
+	"preset playback + fallback",
+);
+check(
+	"helper 能自查本机语音（-ListVoices）",
+	popupSource.includes("[switch]$ListVoices")
+		&& popupSource.includes("if ($ListVoices) {")
+		&& popupSource.includes("type = 'voices'")
+		&& popupSource.includes("SpeechSynthesizer]::AllVoices"),
+	"list voices",
+);
+/* 字重：三态配置 + 真卡与样卡都认它。 */
 check(
 	"字重是三态配置，非法值抛错",
 	DEFAULTS.typography.project.weight === ""

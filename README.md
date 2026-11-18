@@ -194,7 +194,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
     debugFile: ''          # 落盘文件；留空 = %TEMP%\dsh-nudge-payloads.jsonl（超 5MB 轮转成 .1）
     sound:                 # 语音提示：默认关着
       enabled: false       # 打开后卡片弹出时出声
-      source: tts          # tts = Windows 朗读；file = 本地音频
+      source: preset       # preset 预制语音（默认，自然）/ tts 系统朗读 / file 本地音频
+      presetVoice: xiaoxiao # preset 用哪一套：xiaoxiao 晓晓 / yunxi 云希 / xiaoyi 晓伊
       phrase: auto         # auto 只报类别 / detail 带任务名 / custom 用 template
       template: ''         # custom 的模板，支持 {kind} {project} {task} {count}
       file: ''             # source=file 时的音频路径（wav / mp3 / m4a）
@@ -225,7 +226,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 | 位置与停留 | 落点九宫格、停留秒数、距屏幕边缘、记住拖过的位置 |
 | 提醒 | 总开关 + 三类提醒 |
 | 点击 | 「点击卡片回到 DSH」与「鼠标穿透（纯提示）」 |
-| 语音 | `sound.*`：**卡片弹出时出声**（默认关）、来源（系统朗读 / 本地音频文件）、念什么（只报类别 / 带任务名 / 自定义模板）、朗读语音（预设 Huihui / Yaoyao / Kangkang + 自定义名字）、音量、语速、最多念几个字。标题右边写当前状态（「带任务名 · Huihui · 80」）。组里还有一颗「**试听**」：按现在的设置播一次，不弹卡片、不占卡片槽位；它走 `-SoundOnly` 模式，播完即退（TTS / wav / mp3 都实测过） |
+| 语音 | `sound.*`：**卡片弹出时出声**（默认关）、来源（**预制语音**（自然，推荐）/ 系统朗读（TTS，机器味重）/ 本地音频文件）、预制语音用哪一套（晓晓 / 云希 / 晓伊）、念什么（只报类别 / 带任务名 / 自定义模板）、朗读语音、音量、语速、最多念几个字。标题右边写当前状态。组里还有一颗「**试听**」：按现在的设置播一次，不弹卡片、不占槽位 |
 | 什么时候弹 | 前台也弹 / 全屏不打扰 / 中途报错先忍 / 工具报错单独提醒 |
 | 合并与静音 | 合并窗口、清单最多几条、静音时段（写错的行当场红字标出，下面还有「现在是否静音」） |
 | 调试 | 默认收起：payload 落盘、落盘路径、配置导出 / 导入 |
@@ -248,6 +249,37 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 页面底部有 `配置状态：<status> · 可写/只读 · 待保存 N 项`：`unavailable` 说明宿主的设置服务没列出
 `nudge` 命名空间，不是页面坏了。最下面一行是 `提醒弹窗设置页 · 修订 <PANEL_REVISION>`——
 改完设置页看不到新修订号，说明浏览器还在用旧的客户端包，刷新即可。
+
+### 语音：为什么自带的声音难听，怎么换成自然的
+
+卡片能出声，默认关着。三条来源：
+
+| 来源 | 声音 | 说明 |
+| --- | --- | --- |
+| **预制语音**（推荐） | 晓晓 / 云希 / 晓伊（神经语音） | 听起来像人。固定短句：任务完成了 / 需要你选一下 / 执行失败了 |
+| 系统朗读（TTS） | Windows 自带语音 | 这台机器上是 `Microsoft Huihui Desktop`——2009 年的拼接式合成，机器人味就来自它 |
+| 本地音频文件 | 你自己的 wav / mp3 / m4a | 想用别的声音就用这个 |
+
+**素材从哪来**：包里**自带** 9 段（3 套声音 × 3 类提醒，108 KB，在 `lib/voices/`），装上就有声。
+查找顺序是「你的数据目录优先 → 包内兜底」，所以想换声音只要重新生成到数据目录即可覆盖：
+
+```powershell
+# 需要 edge-tts：python -m pip install edge-tts
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\make-voice-presets.ps1
+```
+
+脚本把 9 段短句写到 `%LOCALAPPDATA%\dsh-nudge\voices\<声音>\<类别>.mp3`，已有的跳过（`-Force` 重渲染）。
+缺素材时**不会哑**：卡片自动回落系统朗读。
+
+> 关于音频来源：这 9 段是用微软的神经语音（edge-tts，`zh-CN-XiaoxiaoNeural` / `YunxiNeural` / `XiaoyiNeural`）
+> 合成的，随包提供只为开箱能听见人声。它们不是本项目原创内容；如果你的使用场景不适合再分发，
+> 删掉 `lib/voices/` 即可，插件会回落系统朗读，或者用上面的脚本在本地重新生成。
+
+想知道这台机器到底装了哪些语音（SAPI 与 OneCore 是两份清单）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -ListVoices
+```
 
 ## 卡片长什么样
 

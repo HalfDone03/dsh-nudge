@@ -457,6 +457,15 @@ function SwitchRow(props) {
 			["Kangkang", "Microsoft Kangkang（男声·中文）"],
 			["custom", "自定义（在下面写名字）"],
 		];
+		/**
+		 * 预制语音的三套声音。素材由 scripts/make-voice-presets.ps1 在本机生成，
+		 * 不进包：微软神经语音的音频不适合再分发。缺素材时 helper 会回落 TTS。
+		 */
+		const PRESET_VOICES = [
+			["xiaoxiao", "晓晓（温柔女声·推荐）"],
+			["yunxi", "云希（青年男声）"],
+			["xiaoyi", "晓伊（活泼女声）"],
+		];
 
 const ANCHOR_CELLS = [
 	{ id: "top-left", hint: "左上角" },
@@ -535,7 +544,8 @@ const ROLE_LOOK = {
 			]],
 			["voice", [
 				["sound.enabled", false],
-				["sound.source", "tts"],
+				["sound.source", "preset"],
+				["sound.presetVoice", "xiaoxiao"],
 				["sound.phrase", "auto"],
 				["sound.template", ""],
 				["sound.file", ""],
@@ -1118,6 +1128,10 @@ const ROLE_LOOK = {
 			/** 语音组标题右边那行小字：一眼看出现在是什么状态。 */
 			const voiceLabel = (() => {
 				if (!bool("sound.enabled")) return "不出声";
+				if (text("sound.source") === "preset") {
+					const found = PRESET_VOICES.find(([id]) => id === text("sound.presetVoice"));
+					return "预制语音 · " + (found === undefined ? text("sound.presetVoice") : found[1]) + " · " + num("sound.volume");
+				}
 				if (text("sound.source") === "file") {
 					const file = text("sound.file");
 					if (file === "") return "未选文件";
@@ -1579,15 +1593,27 @@ const ROLE_LOOK = {
 					h(SelectRow, {
 						key: "sound.source",
 						label: "声音来源",
-						hint: "系统朗读不占空间（中文需要 Windows 里装了中文语音）；本地文件支持 wav / mp3 / m4a。",
-						value: text("sound.source") === "file" ? "file" : "tts",
+						hint: "预制语音最自然（神经语音短句）；系统朗读用 Windows 自带的老引擎，机器人味重；本地文件支持 wav / mp3 / m4a。",
+						value: ["preset", "tts", "file"].includes(text("sound.source")) ? text("sound.source") : "preset",
 						options: [
-							{ value: "tts", label: "系统朗读（TTS）" },
+							{ value: "preset", label: "预制语音（自然，推荐）" },
+							{ value: "tts", label: "系统朗读（TTS，机器味重）" },
 							{ value: "file", label: "本地音频文件" },
 						],
 						disabled,
 						onChange: (next) => write("sound.source", next),
 					}),
+					text("sound.source") === "preset"
+						? h(SelectRow, {
+								key: "sound.presetVoice",
+								label: "预制语音",
+								hint: "固定短句（任务完成 / 需要你选一下 / 执行失败了），念不了任务名；要念任务名请选「系统朗读」。",
+								value: PRESET_VOICES.some(([id]) => id === text("sound.presetVoice")) ? text("sound.presetVoice") : "xiaoxiao",
+								options: PRESET_VOICES.map(([id, label]) => ({ value: id, label })),
+								disabled,
+								onChange: (next) => write("sound.presetVoice", next),
+							})
+						: null,
 					text("sound.source") === "file"
 						? h(TextRow, {
 								key: "sound.file",
@@ -1611,7 +1637,7 @@ const ROLE_LOOK = {
 								disabled,
 								onChange: (next) => write("sound.phrase", next),
 							}),
-					text("sound.source") !== "file" && text("sound.phrase") === "custom"
+					text("sound.source") === "tts" && text("sound.phrase") === "custom"
 						? h(TextRow, {
 								key: "sound.template",
 								label: "播报模板",
@@ -1622,7 +1648,7 @@ const ROLE_LOOK = {
 								onCommit: (next) => write("sound.template", next),
 							})
 						: null,
-					text("sound.source") !== "file"
+					text("sound.source") === "tts"
 						? h(SelectRow, {
 								key: "sound.voice",
 								label: "朗读语音",
@@ -1637,7 +1663,7 @@ const ROLE_LOOK = {
 								},
 							})
 						: null,
-					text("sound.source") !== "file"
+					text("sound.source") === "tts"
 						? h(TextRow, {
 								key: "sound.voice.custom",
 								label: "自定义语音名",
@@ -1659,7 +1685,7 @@ const ROLE_LOOK = {
 						disabled,
 						onCommit: (next) => write("sound.volume", next),
 					}),
-					text("sound.source") !== "file"
+					text("sound.source") === "tts"
 						? h(NumberRow, {
 								key: "sound.rate",
 								label: "语速（-10–10）",
@@ -1671,7 +1697,7 @@ const ROLE_LOOK = {
 								onCommit: (next) => write("sound.rate", next),
 							})
 						: null,
-					text("sound.source") !== "file"
+					text("sound.source") === "tts"
 						? h(NumberRow, {
 								key: "sound.maxChars",
 								label: "最多念几个字",
