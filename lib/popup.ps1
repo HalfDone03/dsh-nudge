@@ -666,25 +666,27 @@ function Start-CardSound {
     }
     if ($script:Sound.Source -eq 'file') {
         $path = $script:Sound.File
+        $played = $false
         if ([string]::IsNullOrWhiteSpace($path)) {
             Write-Status @{ type = 'sound'; mode = 'file'; ok = $false; reason = 'no-file' }
-            return
-        }
-        if (-not (Test-Path -LiteralPath $path)) {
+        } elseif (-not (Test-Path -LiteralPath $path)) {
             Write-Status @{ type = 'sound'; mode = 'file'; ok = $false; reason = 'missing' }
-            return
+        } else {
+            try {
+                $player = New-Object System.Windows.Media.MediaPlayer
+                $player.Volume = [double]$script:Sound.Volume / 100.0
+                $player.Open((New-Object System.Uri -ArgumentList $path))
+                $player.Play()
+                $script:media = $player
+                $played = $true
+                Write-Status @{ type = 'sound'; mode = 'file'; ok = $true }
+            } catch {
+                Write-Status @{ type = 'sound'; mode = 'file'; ok = $false; reason = 'error' }
+            }
         }
-        try {
-            $player = New-Object System.Windows.Media.MediaPlayer
-            $player.Volume = [double]$script:Sound.Volume / 100.0
-            $player.Open((New-Object System.Uri -ArgumentList $path))
-            $player.Play()
-            $script:media = $player
-            Write-Status @{ type = 'sound'; mode = 'file'; ok = $true }
-        } catch {
-            Write-Status @{ type = 'sound'; mode = 'file'; ok = $false; reason = 'error' }
-        }
-        return
+        # A missing or broken file falls through to speech, exactly like preset does:
+        # a deleted mp3 should not leave the card mute when we can still talk.
+        if ($played) { return }
     }
     if ([string]::IsNullOrWhiteSpace($script:Sound.Text)) {
         Write-Status @{ type = 'sound'; mode = 'tts'; ok = $false; reason = 'no-text' }
@@ -1600,9 +1602,10 @@ if ($SoundOnly) {
     if ($script:Sound.Source -eq 'file') {
         $path = $script:Sound.File
         if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path -LiteralPath $path)) {
+            # Fall through to speech below instead of exiting: same rule as the card.
             Write-Status @{ type = 'sound'; mode = 'file'; ok = $false; reason = 'missing' }
-            exit 0
-        }
+            $script:Sound.Source = 'tts'
+        } else {
         try {
             # WAV goes through SoundPlayer (PlaySync blocks until done, which is exactly
             # what a short-lived player wants). Anything else needs WPF's MediaPlayer,
@@ -1637,6 +1640,7 @@ if ($SoundOnly) {
         } catch {
             Write-Status @{ type = 'sound'; mode = 'file'; ok = $false; reason = $_.Exception.Message }
             exit 0
+        }
         }
     }
     if ([string]::IsNullOrWhiteSpace($script:Sound.Text)) {

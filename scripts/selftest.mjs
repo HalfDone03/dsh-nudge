@@ -1453,7 +1453,7 @@ check("设置页控件数量", clientControls.length >= 14, "controls=" + client
 	);
 	check(
 		"README 的设置页一节跟得上现在的九组",
-		readmeSource.includes("九组")
+		readmeSource.includes("十组")
 			&& readmeSource.includes("| 预览 |") && readmeSource.includes("| 合并与静音 |")
 			&& readmeSource.includes('11 颗色块')
 			&& readmeSource.includes("现在实际用的值")
@@ -1998,14 +1998,17 @@ check(
 /* 改语音设置要能当场听到：sound 必须进预览卡的重画指纹，否则预览卡开着时改了没反应。 */
 check(
 	"语音设置进预览卡的重画指纹",
-	indexSource.includes("sound: cfg.sound ?? {}")
-		&& indexSource.indexOf("sound: cfg.sound ?? {}") < indexSource.indexOf("function styleKeyOf") + 900,
+	indexSource.includes("sound: {")
+		&& indexSource.includes("presetVoice: cfg.sound?.presetVoice,")
+		// 试听信号（previewNonce）绝不能进指纹，否则点一次试听会让预览卡重画并再念一遍
+		&& !indexSource.slice(indexSource.indexOf("function styleKeyOf"), indexSource.indexOf("function styleKeyOf") + 1400).includes("previewNonce: cfg"),
 	"styleKeyOf must include sound",
 );
 /* 试听按钮：设置页写 nonce，宿主播一次，且只在「变化」时播。 */
 check(
 	"试听：设置页按钮 + 宿主只认变化",
-	clientSource.includes('onClick: () => writeNow("sound.previewNonce", String(Date.now()))')
+	clientSource.includes('path: ["sound", "previewNonce"]')
+		&& clientSource.includes('.filter(([path]) => path.startsWith("sound."))')
 		&& clientSource.includes('"试听"')
 		&& clientSource.includes('disabled: disabled || !bool("sound.enabled")')
 		&& indexSource.includes("previewNonce: z.string().default(DEFAULTS.sound.previewNonce)")
@@ -2129,6 +2132,49 @@ check(
 		&& popupSource.includes("type = 'voices'")
 		&& popupSource.includes("SpeechSynthesizer]::AllVoices"),
 	"list voices",
+);
+/* 1.9.1 审查：试听不重画预览、file 缺文件回落、念什么只对 tts、试听写草稿、预览按钮防呆。 */
+check(
+	"试听信号不进外观指纹（否则预览会跟着重念）",
+	(() => {
+		const body = indexSource.slice(indexSource.indexOf("function styleKeyOf"), indexSource.indexOf("function styleKeyOf") + 1400);
+		// 注释里提到 previewNonce 是允许的，只有「字段赋值」才算进指纹
+		return body.includes("presetVoice: cfg.sound?.presetVoice,") && !/previewNonce\s*:/u.test(body);
+	})(),
+	"styleKeyOf must not see previewNonce",
+);
+check(
+	"file 模式缺文件时回落 TTS（卡片与试听两条路径）",
+	// 卡片：找不到路径/文件时不再 return，而是落到后面的朗读
+	popupSource.includes("if ($played) { return }")
+		&& popupSource.includes("reason = 'no-file'")
+		// 试听：缺文件只写状态行 + 切成 tts，继续往下
+		&& popupSource.includes("$script:Sound.Source = 'tts'")
+		&& !/reason = 'missing' \}\r?\n\s+exit 0\r?\n\s+\}\r?\n\s+try \{/u.test(popupSource),
+	"file must fall back to speech",
+);
+check(
+	"念什么只对 tts 显示（预制是固定短句）",
+	clientSource.includes('text("sound.source") === "tts"')
+		&& clientSource.includes('key: "sound.phrase"'),
+	"phrase row gated on tts",
+);
+check(
+	"试听把草稿里的 sound.* 一起写入",
+	clientSource.includes('.filter(([path]) => path.startsWith("sound."))')
+		&& clientSource.includes('path: ["sound", "previewNonce"]'),
+	"audition applies draft sound",
+);
+check(
+	"有未保存改动时预览按钮禁用",
+	clientSource.includes("disabled: disabled || pending > 0")
+		&& clientSource.includes("先把下面的改动点「应用」，预览卡才会按新设置来。"),
+	"preview button guard",
+);
+check(
+	"导出/导入带上 popupScript",
+	clientSource.includes('"popupScript",'),
+	"config keys include popupScript",
 );
 /* 字重：三态配置 + 真卡与样卡都认它。 */
 check(

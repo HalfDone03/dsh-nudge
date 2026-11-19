@@ -82,6 +82,7 @@ window.__ModuleLoader__.load({
 			".dsh-nudge-text{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}",
 			".dsh-nudge-label{font-size:13px;line-height:20px}",
 			".dsh-nudge-hint{font-size:11.5px;line-height:16px;color:var(--dsw-alias-label-tertiary)}",
+			".dsh-nudge-input-wide{width:260px}",
 			".dsh-nudge-input{width:110px;flex:none;font:inherit;font-size:13px;padding:5px 8px;border-radius:7px;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l2);color:var(--dsw-alias-label-primary)}",
 			".dsh-nudge-areas{width:260px;flex:none;font:inherit;font-size:13px;line-height:20px;padding:6px 8px;border-radius:7px;border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-l2);color:var(--dsw-alias-label-primary);resize:vertical;min-height:64px}",
 			".dsh-nudge-switch{flex:none;width:36px;height:20px;margin:0;cursor:pointer;accent-color:var(--dsw-alias-state-business-primary)}",
@@ -337,7 +338,8 @@ function SwitchRow(props) {
 					"select",
 					{
 						key: "select",
-						className: "dsh-nudge-input",
+						// 选项文案长的行（比如「念什么」）用宽一点的控件，否则会被截断。
+						className: props.wide === true ? "dsh-nudge-input dsh-nudge-input-wide" : "dsh-nudge-input",
 						value: props.value,
 						disabled: props.disabled,
 						"aria-label": props.label,
@@ -755,7 +757,7 @@ const ROLE_LOOK = {
 			};
 			/**
 			 * 改动的组名（按页面顺序）：页脚的应用栏靠它告诉人「改的是哪几组」，
-			 * 九组之后光看「N 项」已经想不起来是在哪儿改的了。
+			 * 十组之后光看「N 项」已经想不起来是在哪儿改的了。
 			 */
 			const dirtyGroupNames = GROUP_DEFAULTS.filter(([id]) => groupDirty(id) > 0).map(
 				([id]) => (NAV_GROUPS.find(([navId]) => navId === id) ?? [id, id])[1],
@@ -1004,6 +1006,8 @@ const ROLE_LOOK = {
 				"debugFile",
 				"rememberPosition",
 				"sound",
+				// 自定义脚本路径也是配置的一部分，导出/导入别把它丢了（改了要重启才生效）。
+				"popupScript",
 			];
 
 			/** 把当前配置变成一段文本，塞进下面的框里。 */
@@ -1052,6 +1056,13 @@ const ROLE_LOOK = {
 			const roleSize = (role) => {
 				const size = num("typography." + role + ".size");
 				return size > 0 ? size : ROLE_SIZE[role];
+			};
+			/** 这一类的字重怎么念：留空跟随版式，或明确「常规 / 加粗」。 */
+			const weightLabel = (role) => {
+				const now = text("typography." + role + ".weight");
+				if (now === "bold") return "加粗";
+				if (now === "normal") return "常规";
+				return ROLE_LOOK[role].weight >= 600 ? "半粗（跟随版式）" : "常规（跟随版式）";
 			};
 			/** 字号输入框底下那句话：现在是多少、默认是多少。 */
 			const sizeHint = (role) => {
@@ -1285,8 +1296,13 @@ const ROLE_LOOK = {
 											key: "try",
 											type: "button",
 											className: "dsh-nudge-btn",
-											disabled,
-											title: "在桌面右下角真弹一张，拖边改尺寸、拖卡身换位置，都记在「位置」那一组里。",
+											// 预览卡按「已应用」的配置画，所以有未保存改动时先别开：
+											// 否则看到的是旧样子，会以为改坏了。
+											disabled: disabled || pending > 0,
+											title:
+												pending > 0
+													? "先把下面的改动点「应用」，预览卡才会按新设置来。"
+													: "在桌面右下角真弹一张，拖边改尺寸、拖卡身换位置，都记在「位置」那一组里。",
 											onClick: () => writeNow("debugPreview", !bool("debugPreview")),
 										},
 										bool("debugPreview") ? "收起桌面上的卡片" : "在桌面上弹一张看看",
@@ -1316,7 +1332,7 @@ const ROLE_LOOK = {
 						[
 							"正在调 ",
 							h("b", { key: "name" }, roleLabel(fontRole)),
-							" · " + roleSize(fontRole) + "px · " + (text("typography." + fontRole + ".color") === "" ? "颜色跟随主题" : text("typography." + fontRole + ".color")),
+							" · " + roleSize(fontRole) + "px · " + weightLabel(fontRole) + " · " + (text("typography." + fontRole + ".color") === "" ? "颜色跟随主题" : text("typography." + fontRole + ".color")),
 						],
 					),
 					h(
@@ -1624,8 +1640,10 @@ const ROLE_LOOK = {
 								disabled,
 								onCommit: (next) => write("sound.file", next),
 							})
-						: h(SelectRow, {
+						: text("sound.source") === "tts"
+							? h(SelectRow, {
 								key: "sound.phrase",
+								wide: true,
 								label: "念什么",
 								hint: "「只报类别」最简短；「带任务名」能听出是哪一摊活；「自定义」用下面的模板。",
 								value: text("sound.phrase") === "" ? "auto" : text("sound.phrase"),
@@ -1636,7 +1654,8 @@ const ROLE_LOOK = {
 								],
 								disabled,
 								onChange: (next) => write("sound.phrase", next),
-							}),
+							})
+							: null,
 					text("sound.source") === "tts" && text("sound.phrase") === "custom"
 						? h(TextRow, {
 								key: "sound.template",
@@ -1674,17 +1693,6 @@ const ROLE_LOOK = {
 								onCommit: (next) => write("sound.voice", next),
 							})
 						: null,
-					h(NumberRow, {
-						key: "sound.volume",
-						label: "音量（0–100）",
-						hint: "只影响这一声，不动系统音量。",
-						value: num("sound.volume"),
-						min: 0,
-						max: 100,
-						step: 5,
-						disabled,
-						onCommit: (next) => write("sound.volume", next),
-					}),
 					text("sound.source") === "tts"
 						? h(NumberRow, {
 								key: "sound.rate",
@@ -1710,6 +1718,17 @@ const ROLE_LOOK = {
 								onCommit: (next) => write("sound.maxChars", next),
 							})
 						: null,
+					h(NumberRow, {
+						key: "sound.volume",
+						label: "音量（0–100）",
+						hint: "只影响这一声，不动系统音量。",
+						value: num("sound.volume"),
+						min: 0,
+						max: 100,
+						step: 5,
+						disabled,
+						onCommit: (next) => write("sound.volume", next),
+					}),
 					/* 试听：写一个时间戳，宿主看到变化就播一次（不留卡片、不占槽位）。 */
 					h("div", { className: "dsh-nudge-actions", key: "trysound" }, [
 						h(
@@ -1720,7 +1739,22 @@ const ROLE_LOOK = {
 								className: "dsh-nudge-btn",
 								disabled: disabled || !bool("sound.enabled"),
 								title: bool("sound.enabled") ? "按现在的设置播一次" : "先把「卡片弹出时出声」打开",
-								onClick: () => writeNow("sound.previewNonce", String(Date.now())),
+								onClick: () => {
+									// 试听必须反映「你刚改的」，而不只是「已应用的」：把草稿里所有
+									// sound.* 和试听信号一次性写下去，其它组的改动仍留在草稿里。
+									const ops = Object.entries(draft)
+										.filter(([path]) => path.startsWith("sound."))
+										.map(([path, value]) => ({ op: "set", path: path.split("."), value }));
+									ops.push({ op: "set", path: ["sound", "previewNonce"], value: String(Date.now()) });
+									setFailure("");
+									Promise.resolve(form.mutate(ops, snapshot.revision))
+										.then((ok) => {
+											if (ok === false) setFailure("宿主没接受这次修改，已刷新成当前值。");
+										})
+										.catch((error) => {
+											setFailure(`写入失败：${error instanceof Error ? error.message : String(error)}`);
+										});
+								},
 							},
 							"试听",
 						),
@@ -1728,7 +1762,7 @@ const ROLE_LOOK = {
 					h(
 						"p",
 						{ className: "dsh-nudge-intro", key: "tryhint" },
-						"「试听」会按现在的设置播一次，不弹卡片、也不占卡片槽位；改了语音再点一次就能听新的。",
+						"「试听」按现在的设置播一次，不弹卡片、也不占卡片槽位。语音相关的改动会随试听一起写入（其它改动仍留在草稿里），所以改完直接点就能听。",
 					),
 				]),
 
