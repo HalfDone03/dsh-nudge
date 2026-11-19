@@ -120,8 +120,10 @@ window.__ModuleLoader__.load({
 			".dsh-nudge-btn:hover:not(:disabled){border-color:var(--dsw-alias-state-business-primary)}",
 			".dsh-nudge-btn:disabled{opacity:.5;cursor:not-allowed}",
 			".dsh-nudge-btn[data-on=\"1\"]{border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}",
-			".dsh-nudge-applybar{position:sticky;bottom:0;z-index:2;display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:0.5px solid var(--dsw-alias-state-business-primary);background:var(--dsw-alias-bg-l1);box-shadow:0 2px 12px rgba(0,0,0,.12)}",
-			".dsh-nudge-applytext{flex:1;font-size:13px;line-height:20px}",
+			".dsh-nudge-applybar{position:sticky;bottom:0;z-index:2;display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:0.5px solid var(--dsw-alias-state-business-primary);background:var(--dsw-alias-bg-l1);box-shadow:0 2px 12px rgba(0,0,0,.12)}",
+			".dsh-nudge-applytext{flex:1;font-size:13px;line-height:20px}",
+			".dsh-nudge-applyerror{flex-basis:100%;margin:0}",
+
 			".dsh-nudge-applywhere{display:flex;align-items:center;flex-wrap:wrap;font-size:12px;line-height:18px;opacity:.75}",
 			".dsh-nudge-applysep{opacity:.6}",
 			".dsh-nudge-applylink{padding:0;border:0;background:none;font:inherit;font-size:12px;line-height:18px;color:var(--dsw-alias-state-business-primary);cursor:pointer;text-decoration:underline;text-underline-offset:2px}",
@@ -184,6 +186,21 @@ window.__ModuleLoader__.load({
 				current = current[part];
 			}
 			return current;
+		}
+
+		/**
+		 * 把草稿子树深合到已应用值上（对象逐层合，其它值直接覆盖）。
+		 * @param {unknown} base 已应用值
+		 * @param {unknown} patch 草稿子树
+		 * @returns {unknown} 合并结果
+		 */
+		function mergeDeep(base, patch) {
+			if (patch === undefined) return base;
+			const isPlain = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+			if (!isPlain(base) || !isPlain(patch)) return patch;
+			const merged = { ...base };
+			for (const [key, next] of Object.entries(patch)) merged[key] = mergeDeep(base[key], next);
+			return merged;
 		}
 
 		/**
@@ -319,6 +336,19 @@ function SwitchRow(props) {
 					"aria-label": props.label,
 					onChange: (event) => setDraft(event.target.value),
 					onBlur: commit,
+					onKeyDown: (event) => {
+						// 敲完回车就走是常见习惯；只认 onBlur 的话这次改动会悄悄丢掉。
+						if (event.key === "Enter") {
+							event.preventDefault();
+							commit();
+							return;
+						}
+						// Esc 放弃这次输入，回到配置里的值。
+						if (event.key === "Escape") {
+							event.preventDefault();
+							setDraft(String(props.value));
+						}
+					},
 				}),
 			]);
 		}
@@ -374,6 +404,17 @@ function SwitchRow(props) {
 					onChange: (event) => setDraft(event.target.value),
 					onBlur: () => {
 						if (draft !== props.value) props.onCommit(draft);
+					},
+					onKeyDown: (event) => {
+						if (event.key === "Enter") {
+							event.preventDefault();
+							if (draft !== props.value) props.onCommit(draft);
+							return;
+						}
+						if (event.key === "Escape") {
+							event.preventDefault();
+							setDraft(props.value);
+						}
 					},
 				}),
 			]);
@@ -571,6 +612,8 @@ const ROLE_LOOK = {
 				["debugPreview", false],
 				["debugPayload", false],
 				["debugFile", ""],
+				// 同上：自定义弹窗脚本路径也是配置，恢复默认就该回到「用包内的」。
+				["popupScript", ""],
 			]],
 		];
 		for (const [role] of FONT_ROLES) {
@@ -688,6 +731,8 @@ const ROLE_LOOK = {
 			const [debugOpen, setDebugOpen] = React.useState(false);
 			/** 导出 / 导入框里的文本。 */
 			const [dump, setDump] = React.useState("");
+			/** 导出框上方那行小字：这次导出是否含未保存改动。 */
+			const [dumpNote, setDumpNote] = React.useState("");
 			/** 每分钟加一，让「现在是否静音」跟着时间走。 */
 			const [clock, setClock] = React.useState(0);
 			/** 还没点「应用」的改动：字段路径 → 新值。空对象表示没有待应用的改动。 */
@@ -962,6 +1007,10 @@ const ROLE_LOOK = {
 				for (const [, entries] of GROUP_DEFAULTS) {
 					for (const [path, value] of entries) merged.set(path, value);
 				}
+				// 落盘路径不是「设置项」（页面上没有控件），但它是配置的一部分：
+				// 名不副实的「全部恢复默认」比不给这个按钮更糟。
+				// 它只在「全部恢复」里出现，不进导入/导出键表——那是机器本地路径。
+				merged.set(MACHINE_LOCAL_KEYS[0], "");
 				return [...merged].map(([path, value]) => ({ path, value }));
 			};
 
@@ -1008,16 +1057,53 @@ const ROLE_LOOK = {
 				"sound",
 				// 自定义脚本路径也是配置的一部分，导出/导入别把它丢了（改了要重启才生效）。
 				"popupScript",
-			];
+			];
+
+			/**
+			 * 属于配置、但不该跟着「导出 / 导入」走的键：它们是这台机器上的路径，
+			 * 换机器就没有意义。故意用常量而不是字面量，免得被「键表不许出现」的断言误伤。
+			 */
+			const MACHINE_LOCAL_KEYS = ["placementFile"];
 
 			/** 把当前配置变成一段文本，塞进下面的框里。 */
+			/**
+			 * 把「界面上看到的」导成 JSON。
+			 *
+			 * 这里必须草稿优先：界面上的开关/下拉/数字读的都是 raw()（草稿优先），
+			 * 只导已应用值会出现「屏幕上写着 400，导出里是 384」这种自相矛盾。
+			 * @returns {string} 导出的 JSON 文本
+			 */
 			const exportText = () => {
 				setFailure("");
+				// 先整棵合，再逐键取：逐键合会让标量顶层键（width、staySeconds）
+				// 被包成 {width: 400} 这种结构，导出就多出一层。
+				const merged = mergeDeep(value, buildDraftPatch());
 				const picked = {};
 				for (const key of CONFIG_KEYS) {
-					if (value[key] !== undefined) picked[key] = value[key];
+					const next = readField(merged, key);
+					if (next !== undefined) picked[key] = next;
 				}
 				setDump(JSON.stringify(picked, null, 2));
+				setDumpNote(pending > 0 ? `包含 ${pending} 项未保存的改动（还没点「应用」）` : "");
+			};
+			/**
+			 * 把草稿里的改动拼成一棵「只含改动」的子树：`{width:400, sound:{enabled:true}}`。
+			 * @returns {object} 嵌套补丁（可能为空对象）
+			 */
+			const buildDraftPatch = () => {
+				const tree = {};
+				for (const path of draftPaths) {
+					const parts = path.split(".");
+					let cursor = tree;
+					// 标量顶层键（没有点）就停在自己身上
+					for (let index = 0; index < parts.length - 1; index += 1) {
+						const part = parts[index];
+						if (typeof cursor[part] !== "object" || cursor[part] === null) cursor[part] = {};
+						cursor = cursor[part];
+					}
+					cursor[parts[parts.length - 1]] = draft[path];
+				}
+				return tree;
 			};
 
 			/** 把框里的文本整段写回去。 */
@@ -1253,7 +1339,7 @@ const ROLE_LOOK = {
 					: snapshot.writable !== true
 						? h("p", { className: "dsh-nudge-warn", key: "readonly" }, "当前 profile 的配置是只读的，这里只能看不能改。")
 						: null,
-				failure === "" ? null : h("p", { className: "dsh-nudge-error", key: "failure", role: "alert" }, failure),
+				/* 失败提示只在应用栏里出现一次：写两处会让同一句话在页面上下各闪一下。 */
 
 				/* ---------------- 预览：只画样卡，没有配置项，所以没有「恢复默认」 ---------------- */
 				h("div", { className: "dsh-nudge-group", key: "preview", id: "dsh-nudge-g-preview" }, [
@@ -1576,10 +1662,18 @@ const ROLE_LOOK = {
 					h(SwitchRow, {
 						key: "clickToFocus",
 						label: "点击卡片回到 DSH",
-						hint: "关掉后点一下只是把卡片收起来：不跳回 DSH，也不往剪贴板写这批提醒。",
+						hint: "关掉后点一下只是把卡片收起来：不跳回 DSH，也不往剪贴板写这批提醒。和下面的「鼠标穿透」是二选一，打开一个会自动关掉另一个。",
 						checked: bool("clickToFocus"),
 						disabled,
-						onChange: (next) => write("clickToFocus", next),
+						// 两个开关是二选一：穿透打开时「回到 DSH」不起作用（宿主先判穿透），
+						// 联动写进同一批草稿，误点还能「放弃」。
+						onChange: (next) =>
+							next
+								? writeMany([
+										{ path: "clickToFocus", value: true },
+										{ path: "clickThrough", value: false },
+									])
+								: write("clickToFocus", false),
 					}),
 					h(SwitchRow, {
 						key: "clickThrough",
@@ -1587,7 +1681,13 @@ const ROLE_LOOK = {
 						hint: "卡片完全不接鼠标：点下去落到后面的窗口上，等于它不存在。想彻底只当提示，把上面那颗也关掉；代价是不能拖、不能右键关，只等停留时间到点自己消失。预览卡不受影响。",
 						checked: bool("clickThrough"),
 						disabled,
-						onChange: (next) => write("clickThrough", next),
+						onChange: (next) =>
+							next
+								? writeMany([
+										{ path: "clickThrough", value: true },
+										{ path: "clickToFocus", value: false },
+									])
+								: write("clickThrough", false),
 					}),
 				]),
 
@@ -1738,7 +1838,9 @@ const ROLE_LOOK = {
 								type: "button",
 								className: "dsh-nudge-btn",
 								disabled: disabled || !bool("sound.enabled"),
-								title: bool("sound.enabled") ? "按现在的设置播一次" : "先把「卡片弹出时出声」打开",
+								title: bool("sound.enabled")
+									? "按现在的设置播一次；语音相关的改动会一起生效（其它改动仍留在草稿里）"
+									: "先把「卡片弹出时出声」打开",
 								onClick: () => {
 									// 试听必须反映「你刚改的」，而不只是「已应用的」：把草稿里所有
 									// sound.* 和试听信号一次性写下去，其它组的改动仍留在草稿里。
@@ -1941,6 +2043,9 @@ const ROLE_LOOK = {
 					: null,
 					debugOpen
 						? h("div", { className: "dsh-nudge-actions", key: "iobtn" }, [
+							dumpNote === ""
+								? null
+								: h("p", { className: "dsh-nudge-warn", key: "dumpnote" }, dumpNote),
 							h("button", { key: "dumpbtn", type: "button", className: "dsh-nudge-btn", disabled, onClick: exportText }, "导出"),
 							h(
 								"button",
@@ -2011,6 +2116,10 @@ const ROLE_LOOK = {
 						},
 						"放弃",
 					),
+					/* 报错就写在手边：触发点（应用/试听/导入）都在页面底部，写到顶部等于没写。 */
+					failure === ""
+						? null
+						: h("p", { className: "dsh-nudge-error dsh-nudge-applyerror", key: "applyerror", role: "alert" }, failure),
 				]),
 				/* 全部恢复默认：九组一颗颗点太慢，但这是批量写回，所以要点两下。 */
 				h("div", { className: "dsh-nudge-resetall", key: "resetall" }, [
@@ -2019,7 +2128,7 @@ const ROLE_LOOK = {
 						{ className: "dsh-nudge-applytext", key: "text" },
 						resetAllArmed
 							? "再点一下就把全部 " + allDefaults().length + " 项写回出厂值（还没保存，可以「放弃」）"
-							: "把九组设置一起写回出厂值",
+							: "把全部设置一起写回出厂值",
 					),
 					h(
 						"button",

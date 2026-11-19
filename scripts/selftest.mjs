@@ -2133,6 +2133,117 @@ check(
 		&& popupSource.includes("SpeechSynthesizer]::AllVoices"),
 	"list voices",
 );
+/* 1.9.2 使用逻辑：提示就近、导出跟随草稿、开关互斥、恢复默认覆盖全、回车提交。 */
+check(
+	"失败提示写在应用栏里（就近可见）",
+	clientSource.includes('className: "dsh-nudge-error dsh-nudge-applyerror"')
+		&& clientSource.includes('.dsh-nudge-applyerror{flex-basis:100%'),
+	"failure must render inside the apply bar",
+);
+check(
+	"导出跟随草稿：标量顶层键不被包成子对象",
+	// 标量键（width / staySeconds）若被包成 {width:400}，导出就多出一层，这是实测过的坑
+	clientSource.includes("for (let index = 0; index < parts.length - 1; index += 1)")
+		&& !clientSource.includes("pickDraftTree"),
+	"draft patch must not wrap scalars",
+);
+check(
+	"导出跟随草稿，并标注未保存项数",
+	clientSource.includes("buildDraftPatch()")
+		&& clientSource.includes("mergeDeep(value, buildDraftPatch())")
+		&& clientSource.includes("项未保存的改动"),
+	"export must include the draft",
+);
+check(
+	"两个点击开关联动是功能上真实发生，不是只在源码里写着",
+	// 真正触发 SwitchRow 的 onChange，重新渲染后看两颗开关的实际状态：
+	// 打开「回到 DSH」之后「穿透」必须自己关掉，反之亦然。
+	(() => {
+		const findSwitch = (nodes, label) =>
+			nodes.find((node) => String(node.props?.className ?? "") === "dsh-nudge-switch" && node.props["aria-label"] === label);
+		const before = clientMutations.length;
+
+		// 场景一：打开「回到 DSH」→ 「穿透」应当变成关
+		findSwitch(clientNodes, "点击卡片回到 DSH").props.onChange({ target: { checked: true } });
+		const afterFocus = renderClientPage();
+		const throughAfterFocus = findSwitch(afterFocus.nodes, "鼠标穿透（纯提示）");
+		const focusAfterFocus = findSwitch(afterFocus.nodes, "点击卡片回到 DSH");
+
+		// 场景二：打开「穿透」→ 「回到 DSH」应当变成关
+		findSwitch(afterFocus.nodes, "鼠标穿透（纯提示）").props.onChange({ target: { checked: true } });
+		const afterThrough = renderClientPage();
+		const focusAfterThrough = findSwitch(afterThrough.nodes, "点击卡片回到 DSH");
+
+		// 还原，别影响后面的断言
+		findSwitch(afterThrough.nodes, "点击卡片回到 DSH").props.onChange({ target: { checked: true } });
+		renderClientPage();
+		clientMutations.length = before;
+
+		return (
+			throughAfterFocus?.props.checked === false
+			&& focusAfterFocus?.props.checked === true
+			&& focusAfterThrough?.props.checked === false
+		);
+	})(),
+	"click switches must actually link",
+);
+check(
+	"两个点击开关二选一：开一个自动关另一个",
+	clientSource.includes('{ path: "clickToFocus", value: true }')
+		&& clientSource.includes('{ path: "clickThrough", value: false }')
+		&& clientSource.includes('{ path: "clickThrough", value: true }')
+		&& clientSource.includes('{ path: "clickToFocus", value: false }'),
+	"click switches must be mutually exclusive",
+);
+check(
+	"全部恢复默认覆盖 placementFile",
+	clientSource.includes("MACHINE_LOCAL_KEYS")
+		&& clientSource.includes("merged.set(MACHINE_LOCAL_KEYS[0]"),
+	"reset-all must include placementFile",
+);
+check(
+	"回车真的提交了（不只是挂了 onKeyDown）",
+	// 真按一次 Enter，然后看草稿里有没有多出这一项：界面上的数字要变成新值。
+	(() => {
+		const findNumber = (nodes, label) =>
+			nodes.find(
+				(node) =>
+					String(node.props?.className ?? "").includes("dsh-nudge-input")
+					&& node.props.type === "number"
+					&& node.props["aria-label"] === label,
+			);
+		const before = clientMutations.length;
+		const input = findNumber(clientNodes, "停留秒数");
+		if (!input) return false;
+		// 打字 → 回车
+		input.props.onChange({ target: { value: "25" } });
+		const typed = renderClientPage();
+		const typedInput = findNumber(typed.nodes, "停留秒数");
+		typedInput.props.onKeyDown({ key: "Enter", preventDefault() {} });
+		const after = renderClientPage();
+		// 草稿里 25 生效 → 界面上的值变成 25，且应用栏出现「1 项改动还没保存」
+		const committed = findNumber(after.nodes, "停留秒数")?.props.value;
+		const bar = after.nodes.find((node) => node.props?.className === "dsh-nudge-applybar");
+		const barText = JSON.stringify(bar ?? {}).includes("还没保存");
+		// 还原
+		clientMutations.length = before;
+		renderClientPage();
+		return String(committed) === "25" && barText;
+	})(),
+	"enter must really commit",
+);
+check(
+	"数字框与文本框：回车提交、Esc 放弃",
+	(clientSource.match(/onKeyDown/gu) || []).length >= 2
+		&& clientSource.includes('event.key === "Enter"')
+		&& clientSource.includes('event.key === "Escape"'),
+	"enter commits, escape reverts",
+);
+check(
+	"试听按钮的说明与实际行为一致",
+	clientSource.includes("语音相关的改动会一起生效"),
+	"listen title must match behavior",
+);
 /* 1.9.1 审查：试听不重画预览、file 缺文件回落、念什么只对 tts、试听写草稿、预览按钮防呆。 */
 check(
 	"试听信号不进外观指纹（否则预览会跟着重念）",
@@ -2261,7 +2372,7 @@ check(
 	clientSource.includes("const flattenConfig = (prefix, value) =>")
 		&& clientSource.includes("entries.push(...flattenConfig(key, parsed[key]))")
 		&& clientSource.includes("const retryOneByOne = (note) =>")
-		&& !clientSource.includes('"placementFile",'),
+		&& !/const CONFIG_KEYS = \[(?:[^\]]|\][^;])*?placementFile/u.test(clientSource),
 	"import must flatten containers into leaf paths",
 );
 

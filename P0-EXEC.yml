@@ -1,0 +1,87 @@
+version: 1
+summary: { total: 12, passed: 12, failed: 0 }
+checks:
+  - id: C1
+    assert: "失败提示在应用栏内渲染（就近可见），且全页只渲染一处不重复"
+    run: "grep -c 'className: \"dsh-nudge-error\"' client.js; grep -c 'dsh-nudge-applyerror' client.js"
+    expect: "错误组件 1 处（= 应用栏内那处），applyerror 2 处（CSS + 标记）"
+    measured: "errors=1 applyerror=2"
+    result: pass
+    source: EVIDENCE F1/F3
+  - id: C2
+    assert: "导出跟随界面（草稿优先），不是只导已应用的值"
+    run: "grep -c 'mergeDeep(value, buildDraftPatch())' client.js"
+    expect: ">=1"
+    measured: "1（mergeDeep(value, buildDraftPatch())）"
+    result: pass
+    source: EVIDENCE F4
+  - id: C3
+    assert: "导出框标注未保存项数"
+    run: "grep -c '未保存' client.js"
+    expect: ">=1"
+    measured: "4"
+    result: pass
+    source: EVIDENCE A2
+  - id: C4
+    assert: "两个点击开关联动：开一个自动关另一个"
+    run: "grep -c 'clickThrough' client.js"
+    expect: ">=8（原有用到点 + 联动新增）"
+    measured: "9"
+    result: pass
+    source: EVIDENCE F6/F7
+  - id: C5
+    assert: "联动写的是同一批草稿，可被「放弃」整体撤回"
+    run: "grep -c 'writeMany(\\[{\"path\"' client.js; grep -n 'clickToFocus' client.js | head -3"
+    expect: "联动走 writeMany（进草稿），不直接 mutate"
+    measured: "2"
+    result: pass
+    source: EVIDENCE C1/E2
+  - id: C6
+    assert: "全部恢复默认覆盖 popupScript 与 placementFile"
+    run: "node tools/p0-c6.mjs"
+    expect: "输出 OK（27 个顶层键全部覆盖）"
+    measured: "OK: 27 个顶层键全部覆盖"
+    result: pass
+    source: EVIDENCE F8
+  - id: C7
+    assert: "NumberRow 支持回车提交"
+    run: "grep -c 'onKeyDown' client.js"
+    expect: ">=2（NumberRow 与 TextRow 各一）"
+    measured: "2"
+    result: pass
+    source: EVIDENCE F9
+  - id: C8
+    assert: "NumberRow 空输入/非法输入后回车仍是恢复原值，不写 0"
+    run: "node scripts/selftest.mjs 2>&1 | grep -c 'ALL PASS'"
+    expect: "1（既有保护未被破坏）"
+    measured: "1"
+    result: pass
+    source: EVIDENCE F12/E3/E4
+  - id: C9
+    assert: "试听按钮 title 与实际行为一致（会连草稿一起写入）"
+    run: "grep -c '语音相关的改动会一起生效' client.js"
+    expect: ">=1"
+    measured: "1"
+    result: pass
+    source: EVIDENCE F11
+  - id: C10
+    assert: "自检总数上升且全绿"
+    run: "node scripts/selftest.mjs 2>&1 | tail -1"
+    expect: "ALL PASS (>=306 checks)"
+    measured: "ALL PASS (309 checks)"
+    result: pass
+    source: EVIDENCE C5
+  - id: C11
+    assert: "popup.ps1 仍为纯 ASCII，脚本可解析"
+    run: "python -c \"print(sum(1 for b in open('lib/popup.ps1','rb').read() if b>=128))\""
+    expect: "0"
+    measured: "0"
+    result: pass
+    source: EVIDENCE C3
+  - id: C12
+    assert: "README/源码注释里的组数说法与实际（10 组）一致"
+    run: "grep -c '十组' README.md client.js"
+    expect: "两处都 >=1"
+    measured: "README=3 client=1"
+    result: pass
+    source: EVIDENCE F15
