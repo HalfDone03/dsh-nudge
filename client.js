@@ -1745,7 +1745,7 @@ const ROLE_LOOK = {
 								key: "sound.phrase",
 								wide: true,
 								label: "念什么",
-								hint: "「完整」念类别、任务名和状态原因（能听出具体卡在哪）；「只报类别」最简短；「自定义」用下面的模板。",
+								hint: "预制语音会先播自然短句，再按这里补念内容；「简版」只播短句（不补念），「完整/自定义」补念任务名与原因。",
 								value: text("sound.phrase") === "" ? "auto" : text("sound.phrase"),
 								options: [
 									{ value: "auto", label: "简版：只报类别" },
@@ -1756,7 +1756,7 @@ const ROLE_LOOK = {
 								onChange: (next) => write("sound.phrase", next),
 							})
 							: null,
-					text("sound.source") === "tts" && text("sound.phrase") === "custom"
+					(text("sound.source") === "tts" || text("sound.source") === "preset") && text("sound.phrase") === "custom"
 						? h(TextRow, {
 								key: "sound.template",
 								label: "播报模板",

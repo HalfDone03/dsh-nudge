@@ -1,45 +1,48 @@
-# 计划：提速（非常驻）+ 播报读到具体进度 + 设置页一致性优化
+# 计划：让预制语音也支持「念什么」（自定义播报内容）
+
+## 背景 / 为什么现在不行
+
+- 预制语音是 **3 个录死的 mp3**（`lib/voices/<声音>/{completed,needs_choice,failed}.mp3`，每个约 10KB），
+  内容是固定的「任务完成了 / 需要你选一下 / 执行失败了」。
+- 录音是死的：**没法把任意任务名 / 状态原因塞进一段录音**。
+- "念什么"（auto / detail / custom + `{kind}{project}{task}{detail}{count}`）依赖**实时合成**，
+  所以被限制在 TTS 来源下。
+- 用户问：为什么预制语音不能有"念什么"的功能。
+
+## 三条可行路线
+
+| 路线 | 效果 | 代价 |
+| --- | --- | --- |
+| **A. 混合播报（推荐）** | 保留预制短句做"自然前缀"，再用 TTS 补念使用者自定义的剩余部分（任务名/原因/模板）。等于"预制音色开头 + 任意内容跟上" | 会听到两种声音拼接；需解决两段串行不重叠（MediaEnded 事件已验证可用） |
+| **B. 用神经语音实时合成任意文本** | 预制语音的音色 + 任意"念什么"内容，真正两全 | 需要 edge-tts/在线合成在**弹卡瞬间**实时生成（1-3 秒延迟、需联网、需装 edge-tts），与"提速"目标冲突；或本机预生成海量组合（不现实） |
+| **C. 预制语音作为形象，内容仍走 TTS** | 把来源理解改成"提示音 + 播报"，预制短句当提示音，正文用 TTS | 同 A，只是叫法不同 |
+
+**建议 A**：改动小、可靠、满足"预制语音也能按我定的内容念"。
 
 ## Goal
 
-1. **响应提速（不做常驻）**：把合并窗口默认 400ms 降到 150ms，实测 push→spawn ~16–160ms，肉眼近乎即时；保留可配置，用户仍可调大做合并。
-2. **播报读到具体哪里**：让语音能念出卡片上的「状态/原因/进度」（`verdictText`，如"vite 退出码 1、第 3 步失败"），并按使用者想法自定义：新增模板占位符 `{detail}`，`detail` 模式 = 类别 + 任务名 + 状态原因。
-3. **设置页排版/一致性优化**：修来源下拉默认回退 `preset` 与宿主默认 `tts` 不一致；更新推荐文案；语音组摘要显示播报档位；模板提示补 `{detail}`；把「念什么」选项改成使用者能懂的说法。
-
-## Evidence（关键事实，已实测/已读）
-
-- merge 窗口实测：400→412ms、200→204ms、100→110ms、0→16ms（push→spawn）。
-- `speechTextOf()` 目前只拿 kind/label/headline(context)/count，**没有拿到 `verdictText`**（失败原因/进度）。
-- 卡片上 `verdictText` 在 `lib/popup.ps1:1037` 显示，payload 里有（`focus.verdictText`），只是没传给语音。
-- 自定义模板当前占位符：`{kind} {project} {task} {count}`，缺 `{detail}`。
-- 设置页来源下拉默认回退 `"preset"`，宿主默认 `source:"tts"`（不一致）；选项写「预制语音（自然，推荐）」。
-- 不做常驻（用户明确）；常驻原型虽 561ms 但计时器失效，已放弃。
+让 `sound.source=preset` 时也显示并尊重「念什么」：播完预制短句后，按 `phrase` 档位用 TTS 补念自定义内容；`auto` 档只播短句（等价现状）。
 
 ## Ordered steps
 
-1. **提速**：`DEFAULTS.mergeWindowMs` 400→150；客户端 GROUP_DEFAULTS 同步；同步 README/CHANGELOG。
-2. **语音带进度**：`soundFor()` 增加 `detail` 参数并传 `focus.verdictText`；`speechTextOf()` 新增 `detail` 模式（类别+任务名+原因）与 `{detail}` 模板占位符；helper 无需改（文本由宿主下发）；默认 phrase 从 `detail` 语义扩为「类别+任务名+原因」，保留 `auto`（只类别）与 `custom`。
-3. **设置页**：修来源下拉默认回退为 `tts`；选项文案改「系统朗读（默认·念任务名与原因）/ 预制语音（自然·固定短句）/ 本地音频」；「念什么」三档改为「完整：类别+任务+原因 / 简版：只报类别 / 自定义模板」；模板提示与摘要补 `{detail}`。
-4. **自检**：更新默认值断言，新增「语音含原因」「{detail} 模板」「来源默认 tts」断言。
-5. **真机验收 + 文档 + 发版 2.1.0**。
+1. 设置页：把「念什么」及相关控件从"仅 tts"放开到"tts 或 preset"；preset 下文案说明"先播自然短句，再补念下面的内容"。
+2. 宿主：`soundFor()` 在 preset 时依然下发 `text`（现已下发），并新增 `presetFollowText`（补念内容=按 phrase 拼好的文案，但 auto 档为空）。
+3. helper：`Play-PresetClip` 播完短句后，若有 `presetFollowText`，用同步 TTS 补念（复用现有 SAPI 代码；`-SoundOnly` 里已是同步路径）。两段串行，不重叠。
+4. 自检 + 真机：验证 preset+custom 会先播短句再念自定义内容、auto 只播短句；P0 断言。
+5. 文档 + 发版 2.2.0。
 
-## Acceptance checks（命令 + 期望）
+## Acceptance checks
 
 | ID | 命令 | 期望 |
 | --- | --- | --- |
-| C1 | `node -e "import('./lib/index.js').then(m=>console.log(m.DEFAULTS.mergeWindowMs))"` | `150` |
-| C2 | 临时脚本量 push→spawn | `< 300ms` |
-| C3 | `node -e` 调 `speechTextOf` 带 detail | 文案含失败原因 |
-| C4 | `node -e` 自定义模板 `{detail}` | 正确替换成原因文本 |
-| C5 | `grep -n 'value: .*preset' client.js` 语音来源默认 | 不是回退到 preset，默认 tts |
-| C6 | `node scripts/selftest.mjs 2>&1 \| tail -1` | `ALL PASS (>=311)` |
-| C7 | `python -c "print(sum(1 for b in open('lib/popup.ps1','rb').read() if b>=128))"` | `0` |
-| C8 | `-SoundOnly` 带 detail 的 payload | status `{"mode":"tts","ok":true}` |
-| C9 | 探针 5 个 | 全 `PROBE OK` |
+| C1 | `grep -n 'sound.source") === "tts" \|\| text("sound.source") === "preset"' client.js` | 「念什么」在 preset 下也渲染 |
+| C2 | `node -e` soundFor(source=preset, phrase=custom) | payload 含 presetFollowText |
+| C3 | `-SoundOnly` preset+custom payload | 状态行先 preset ok 再 tts ok |
+| C4 | 自检 | ALL PASS |
+| C5 | 5 探针 | 全 PROBE OK |
 
 ## Risks
 
-- 语音带原因后可能过长：`maxChars` 默认 60 会截断，需确认关键原因不被截掉（原因放前面或允许更长）。
-- 400→150 让同回合多条更易拆卡：保留可配置，且 `push()` 仍按 session 合并，影响可控。
-- 设置页默认回退改动会影响已有配置显示：已有配置有明确值，不受影响；只有缺失字段时回退到 tts（正确）。
-- `{detail}` 为空时不该留孤立标点：拼装时空值要跳过。
+- 两段声音拼接音色不同（自然女声 + 系统音），可能是缺点；在设置页说明清楚。
+- auto 档必须保持"只播短句"，否则默认变啰嗦。
+- 补念内容过长时仍受 maxChars 限制。

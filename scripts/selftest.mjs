@@ -2054,7 +2054,7 @@ check(
 check(
 	"payload 带 sound，念的是这一批的类别与任务",
 	indexSource.includes("sound: this.soundFor(")
-		&& indexSource.includes("text: speechTextOf(this.config, { kind, label, headline, context, detail, count })")
+		&& indexSource.includes("const text = speechTextOf(this.config, { kind, label, headline, context, detail, count })")
 		&& indexSource.includes("presetDir: presetVoiceDir(),")
 		&& indexSource.includes("presetVoice: this.config.sound.presetVoice,"),
 	"payload.sound",
@@ -2133,6 +2133,16 @@ check(
 		&& popupSource.includes("SpeechSynthesizer]::AllVoices"),
 	"list voices",
 );
+/* 2.2.0：预制语音也支持「念什么」——短句后补念自定义内容。 */
+check(
+	"preset 把自定义内容作为补念下发，auto 档不补念",
+	popupSource.includes("Speak-FollowText")
+		&& popupSource.includes("$result.FollowText = ([string]$Source.presetFollowText).Trim()")
+		&& indexSource.includes("presetFollowText = isPreset && phrase !== \"auto\" ? text :")
+		&& clientSource.includes('text("sound.source") === "tts" || text("sound.source") === "preset"'),
+	"preset follow text",
+);
+
 /* 2.1.0：语音念出状态/原因 + {detail} 模板 + 来源默认 tts。 */
 check(
 	"完整档播报含状态原因，{detail} 模板可用",
