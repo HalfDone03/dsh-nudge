@@ -161,7 +161,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
     placementFile: ''      # 位置记忆文件；留空 = %LOCALAPPDATA%\dsh-nudge\placement.json
     showWhenFocused: true  # DSH 在前台时也弹
     suppressWhenFullscreen: true  # 前台是全屏应用时整批不弹
-    mergeWindowMs: 1200    # 合并窗口（毫秒）
+    mergeWindowMs: 150    # 合并窗口（毫秒）
     maxItems: 8            # 一张卡最多列几条 1..20
     alertOnToolError: true # 单个工具调用失败也算「失败」提醒
     quietToolErrors: true  # 回合没跑完时的工具报错先攒着（开着时上面那条不生效）
@@ -196,8 +196,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
       enabled: false       # 打开后卡片弹出时出声
       source: tts          # tts 系统朗读（默认，能念出任务名）/ preset 预制短句 / file 本地音频
       presetVoice: xiaoxiao # preset 用哪一套：xiaoxiao 晓晓 / yunxi 云希 / xiaoyi 晓伊
-      phrase: detail       # 仅 tts 生效：detail 带任务名（默认）/ auto 只报类别 / custom 用模板
-      template: ''         # custom 的模板，支持 {kind} {project} {task} {count}
+      phrase: detail       # 仅 tts 生效：detail 完整：类别+任务+原因（默认）/ auto 只报类别 / custom 用模板
+      template: ''         # custom 的模板，支持 {kind} {project} {task} {detail} {count}
       file: ''             # source=file 时的音频路径（wav / mp3 / m4a）
       voice: ''            # 朗读语音名（子串匹配），留空用系统默认
       rate: 0              # 语速 -10..10

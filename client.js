@@ -604,7 +604,7 @@ const ROLE_LOOK = {
 				["quietToolErrors", true],
 			]],
 			["merge", [
-				["mergeWindowMs", 400],
+				["mergeWindowMs", 150],
 				["maxItems", 8],
 				["muteRanges", []],
 			]],
@@ -1236,7 +1236,7 @@ const ROLE_LOOK = {
 					return "本地音频 · " + name;
 				}
 				const phrase = text("sound.phrase");
-				const what = phrase === "detail" ? "带任务名" : phrase === "custom" ? "自定义模板" : "只报类别";
+				const what = phrase === "detail" ? "完整(含原因)" : phrase === "custom" ? "自定义模板" : "只报类别";
 				const voice = text("sound.voice") === "" ? "系统默认语音" : text("sound.voice");
 				return what + " · " + voice + " · " + num("sound.volume");
 			})();			const clickLabel = bool("clickThrough") ? "穿透：只当提示" : bool("clickToFocus") ? "点击回到 DSH" : "点击只收起";
@@ -1701,7 +1701,7 @@ const ROLE_LOOK = {
 					h(SwitchRow, {
 						key: "sound.enabled",
 						label: "卡片弹出时出声",
-						hint: "只在卡片真的弹出来时响：静音时段、全屏、被开关拦下的那些都不会出声。",
+						hint: "只在卡片真的弹出来时响：静音时段、全屏、被开关拦下的那些都不会出声。默认念「类别 + 任务名 + 状态原因」。",
 						checked: bool("sound.enabled"),
 						disabled,
 						onChange: (next) => write("sound.enabled", next),
@@ -1709,11 +1709,11 @@ const ROLE_LOOK = {
 					h(SelectRow, {
 						key: "sound.source",
 						label: "声音来源",
-						hint: "预制语音最自然（神经语音短句）；系统朗读用 Windows 自带的老引擎，机器人味重；本地文件支持 wav / mp3 / m4a。",
-						value: ["preset", "tts", "file"].includes(text("sound.source")) ? text("sound.source") : "preset",
+						hint: "系统朗读（默认）能念出任务名和原因；预制语音声音更自然但只能念固定短句；本地文件支持 wav / mp3 / m4a。",
+						value: ["preset", "tts", "file"].includes(text("sound.source")) ? text("sound.source") : "tts",
 						options: [
-							{ value: "preset", label: "预制语音（自然，推荐）" },
-							{ value: "tts", label: "系统朗读（TTS，机器味重）" },
+							{ value: "preset", label: "预制语音（自然·固定短句）" },
+							{ value: "tts", label: "系统朗读（默认·念任务与原因）" },
 							{ value: "file", label: "本地音频文件" },
 						],
 						disabled,
@@ -1745,11 +1745,11 @@ const ROLE_LOOK = {
 								key: "sound.phrase",
 								wide: true,
 								label: "念什么",
-								hint: "「只报类别」最简短；「带任务名」能听出是哪一摊活；「自定义」用下面的模板。",
+								hint: "「完整」念类别、任务名和状态原因（能听出具体卡在哪）；「只报类别」最简短；「自定义」用下面的模板。",
 								value: text("sound.phrase") === "" ? "auto" : text("sound.phrase"),
 								options: [
-									{ value: "auto", label: "只报类别（任务完成 / 需要你选择 / 执行失败）" },
-									{ value: "detail", label: "带任务名" },
+									{ value: "auto", label: "简版：只报类别" },
+									{ value: "detail", label: "完整：类别 + 任务名 + 状态/原因（默认）" },
 									{ value: "custom", label: "自定义模板" },
 								],
 								disabled,
@@ -1760,9 +1760,9 @@ const ROLE_LOOK = {
 						? h(TextRow, {
 								key: "sound.template",
 								label: "播报模板",
-								hint: "可用 {kind} 类别、{project} 项目名、{task} 任务名、{count} 条数；留空就等于「只报类别」。",
+								hint: "可用 {kind} 类别、{project} 项目名、{task} 任务名、{detail} 状态/原因/进度、{count} 条数；留空就等于「只报类别」。",
 								value: text("sound.template"),
-								placeholder: "{project} {kind}：{task}",
+								placeholder: "{project} {kind}：{task} {detail}",
 								disabled,
 								onCommit: (next) => write("sound.template", next),
 							})

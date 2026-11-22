@@ -2054,7 +2054,7 @@ check(
 check(
 	"payload 带 sound，念的是这一批的类别与任务",
 	indexSource.includes("sound: this.soundFor(")
-		&& indexSource.includes("text: speechTextOf(this.config, { kind, label, headline, context, count })")
+		&& indexSource.includes("text: speechTextOf(this.config, { kind, label, headline, context, detail, count })")
 		&& indexSource.includes("presetDir: presetVoiceDir(),")
 		&& indexSource.includes("presetVoice: this.config.sound.presetVoice,"),
 	"payload.sound",
@@ -2078,8 +2078,8 @@ check(
 	"设置页有语音组：开关、来源、念什么、语音、音量、语速",
 	clientSource.includes('key: "voice", id: "dsh-nudge-g-voice"')
 		&& clientSource.includes('label: "卡片弹出时出声"')
-		&& clientSource.includes('{ value: "preset", label: "预制语音（自然，推荐）" }')
-		&& clientSource.includes('{ value: "tts", label: "系统朗读（TTS，机器味重）" }')
+		&& clientSource.includes('{ value: "preset", label: "预制语音（自然·固定短句）" }')
+		&& clientSource.includes('{ value: "tts", label: "系统朗读（默认·念任务与原因）" }')
 		&& clientSource.includes('{ value: "file", label: "本地音频文件" }')
 		&& clientSource.includes('label: "念什么"')
 		&& clientSource.includes("const VOICE_PRESETS = [")
@@ -2133,6 +2133,28 @@ check(
 		&& popupSource.includes("SpeechSynthesizer]::AllVoices"),
 	"list voices",
 );
+/* 2.1.0：语音念出状态/原因 + {detail} 模板 + 来源默认 tts。 */
+check(
+	"完整档播报含状态原因，{detail} 模板可用",
+	speechTextOf(normalizeConfig({ sound: { enabled: true, phrase: "detail" } }), {
+		kind: "failed", label: "执行失败", headline: "修构建脚本", detail: "vite 退出码 1", count: 1
+	}) === "执行失败：修构建脚本：vite 退出码 1"
+		&& speechTextOf(normalizeConfig({ sound: { enabled: true, phrase: "custom", template: "{kind}|{detail}" } }), {
+		kind: "failed", label: "执行失败", detail: "卡在第 3 步", count: 1
+	}) === "执行失败|卡在第 3 步"
+		&& !speechTextOf(normalizeConfig({ sound: { enabled: true, phrase: "custom", template: "{kind} {detail}" } }), {
+		kind: "failed", label: "执行失败", detail: "", count: 1
+	}).includes("{detail}"),
+	"detail is spoken and templated",
+);
+check(
+	"来源下拉默认回退 tts，与宿主默认一致",
+	clientSource.includes('? text("sound.source") : "tts"')
+		&& DEFAULTS.sound.source === "tts"
+		&& clientSource.includes("{detail} 状态/原因/进度"),
+	"source dropdown defaults to tts",
+);
+
 /* 2.0.0：默认念任务名 + 更短的合并窗口。 */
 check(
 	"默认来源 tts + phrase detail，播报含任务名",
@@ -2144,10 +2166,10 @@ check(
 	"task name is spoken by default",
 );
 check(
-	"合并窗口默认降到 400ms",
-	DEFAULTS.mergeWindowMs === 400
-		&& clientSource.includes('["mergeWindowMs", 400]'),
-	"merge window lowered to 400ms",
+	"合并窗口默认降到 150ms",
+	DEFAULTS.mergeWindowMs === 150
+		&& clientSource.includes('["mergeWindowMs", 150]'),
+	"merge window lowered to 150ms",
 );
 
 /* 1.9.2 使用逻辑：提示就近、导出跟随草稿、开关互斥、恢复默认覆盖全、回车提交。 */
