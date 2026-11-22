@@ -194,9 +194,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
     debugFile: ''          # 落盘文件；留空 = %TEMP%\dsh-nudge-payloads.jsonl（超 5MB 轮转成 .1）
     sound:                 # 语音提示：默认关着
       enabled: false       # 打开后卡片弹出时出声
-      source: preset       # preset 预制语音（默认，自然）/ tts 系统朗读 / file 本地音频
+      source: tts          # tts 系统朗读（默认，能念出任务名）/ preset 预制短句 / file 本地音频
       presetVoice: xiaoxiao # preset 用哪一套：xiaoxiao 晓晓 / yunxi 云希 / xiaoyi 晓伊
-      phrase: auto         # 仅 tts 生效：auto 只报类别 / detail 带任务名 / custom 用 template
+      phrase: detail       # 仅 tts 生效：detail 带任务名（默认）/ auto 只报类别 / custom 用模板
       template: ''         # custom 的模板，支持 {kind} {project} {task} {count}
       file: ''             # source=file 时的音频路径（wav / mp3 / m4a）
       voice: ''            # 朗读语音名（子串匹配），留空用系统默认

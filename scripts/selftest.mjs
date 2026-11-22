@@ -1744,7 +1744,7 @@ const sizeRows = sizePage.components.filter((item) => item.type.name === "Number
 const sizeLabels = sizeRows.map((item) => item.props.label).filter((label) => typeof label === "string" && label.startsWith("字号（"));
 check(
 	"字号只画选中的那一类，八类都点得到",
-	sizeRows.length === 7 && roleButtons(sizePage.nodes).length === 8 && sizeLabels.length === 1 && sizeLabels[0] === "字号（项目名）",
+	sizeRows.length === 9 && roleButtons(sizePage.nodes).length === 8 && sizeLabels.length === 1 && sizeLabels[0] === "字号（项目名）",
 	"rows=" + sizeRows.length + " labels=" + sizeLabels.join("|"),
 );
 check(
@@ -2032,8 +2032,8 @@ check(
 check(
 	"语音配置默认关着，非法值抛错",
 	DEFAULTS.sound.enabled === false
-		&& DEFAULTS.sound.source === "preset"
-		&& DEFAULTS.sound.phrase === "auto"
+		&& DEFAULTS.sound.source === "tts"
+		&& DEFAULTS.sound.phrase === "detail"
 		&& normalizeConfig({ sound: { enabled: true, volume: 55 } }).sound.volume === 55
 		&& (() => { try { normalizeConfig({ sound: { source: "x" } }); return false; } catch { return true; } })()
 		&& (() => { try { normalizeConfig({ sound: { rate: 99 } }); return false; } catch { return true; } })()
@@ -2095,7 +2095,7 @@ check(
 	["tts", "preset", "file"].every((value) => normalizeConfig({ sound: { source: value } }).sound.source === value)
 		&& normalizeConfig({ sound: { presetVoice: "yunxi" } }).sound.presetVoice === "yunxi"
 		&& DEFAULTS.sound.presetVoice === "xiaoxiao"
-		&& DEFAULTS.sound.source === "preset"
+		&& DEFAULTS.sound.source === "tts"
 		&& (() => { try { normalizeConfig({ sound: { source: "bogus" } }); return false; } catch { return true; } })(),
 	"preset config",
 );
@@ -2133,6 +2133,23 @@ check(
 		&& popupSource.includes("SpeechSynthesizer]::AllVoices"),
 	"list voices",
 );
+/* 2.0.0：默认念任务名 + 更短的合并窗口。 */
+check(
+	"默认来源 tts + phrase detail，播报含任务名",
+	DEFAULTS.sound.source === "tts"
+		&& DEFAULTS.sound.phrase === "detail"
+		&& speechTextOf(normalizeConfig({ sound: { enabled: true } }), {
+			kind: "completed", label: "任务完成", headline: "优化插件语音", context: "dsh-nudge", count: 1
+		}) === "任务完成：优化插件语音",
+	"task name is spoken by default",
+);
+check(
+	"合并窗口默认降到 400ms",
+	DEFAULTS.mergeWindowMs === 400
+		&& clientSource.includes('["mergeWindowMs", 400]'),
+	"merge window lowered to 400ms",
+);
+
 /* 1.9.2 使用逻辑：提示就近、导出跟随草稿、开关互斥、恢复默认覆盖全、回车提交。 */
 check(
 	"失败提示写在应用栏里（就近可见）",
