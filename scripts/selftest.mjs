@@ -2114,15 +2114,15 @@ check(
 	"bundled clips + user override",
 );
 check(
-	"预制语音：helper 找片段、缺片回落 TTS、关窗停播",
+	"预制语音：单一自然音 + 缺片回落 TTS + 关窗停播",
 	popupSource.includes("function Get-PresetClipPath {")
 		&& popupSource.includes("function Play-PresetClip {")
 		&& popupSource.includes("if ($script:Sound.Source -eq 'preset') {")
 		&& popupSource.includes("if (Play-PresetClip) { return }")
 		&& popupSource.includes("foreach ($ext in @('.mp3', '.wav', '.m4a'))")
 		// 试听模式也要能放片段，且缺片时继续往下走（回落 TTS），不能直接 exit
-		&& popupSource.includes("$presetClip = Get-PresetClipPath")
-		&& popupSource.includes("if ($presetClip -ne '') {"),
+		&& popupSource.includes("$neuralFile = $script:Sound.NeuralFile")
+		&& popupSource.includes("mode = 'neural'; ok = $true"),
 	"preset playback + fallback",
 );
 check(

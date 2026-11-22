@@ -564,7 +564,7 @@ $script:media = $null
 
 function Resolve-Sound {
     param($Source)
-    $result = @{ Enabled = $false; Source = 'tts'; File = ''; Voice = ''; Rate = 0; Volume = 80; Text = ''; PresetDir = ''; PresetVoice = ''; Kind = '' }
+    $result = @{ Enabled = $false; Source = 'tts'; File = ''; Voice = ''; Rate = 0; Volume = 80; Text = ''; PresetDir = ''; PresetVoice = ''; Kind = ''; NeuralFile = '' }
     if ($null -eq $Source) { return $result }
     try { $result.Enabled = [bool]$Source.enabled } catch { $result.Enabled = $false }
     if (-not $result.Enabled) { return $result }
@@ -576,6 +576,7 @@ function Resolve-Sound {
     try { $result.PresetDir = [string]$Source.presetDir } catch { $result.PresetDir = '' }
     try { $result.PresetVoice = [string]$Source.presetVoice } catch { $result.PresetVoice = '' }
     try { $result.Kind = [string]$Source.kind } catch { $result.Kind = '' }
+    try { $result.NeuralFile = [string]$Source.neuralFile } catch { $result.NeuralFile = '' }
     try { $result.File = [string]$Source.file } catch { $result.File = '' }
     try { $result.Voice = [string]$Source.voice } catch { $result.Voice = '' }
     try { $result.Rate = [int]$Source.rate } catch { $result.Rate = 0 }
@@ -664,8 +665,20 @@ function Play-PresetClip {
 function Start-CardSound {
     if (-not $script:Sound.Enabled) { return }
     if ($script:Sound.Source -eq 'preset') {
+        # One natural voice reads the whole sentence from a cached file.
+        $nf = $script:Sound.NeuralFile
+        if (-not [string]::IsNullOrWhiteSpace($nf) -and (Test-Path -LiteralPath $nf)) {
+            try {
+                $player = New-Object System.Windows.Media.MediaPlayer
+                $player.Volume = [double]$script:Sound.Volume / 100.0
+                $player.Open((New-Object System.Uri -ArgumentList $nf))
+                $player.Play()
+                $script:media = $player
+                Write-Status @{ type = 'sound'; mode = 'neural'; ok = $true; file = (Split-Path -Leaf $nf) }
+                return
+            } catch { }
+        }
         if (Play-PresetClip) { return }
-        # No clip for this kind/voice: fall back to speech so the card is not silent.
         Write-Status @{ type = 'sound'; mode = 'preset'; ok = $false; reason = 'missing' }
     }
     if ($script:Sound.Source -eq 'file') {
@@ -1567,40 +1580,28 @@ if ($SoundOnly) {
     }
     $presetClip = ''
     if ($script:Sound.Source -eq 'preset') {
-        $presetClip = Get-PresetClipPath
-        if ($presetClip -eq '') {
-            # No clip for this kind/voice: fall through to speech, exactly like the card
-            # does, so a half-installed preset set never makes the button silent.
-            Write-Status @{ type = 'sound'; mode = 'preset'; ok = $false; reason = 'missing' }
-        }
-    }
-    if ($presetClip -ne '') {
-        $clip = $presetClip
-        try {
-            # Blocking on purpose: this process is the player (see the header).
-            Add-Type -AssemblyName PresentationCore -ErrorAction Stop
-            $media = New-Object System.Windows.Media.MediaPlayer
-            $media.Volume = [double]$script:Sound.Volume / 100.0
-            $script:mediaEnded = $false
-            $media.Add_MediaEnded({ $script:mediaEnded = $true })
-            $media.Add_MediaFailed({ $script:mediaEnded = $true })
-            $media.Open((New-Object System.Uri -ArgumentList $clip))
-            $media.Play()
-            $deadline = [DateTime]::UtcNow.AddSeconds(15)
-            while (-not $script:mediaEnded -and [DateTime]::UtcNow -lt $deadline) {
-                [System.Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke(
-                    [System.Windows.Threading.DispatcherPriority]::Background,
-                    [action] { }
-                )
-                Start-Sleep -Milliseconds 40
-            }
-            try { $media.Stop() } catch { }
-            try { $media.Close() } catch { }
-            Write-Status @{ type = 'sound'; mode = 'preset'; ok = $true; clip = (Split-Path -Leaf $clip) }
-            exit 0
-        } catch {
-            Write-Status @{ type = 'sound'; mode = 'preset'; ok = $false; reason = $_.Exception.Message }
-            exit 0
+        $neuralFile = $script:Sound.NeuralFile
+        if ((-not [string]::IsNullOrWhiteSpace($neuralFile)) -and (Test-Path -LiteralPath $neuralFile)) {
+            try {
+                Add-Type -AssemblyName PresentationCore -ErrorAction Stop
+                $media = New-Object System.Windows.Media.MediaPlayer
+                $media.Volume = [double]$script:Sound.Volume / 100.0
+                $script:mediaEnded = $false
+                $media.Add_MediaEnded({ $script:mediaEnded = $true })
+                $media.Add_MediaFailed({ $script:mediaEnded = $true })
+                $media.Open((New-Object System.Uri -ArgumentList $neuralFile))
+                $media.Play()
+                $deadline = [DateTime]::UtcNow.AddSeconds(15)
+                while (-not $script:mediaEnded -and [DateTime]::UtcNow -lt $deadline) {
+                    [System.Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke(
+                        [System.Windows.Threading.DispatcherPriority]::Background, [action] { })
+                    Start-Sleep -Milliseconds 40
+                }
+                try { $media.Stop() } catch { }
+                try { $media.Close() } catch { }
+                Write-Status @{ type = 'sound'; mode = 'neural'; ok = $true; file = (Split-Path -Leaf $neuralFile) }
+                exit 0
+            } catch { }
         }
     }
     if ($script:Sound.Source -eq 'file') {

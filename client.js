@@ -1745,7 +1745,7 @@ const ROLE_LOOK = {
 								key: "sound.phrase",
 								wide: true,
 								label: "念什么",
-								hint: "预制语音只播一句自然短句，声音统一；要念任务名、状态原因或自定义模板，请选「系统朗读」（单一音色）。",
+								hint: "预制语音用一个自然音色念完整内容（类别+任务名+原因）；简版只报类别。合成需装 dsh-voice 并联网，失败时自动回落系统朗读。",
 								value: text("sound.phrase") === "" ? "auto" : text("sound.phrase"),
 								options: [
 									{ value: "auto", label: "简版：只报类别" },
@@ -1756,7 +1756,7 @@ const ROLE_LOOK = {
 								onChange: (next) => write("sound.phrase", next),
 							})
 							: null,
-					text("sound.source") === "tts" && text("sound.phrase") === "custom"
+					(text("sound.source") === "tts" || text("sound.source") === "preset") && text("sound.phrase") === "custom"
 						? h(TextRow, {
 								key: "sound.template",
 								label: "播报模板",

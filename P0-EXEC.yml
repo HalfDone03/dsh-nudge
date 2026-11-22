@@ -1,38 +1,45 @@
 version: 1
-summary: { total: 5, passed: 5, failed: 0 }
+summary: { total: 6, passed: 6, failed: 0 }
 checks:
   - id: C1
-    assert: "两段拼接已撤掉"
-    run: "grep -c 'Speak-FollowText\\|presetFollowText' lib/index.js lib/popup.ps1"
-    expect: "0"
-    measured: "0"
+    assert: "宿主能异步合成并缓存整句自然音"
+    run: "node 脚本走 schedule，看 payload.sound.neuralFile"
+    expect: "neuralFile 非空，source=preset"
+    measured: "source=preset, neuralFile=dsh-nudge-voice-1p4x84s.mp3"
     result: pass
-    source: 本轮目标
+    source: 端到端
   - id: C2
-    assert: "preset 试听只播一条音频"
-    run: "powershell -File lib/popup.ps1 -PayloadFile <preset> -SoundOnly"
-    expect: "只有一条 preset 状态行，无 follow"
-    measured: "只有 {\"mode\":\"preset\",\"ok\":true,\"clip\":\"failed.mp3\"}"
+    assert: "试听只有一条声音状态行（单一音色，不拼接）"
+    run: "powershell -File lib/popup.ps1 -PayloadFile <neuralFile> -SoundOnly"
+    expect: "仅 mode=neural ok"
+    measured: "仅 {\"mode\":\"neural\",\"ok\":true,\"file\":\"dsh-nudge-voice-1p4x84s.mp3\"}"
     result: pass
-    source: 真机验证
+    source: 真机
   - id: C3
-    assert: "念什么恢复仅 tts 可用"
-    run: "grep -c 'text(\"sound.source\") === \"tts\"' client.js"
-    expect: ">=1"
-    measured: "6"
+    assert: "缓存命中够快"
+    run: "push 后 600ms 看是否 spawn"
+    expect: "< 700ms"
+    measured: "605ms"
+    result: pass
+    source: 性能
+  - id: C4
+    assert: "念什么对 preset 放开"
+    run: "grep client.js 的 source 条件"
+    expect: "phrase/template 对 preset 可见"
+    measured: "1 处放开 + 模板已放开"
     result: pass
     source: 设置页
-  - id: C4
+  - id: C5
     assert: "自检全绿"
     run: "node scripts/selftest.mjs 2>&1 | tail -1"
     expect: "ALL PASS"
     measured: "ALL PASS (314 checks)"
     result: pass
     source: 自检
-  - id: C5
-    assert: "5 探针无回归"
-    run: "逐个 probe-*.ps1"
-    expect: "全 PROBE OK"
-    measured: "5/5 PROBE OK"
+  - id: C6
+    assert: "探针与 ASCII"
+    run: "5 个 probe-*.ps1 + python 查 popup 非 ASCII"
+    expect: "全 PROBE OK；非 ASCII=0"
+    measured: "5/5 PROBE OK；nonascii=0"
     result: pass
-    source: 探针
+    source: 回归
