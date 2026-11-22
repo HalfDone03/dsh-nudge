@@ -564,7 +564,7 @@ $script:media = $null
 
 function Resolve-Sound {
     param($Source)
-    $result = @{ Enabled = $false; Source = 'tts'; File = ''; Voice = ''; Rate = 0; Volume = 80; Text = ''; PresetDir = ''; PresetVoice = ''; Kind = ''; FollowText = '' }
+    $result = @{ Enabled = $false; Source = 'tts'; File = ''; Voice = ''; Rate = 0; Volume = 80; Text = ''; PresetDir = ''; PresetVoice = ''; Kind = '' }
     if ($null -eq $Source) { return $result }
     try { $result.Enabled = [bool]$Source.enabled } catch { $result.Enabled = $false }
     if (-not $result.Enabled) { return $result }
@@ -576,7 +576,6 @@ function Resolve-Sound {
     try { $result.PresetDir = [string]$Source.presetDir } catch { $result.PresetDir = '' }
     try { $result.PresetVoice = [string]$Source.presetVoice } catch { $result.PresetVoice = '' }
     try { $result.Kind = [string]$Source.kind } catch { $result.Kind = '' }
-    try { $result.FollowText = ([string]$Source.presetFollowText).Trim() } catch { $result.FollowText = '' }
     try { $result.File = [string]$Source.file } catch { $result.File = '' }
     try { $result.Voice = [string]$Source.voice } catch { $result.Voice = '' }
     try { $result.Rate = [int]$Source.rate } catch { $result.Rate = 0 }
@@ -650,7 +649,6 @@ function Play-PresetClip {
         $player.Open((New-Object System.Uri -ArgumentList $clip))
         $player.Play()
         # When the natural clip ends, read any extra sentence (task / reason).
-        try { $player.Add_MediaEnded({ try { Speak-FollowText } catch { } }) } catch { }
         $script:media = $player
         Write-Status @{ type = 'sound'; mode = 'preset'; ok = $true; clip = (Split-Path -Leaf $clip) }
         return $true
@@ -662,32 +660,6 @@ function Play-PresetClip {
 
 # Speak the extra sentence after a preset clip, using the same SAPI path as tts.
 # Synchronous in -SoundOnly (this process is the player); async for a card.
-function Speak-FollowText {
-    param([bool]$Sync = $false)
-    if ([string]::IsNullOrWhiteSpace($script:Sound.FollowText)) { return }
-    try {
-        Add-Type -AssemblyName System.Speech -ErrorAction Stop
-        $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
-        $synth.Volume = $script:Sound.Volume
-        $synth.Rate = $script:Sound.Rate
-        if (-not [string]::IsNullOrWhiteSpace($script:Sound.Voice)) {
-            $picked = ''
-            try {
-                foreach ($installed in $synth.GetInstalledVoices()) {
-                    $name = [string]$installed.VoiceInfo.Name
-                    if ($name -like ('*' + $script:Sound.Voice + '*')) { $picked = $name; break }
-                }
-            } catch { }
-            if ($picked -ne '') { try { $synth.SelectVoice($picked) } catch { } }
-        }
-        $script:synth = $synth
-        if ($Sync) { $synth.Speak($script:Sound.FollowText) | Out-Null }
-        else { $synth.SpeakAsync($script:Sound.FollowText) | Out-Null }
-        Write-Status @{ type = 'sound'; mode = 'follow'; ok = $true; text = $script:Sound.FollowText }
-    } catch {
-        Write-Status @{ type = 'sound'; mode = 'follow'; ok = $false; reason = $_.Exception.Message }
-    }
-}
 
 function Start-CardSound {
     if (-not $script:Sound.Enabled) { return }
@@ -1625,7 +1597,6 @@ if ($SoundOnly) {
             try { $media.Stop() } catch { }
             try { $media.Close() } catch { }
             Write-Status @{ type = 'sound'; mode = 'preset'; ok = $true; clip = (Split-Path -Leaf $clip) }
-            try { Speak-FollowText -Sync $true } catch { }
             exit 0
         } catch {
             Write-Status @{ type = 'sound'; mode = 'preset'; ok = $false; reason = $_.Exception.Message }

@@ -2133,14 +2133,14 @@ check(
 		&& popupSource.includes("SpeechSynthesizer]::AllVoices"),
 	"list voices",
 );
-/* 2.2.0：预制语音也支持「念什么」——短句后补念自定义内容。 */
+/* 2.2.1：撤掉两段拼接，声音统一（preset 只播短句）。 */
 check(
-	"preset 把自定义内容作为补念下发，auto 档不补念",
-	popupSource.includes("Speak-FollowText")
-		&& popupSource.includes("$result.FollowText = ([string]$Source.presetFollowText).Trim()")
-		&& indexSource.includes("presetFollowText = isPreset && phrase !== \"auto\" ? text :")
-		&& clientSource.includes('text("sound.source") === "tts" || text("sound.source") === "preset"'),
-	"preset follow text",
+	"预制语音只播一段，不再补念（声音统一）",
+	!indexSource.includes("presetFollowText")
+		&& !popupSource.includes("Speak-FollowText")
+		&& !popupSource.includes("mode = 'follow'")
+		&& clientSource.includes('text("sound.source") === "tts"'),
+	"single preset voice",
 );
 
 /* 2.1.0：语音念出状态/原因 + {detail} 模板 + 来源默认 tts。 */

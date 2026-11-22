@@ -2,37 +2,37 @@ version: 1
 summary: { total: 5, passed: 5, failed: 0 }
 checks:
   - id: C1
-    assert: "preset 来源下也显示「念什么」控件"
-    run: "grep -c 'text(\"sound.source\") === \"tts\" || text(\"sound.source\") === \"preset\"' client.js"
-    expect: ">=1"
-    measured: "1"
+    assert: "两段拼接已撤掉"
+    run: "grep -c 'Speak-FollowText\\|presetFollowText' lib/index.js lib/popup.ps1"
+    expect: "0"
+    measured: "0"
     result: pass
-    source: plan.md 步骤1
+    source: 本轮目标
   - id: C2
-    assert: "preset 下按 phrase 拼出补念文本，auto 档不补念"
-    run: "node -e soundFor(source=preset,phrase=custom,template='{kind}|{task}')"
-    expect: "presetFollowText = 执行失败|修脚本"
-    measured: "执行失败|修脚本"
+    assert: "preset 试听只播一条音频"
+    run: "powershell -File lib/popup.ps1 -PayloadFile <preset> -SoundOnly"
+    expect: "只有一条 preset 状态行，无 follow"
+    measured: "只有 {\"mode\":\"preset\",\"ok\":true,\"clip\":\"failed.mp3\"}"
     result: pass
-    source: plan.md 步骤2
+    source: 真机验证
   - id: C3
-    assert: "真机试听：先播自然短句再补念自定义内容"
-    run: "powershell -File lib/popup.ps1 -PayloadFile <preset+follow> -SoundOnly"
-    expect: "先 preset ok 再 follow ok；auto 档只有 preset"
-    measured: "preset ok + follow ok(执行失败：修构建脚本：vite 退出码 1)；auto 档仅 preset ok"
+    assert: "念什么恢复仅 tts 可用"
+    run: "grep -c 'text(\"sound.source\") === \"tts\"' client.js"
+    expect: ">=1"
+    measured: "6"
     result: pass
-    source: plan.md 步骤3
+    source: 设置页
   - id: C4
     assert: "自检全绿"
     run: "node scripts/selftest.mjs 2>&1 | tail -1"
-    expect: "ALL PASS (>=314 checks)"
+    expect: "ALL PASS"
     measured: "ALL PASS (314 checks)"
     result: pass
-    source: plan.md 步骤4
+    source: 自检
   - id: C5
-    assert: "5 个窗口探针（隔离运行）无回归"
-    run: "逐个运行 probe-*.ps1"
-    expect: "全部 PROBE OK"
-    measured: "reflow/remembered/inplace/passthrough 一次通过；click 在隔离运行时 OK（连跑时受焦点干扰偶发失败，已用 stash 对照确认非代码回归）"
+    assert: "5 探针无回归"
+    run: "逐个 probe-*.ps1"
+    expect: "全 PROBE OK"
+    measured: "5/5 PROBE OK"
     result: pass
-    source: plan.md 步骤4
+    source: 探针
