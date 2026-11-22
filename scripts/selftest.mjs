@@ -2112,7 +2112,7 @@ check(
 				existsSync(join(root, "lib", "voices", voice, kind + ".mp3")),
 			),
 		)
-		&& readmeSource.includes("make-voice-presets.ps1"),
+		&& readmeSource.includes("lib/voices/"),
 	"bundled clips + user override",
 );
 check(
@@ -2135,6 +2135,35 @@ check(
 		&& popupSource.includes("SpeechSynthesizer]::AllVoices"),
 	"list voices",
 );
+/* 2.3.2：试听走自然音 + 缓存 TTL/上限/重建 + 批次文案一致。 */
+check(
+	"试听路径也合成自然音（与真提醒同一链路）",
+	indexSource.includes("async playSoundOnly(items) {")
+		&& indexSource.includes("await ensureNeuralAudio(this.config, trialText);"),
+	"audition synthesizes too",
+);
+check(
+	"语音缓存有 TTL、上限与跨进程重建",
+	indexSource.includes("NEURAL_CACHE_TTL_MS")
+		&& indexSource.includes("NEURAL_CACHE_MAX")
+		&& indexSource.includes("function restoreNeuralCache() {")
+		&& indexSource.includes("saveNeuralIndex();"),
+	"neural cache ttl/max/restore",
+);
+check(
+	"定时器与 show 用同一个批次文案（多条不跑偏）",
+	indexSource.includes("speechTextForBatch(ordered)")
+		&& indexSource.includes("const text = this.speechTextForBatch(ordered);"),
+	"batch speech text shared",
+);
+check(
+	"README 语音小节是当前行为，不再写固定短句/生成脚本",
+	readmeSource.includes("一个自然音色念完整内容")
+		&& !/固定短句：任务完成了/u.test(readmeSource)
+		&& !/make-voice-presets\.ps1/u.test(readmeSource),
+	"readme voice section current",
+);
+
 /* 2.3.1：自然语音的依赖声明（可选，不强制安装）。 */
 check(
 	"dsh-voice 声明为可选 peer 依赖",

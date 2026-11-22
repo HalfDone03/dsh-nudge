@@ -2,44 +2,44 @@ version: 1
 summary: { total: 6, passed: 6, failed: 0 }
 checks:
   - id: C1
-    assert: "dsh-voice 声明为 peer 依赖"
-    run: "node -e \"console.log(JSON.stringify(require('./package.json').peerDependencies))\""
-    expect: "含 dsh-voice"
-    measured: "{\"dsh-voice\":\">=0.10.0\"}"
+    assert: "试听走自然音合成链路"
+    run: "node -e await playSoundOnly(...) 后 soundFor 查缓存"
+    expect: "source=preset 且 neuralFile 非空"
+    measured: "preset neural OK"
     result: pass
-    source: package.json
+    source: 修1
   - id: C2
-    assert: "dsh-voice 标记为可选（不强制安装）"
-    run: "node -e \"console.log(require('./package.json').peerDependenciesMeta['dsh-voice'].optional)\""
-    expect: "true"
-    measured: "true"
+    assert: "缓存有 TTL/上限/跨进程重建"
+    run: "node 启动后手工索引一条，看 loaded"
+    expect: "loaded=1"
+    measured: "[cache] loaded=1 removed=0"
     result: pass
-    source: package.json
+    source: 修2
   - id: C3
-    assert: "cordis.patch.yml 默认合并窗口同步为 150ms"
-    run: "grep -c 'mergeWindowMs: 150' cordis.patch.yml"
-    expect: "1"
-    measured: "1"
+    assert: "批次文案一致"
+    run: "node -e 比较 speechTextForBatch 与 soundFor.text"
+    expect: "相同"
+    measured: "两者均为 '2 条提醒，执行失败'"
     result: pass
-    source: cordis.patch.yml
+    source: 修4
   - id: C4
-    assert: "设置页有前置需求提示"
-    run: "grep -c '前置需求：需安装 dsh-voice' client.js"
-    expect: "1"
-    measured: "1"
+    assert: "README 语音小节为当前行为"
+    run: "grep 固定短句/make-voice-presets"
+    expect: "0"
+    measured: "0"
     result: pass
-    source: 设置页
+    source: 修3
   - id: C5
     assert: "自检全绿"
     run: "node scripts/selftest.mjs 2>&1 | tail -1"
     expect: "ALL PASS"
-    measured: "ALL PASS (315 checks)"
+    measured: "ALL PASS (319 checks)"
     result: pass
     source: 自检
   - id: C6
-    assert: "README 说明依赖"
-    run: "grep -c 'dsh-voice' README.md"
-    expect: ">=1"
-    measured: "3"
+    assert: "5 探针无回归"
+    run: "逐个 probe-*.ps1"
+    expect: "全 PROBE OK"
+    measured: "5/5 PROBE OK"
     result: pass
-    source: README
+    source: 回归

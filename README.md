@@ -256,32 +256,25 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 `nudge` 命名空间，不是页面坏了。最下面一行是 `提醒弹窗设置页 · 修订 <PANEL_REVISION>`——
 改完设置页看不到新修订号，说明浏览器还在用旧的客户端包，刷新即可。
 
-### 语音：为什么自带的声音难听，怎么换成自然的
+### 语音：一个自然音色念完整内容
 
 卡片能出声，默认关着。三条来源：
 
 | 来源 | 声音 | 说明 |
 | --- | --- | --- |
-| **预制语音**（推荐） | 晓晓 / 云希 / 晓伊（神经语音） | 听起来像人。固定短句：任务完成了 / 需要你选一下 / 执行失败了 |
-| 系统朗读（TTS） | Windows 自带语音 | 这台机器上是 `Microsoft Huihui Desktop`——2009 年的拼接式合成，机器人味就来自它 |
-| 本地音频文件 | 你自己的 wav / mp3 / m4a | 想用别的声音就用这个 |
+| **预制语音**（推荐） | 晓晓 / 云希 / 晓伊（Edge 神经语音） | **同一个自然音色念完整一句**（类别 + 任务名 + 状态原因 / 你的模板）；需装 dsh-voice + 联网 |
+| 系统朗读（TTS） | Windows 自带语音 | 无需联网；这台机器是 `Microsoft Huihui Desktop`（2009 年的拼接式合成，机械音）。也能念完整内容 |
+| 本地音频文件 | 你自己的 wav / mp3 / m4a | 播你录好的那一段，不念动态内容 |
 
-**素材从哪来**：包里**自带** 9 段（3 套声音 × 3 类提醒，108 KB，在 `lib/voices/`），装上就有声。
-查找顺序是「你的数据目录优先 → 包内兜底」，所以想换声音只要重新生成到数据目录即可覆盖：
+**预制语音怎么工作**：在合并窗口到期、弹卡之前，宿主用 dsh-voice 的零密钥 Edge 神经语音
+把整句合成一段 MP3，按文本 hash 缓存在 `%TEMP%\dsh-nudge-voice-*.mp3`。helper 只播这一段，
+所以从头到尾是**同一个声音**，不会两种音色拼接。缓存 7 天过期、最多 100 段，启动时会清理旧的。
 
-```powershell
-# 需要 edge-tts：python -m pip install edge-tts
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\make-voice-presets.ps1
-```
-
-脚本把 9 段短句写到 `%LOCALAPPDATA%\dsh-nudge\voices\<声音>\<类别>.mp3`，已有的跳过（`-Force` 重渲染）。
-缺素材时**不会哑**：卡片自动回落系统朗读。
-
-> 关于音频来源：这 9 段是用微软的神经语音（edge-tts，`zh-CN-XiaoxiaoNeural` / `YunxiNeural` / `XiaoyiNeural`）
-> 合成的，随包提供只为开箱能听见人声。它们不是本项目原创内容；如果你的使用场景不适合再分发，
-> 删掉 `lib/voices/` 即可，插件会回落系统朗读，或者用上面的脚本在本地重新生成。
-
-想知道这台机器到底装了哪些语音（SAPI 与 OneCore 是两份清单）：
+- **前置条件**：安装 dsh-voice 插件（0.10.0+）并保持联网；`package.json` 里声明为可选 peer 依赖，
+  不装不影响插件安装与其它功能。
+- **自动回退**：未装 / 断网 / 合成失败时，先用包内自带的短句片段（`lib/voices/`，一个自然音色），再不成就用系统朗读——始终**一个音色**，不拼接。
+- **延迟**：首次合成约 1.4 秒（建立连接池），之后同文案缓存命中，push → 弹卡约 600ms。
+- 想知道这台机器装了哪些系统语音（SAPI 与 OneCore 两份清单）：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\lib\popup.ps1 -ListVoices
