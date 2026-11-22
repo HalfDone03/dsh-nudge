@@ -2,44 +2,44 @@ version: 1
 summary: { total: 6, passed: 6, failed: 0 }
 checks:
   - id: C1
-    assert: "宿主能异步合成并缓存整句自然音"
-    run: "node 脚本走 schedule，看 payload.sound.neuralFile"
-    expect: "neuralFile 非空，source=preset"
-    measured: "source=preset, neuralFile=dsh-nudge-voice-1p4x84s.mp3"
+    assert: "dsh-voice 声明为 peer 依赖"
+    run: "node -e \"console.log(JSON.stringify(require('./package.json').peerDependencies))\""
+    expect: "含 dsh-voice"
+    measured: "{\"dsh-voice\":\">=0.10.0\"}"
     result: pass
-    source: 端到端
+    source: package.json
   - id: C2
-    assert: "试听只有一条声音状态行（单一音色，不拼接）"
-    run: "powershell -File lib/popup.ps1 -PayloadFile <neuralFile> -SoundOnly"
-    expect: "仅 mode=neural ok"
-    measured: "仅 {\"mode\":\"neural\",\"ok\":true,\"file\":\"dsh-nudge-voice-1p4x84s.mp3\"}"
+    assert: "dsh-voice 标记为可选（不强制安装）"
+    run: "node -e \"console.log(require('./package.json').peerDependenciesMeta['dsh-voice'].optional)\""
+    expect: "true"
+    measured: "true"
     result: pass
-    source: 真机
+    source: package.json
   - id: C3
-    assert: "缓存命中够快"
-    run: "push 后 600ms 看是否 spawn"
-    expect: "< 700ms"
-    measured: "605ms"
+    assert: "cordis.patch.yml 默认合并窗口同步为 150ms"
+    run: "grep -c 'mergeWindowMs: 150' cordis.patch.yml"
+    expect: "1"
+    measured: "1"
     result: pass
-    source: 性能
+    source: cordis.patch.yml
   - id: C4
-    assert: "念什么对 preset 放开"
-    run: "grep client.js 的 source 条件"
-    expect: "phrase/template 对 preset 可见"
-    measured: "1 处放开 + 模板已放开"
+    assert: "设置页有前置需求提示"
+    run: "grep -c '前置需求：需安装 dsh-voice' client.js"
+    expect: "1"
+    measured: "1"
     result: pass
     source: 设置页
   - id: C5
     assert: "自检全绿"
     run: "node scripts/selftest.mjs 2>&1 | tail -1"
     expect: "ALL PASS"
-    measured: "ALL PASS (314 checks)"
+    measured: "ALL PASS (315 checks)"
     result: pass
     source: 自检
   - id: C6
-    assert: "探针与 ASCII"
-    run: "5 个 probe-*.ps1 + python 查 popup 非 ASCII"
-    expect: "全 PROBE OK；非 ASCII=0"
-    measured: "5/5 PROBE OK；nonascii=0"
+    assert: "README 说明依赖"
+    run: "grep -c 'dsh-voice' README.md"
+    expect: ">=1"
+    measured: "3"
     result: pass
-    source: 回归
+    source: README

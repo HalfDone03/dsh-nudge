@@ -1067,6 +1067,8 @@ const uninstallSource = readFileSync(join(root, "scripts", "uninstall.ps1"), "ut
 const depsSource = readFileSync(join(root, "scripts", "dsh-deps.ps1"), "utf8");
 const workflowSource = readFileSync(join(root, ".github", "workflows", "selftest.yml"), "utf8");
 const readmeSource = readFileSync(join(root, "README.md"), "utf8");
+const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+const patchSource = readFileSync(join(root, "cordis.patch.yml"), "utf8");
 const verifySource = readFileSync(join(root, "VERIFY.md"), "utf8");
 check("装/卸脚本共用 dsh-deps.ps1 去找 DSH 自带的 node + pnpm",
 	installSource.includes(". (Join-Path $PSScriptRoot 'dsh-deps.ps1')")
@@ -2078,7 +2080,7 @@ check(
 	"设置页有语音组：开关、来源、念什么、语音、音量、语速",
 	clientSource.includes('key: "voice", id: "dsh-nudge-g-voice"')
 		&& clientSource.includes('label: "卡片弹出时出声"')
-		&& clientSource.includes('{ value: "preset", label: "预制语音（自然·固定短句）" }')
+		&& clientSource.includes('{ value: "preset", label: "预制语音（自然·需 dsh-voice）" }')
 		&& clientSource.includes('{ value: "tts", label: "系统朗读（默认·念任务与原因）" }')
 		&& clientSource.includes('{ value: "file", label: "本地音频文件" }')
 		&& clientSource.includes('label: "念什么"')
@@ -2133,6 +2135,16 @@ check(
 		&& popupSource.includes("SpeechSynthesizer]::AllVoices"),
 	"list voices",
 );
+/* 2.3.1：自然语音的依赖声明（可选，不强制安装）。 */
+check(
+	"dsh-voice 声明为可选 peer 依赖",
+	packageJson?.peerDependencies?.["dsh-voice"] !== undefined
+		&& packageJson.peerDependenciesMeta?.["dsh-voice"]?.optional === true
+		&& readmeSource.includes("dsh-voice")
+		&& patchSource.includes("mergeWindowMs: 150"),
+	"optional dsh-voice dependency",
+);
+
 /* 2.2.1：撤掉两段拼接，声音统一（preset 只播短句）。 */
 check(
 	"预制语音只播一段，不再补念（声音统一）",

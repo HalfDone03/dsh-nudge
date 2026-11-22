@@ -33,7 +33,15 @@
         rememberPosition: true
         placementFile: ''
         margin: 16
-        mergeWindowMs: 1200
+        mergeWindowMs: 150
         maxItems: 8
         alertOnToolError: true
         muteRanges: []
+        # 语音：预制语音用一个自然音色念完整内容，依赖 dsh-voice 插件 + 联网；
+        # 未装或断网时自动回退系统朗读（仍是单一音色）。
+        sound:
+          enabled: false
+          source: tts
+          phrase: detail
+          presetVoice: xiaoxiao
+          volume: 80

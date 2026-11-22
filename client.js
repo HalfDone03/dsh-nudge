@@ -1709,10 +1709,10 @@ const ROLE_LOOK = {
 					h(SelectRow, {
 						key: "sound.source",
 						label: "声音来源",
-						hint: "系统朗读（默认）能念出任务名和原因；预制语音声音更自然但只能念固定短句；本地文件支持 wav / mp3 / m4a。",
+						hint: "预制语音用一个自然音色念完整内容（需装 dsh-voice 并联网）；系统朗读无需联网、能念任务与原因；本地文件支持 wav / mp3 / m4a。",
 						value: ["preset", "tts", "file"].includes(text("sound.source")) ? text("sound.source") : "tts",
 						options: [
-							{ value: "preset", label: "预制语音（自然·固定短句）" },
+							{ value: "preset", label: "预制语音（自然·需 dsh-voice）" },
 							{ value: "tts", label: "系统朗读（默认·念任务与原因）" },
 							{ value: "file", label: "本地音频文件" },
 						],
@@ -1723,13 +1723,17 @@ const ROLE_LOOK = {
 						? h(SelectRow, {
 								key: "sound.presetVoice",
 								label: "预制语音",
-								hint: "固定短句（任务完成 / 需要你选一下 / 执行失败了），念不了任务名；要念任务名请选「系统朗读」。",
+								hint: "晓晓 / 云希 / 晓伊：整句都由同一个自然音色念完（含任务名与原因）。",
 								value: PRESET_VOICES.some(([id]) => id === text("sound.presetVoice")) ? text("sound.presetVoice") : "xiaoxiao",
 								options: PRESET_VOICES.map(([id, label]) => ({ value: id, label })),
 								disabled,
 								onChange: (next) => write("sound.presetVoice", next),
 							})
 						: null,
+					text("sound.source") === "preset"
+						? h("p", { className: "dsh-nudge-warn", key: "presetreq" },
+							"前置需求：需安装 dsh-voice 插件并保持联网；未装或断网时自动改用系统朗读（仍是一个音色念完整内容）。")
+						: null,
 					text("sound.source") === "file"
 						? h(TextRow, {
 								key: "sound.file",
