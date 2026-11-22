@@ -66,12 +66,12 @@
       },
       "versions": [
         {
-          "version": "2.1.0",
-          "publishTimestamp": 1795344166,
+          "version": "2.2.0",
+          "publishTimestamp": 1795344946,
           "source": {
             "type": "git",
             "url": "https://github.com/HalfDone03/dsh-nudge",
-            "commit": "df4e4d621705ecb84ab8170bea471ca071facf86"
+            "commit": "33b9687b1c8416656020e6f022c9e6e70a772e09"
           },
           "engines": {
             "dsh": ">=0.2.1-rc.2"
