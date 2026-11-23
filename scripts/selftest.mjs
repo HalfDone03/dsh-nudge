@@ -2135,6 +2135,34 @@ check(
 		&& popupSource.includes("SpeechSynthesizer]::AllVoices"),
 	"list voices",
 );
+/* 2.3.3：三类提醒的合成文案必须和播报文案逐字一致（含 detail）。 */
+check(
+	"三类 × 有原因：定时器合成文案 === 实际播报文案",
+	(() => {
+		const cfg = normalizeConfig({ sound: { enabled: true, source: "preset", phrase: "detail" } });
+		const center = new AlertCenter(cfg, { runner: { show() { return true; }, dispose() {} } });
+		const runner = new PopupRunner(cfg, () => {});
+		const cases = [
+			["completed", "任务完成", "回合已完成", ""],
+			["needs_choice", "需要你选择", "等待你批准一个操作", "等待你批准一个操作"],
+			["failed", "执行失败", "vite 退出码 1", "vite 退出码 1"]
+		];
+		return cases.every(([kind, label, raw, verdict]) => {
+			const items = [{ kind, sessionId: "s", title: "任务", detail: raw, count: 1 }];
+			const timed = center.speechTextForBatch(items);
+			const played = runner.soundFor(kind, label, "任务", "", verdict, 1).text;
+			return timed === played;
+		});
+	})(),
+	"speech text identical for all kinds",
+);
+check(
+	"speechTextForBatch 传了 detail（否则有原因的类别永远回退机械音）",
+	indexSource.includes("detail: focus.verdictText ?? \"\"")
+		&& indexSource.indexOf("detail: focus.verdictText ?? \"\"") < indexSource.indexOf("schedule() {"),
+	"batch speech includes detail",
+);
+
 /* 2.3.2：试听走自然音 + 缓存 TTL/上限/重建 + 批次文案一致。 */
 check(
 	"试听路径也合成自然音（与真提醒同一链路）",
