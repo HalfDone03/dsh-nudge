@@ -1809,11 +1809,11 @@ const ROLE_LOOK = {
 								onCommit: (next) => write("sound.rate", next),
 							})
 						: null,
-					text("sound.source") === "tts"
+					text("sound.source") === "tts" || text("sound.source") === "preset"
 						? h(NumberRow, {
 								key: "sound.maxChars",
 								label: "最多念几个字",
-								hint: "10–200；太长的报错不该念半分钟。",
+								hint: "10–200；太长的报错不该念半分钟。预置语音也按这个长度截断。",
 								value: num("sound.maxChars"),
 								min: 10,
 								max: 200,

@@ -2135,6 +2135,23 @@ check(
 		&& popupSource.includes("SpeechSynthesizer]::AllVoices"),
 	"list voices",
 );
+/* 2.3.5：maxChars 对预置语音可见；内存缓存有上限。 */
+check(
+	"最多念几个字对预置语音也可见（它对 preset 确实生效）",
+	clientSource.includes('text("sound.source") === "tts" || text("sound.source") === "preset"')
+		&& clientSource.includes("预置语音也按这个长度截断"),
+	"maxChars visible for preset",
+);
+check(
+	"内存缓存有上限，超了淘汰最旧的已完成条目",
+	indexSource.includes("function trimNeuralCache() {")
+		&& indexSource.includes("if (neuralAudioCache.size <= NEURAL_CACHE_MAX) return 0;")
+		&& indexSource.includes("trimNeuralCache();")
+		// 还在合成的 Promise 不能被删
+		&& indexSource.includes('if (typeof file !== "string" || file === "") continue;'),
+	"neural cache trimmed at runtime",
+);
+
 /* 2.3.4：多条同项目 + 自定义模板的文案一致性；合成等待上限。 */
 check(
 	"多条同项目：{project} 在两路文案里一致（不再回退机械音）",
