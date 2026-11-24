@@ -2135,6 +2135,40 @@ check(
 		&& popupSource.includes("SpeechSynthesizer]::AllVoices"),
 	"list voices",
 );
+/* 2.3.4：多条同项目 + 自定义模板的文案一致性；合成等待上限。 */
+check(
+	"多条同项目：{project} 在两路文案里一致（不再回退机械音）",
+	(() => {
+		const cfg = normalizeConfig({ sound: { enabled: true, source: "preset", phrase: "custom", template: "{kind} {project} {count}" } });
+		const center = new AlertCenter(cfg, { runner: { show() { return true; }, dispose() {} } });
+		const runner = new PopupRunner(cfg, () => {});
+		const sameProject = [
+			{ kind: "failed", sessionId: "s1", title: "A", project: "dsh-nudge", detail: "r1", count: 1 },
+			{ kind: "failed", sessionId: "s2", title: "B", project: "dsh-nudge", detail: "r2", count: 1 }
+		];
+		const timed = center.speechTextForBatch(sameProject);
+		const played = runner.soundFor("failed", "执行失败", "", "dsh-nudge", "", 2).text;
+		const multiProject = [
+			{ kind: "failed", sessionId: "s1", title: "A", project: "p1", detail: "r", count: 1 },
+			{ kind: "failed", sessionId: "s2", title: "B", project: "p2", detail: "r", count: 1 }
+		];
+		const timed2 = center.speechTextForBatch(multiProject);
+		const played2 = runner.soundFor("failed", "执行失败", "", "", "", 2).text;
+		return timed === played && timed2 === played2;
+	})(),
+	"multi-item project context consistent",
+);
+check(
+	"合成有等待上限，不会把弹卡拖到超时",
+	indexSource.includes("const NEURAL_SYNTH_WAIT_MS = 2500;")
+		&& indexSource.includes("async function ensureNeuralAudioWithin(config, text, ms = NEURAL_SYNTH_WAIT_MS) {")
+		&& indexSource.includes("await ensureNeuralAudioWithin(this.config, text);")
+		&& indexSource.includes("await ensureNeuralAudioWithin(this.config, trialText, 6000);")
+		// 上限计时器不能 unref：它是「最多等多久」的保证
+		&& !/timer = setTimeout\(\(\) => resolve\(""\), Math\.max\(0, ms\)\);\s*\n\s*timer\.unref/u.test(indexSource),
+	"neural synthesis has a wait cap",
+);
+
 /* 2.3.3：三类提醒的合成文案必须和播报文案逐字一致（含 detail）。 */
 check(
 	"三类 × 有原因：定时器合成文案 === 实际播报文案",
@@ -2167,7 +2201,7 @@ check(
 check(
 	"试听路径也合成自然音（与真提醒同一链路）",
 	indexSource.includes("async playSoundOnly(items) {")
-		&& indexSource.includes("await ensureNeuralAudio(this.config, trialText);"),
+		&& indexSource.includes("await ensureNeuralAudioWithin(this.config, trialText, 6000);"),
 	"audition synthesizes too",
 );
 check(

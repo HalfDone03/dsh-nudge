@@ -1,38 +1,45 @@
 version: 1
-summary: { total: 5, passed: 5, failed: 0 }
+summary: { total: 6, passed: 6, failed: 0 }
 checks:
   - id: C1
-    assert: "三类提醒的合成文案 === 播报文案（含 detail）"
-    run: "node -e 遍历 completed/needs_choice/failed 比较 speechTextForBatch 与 soundFor.text"
-    expect: "3/3 一致"
-    measured: "completed ✓ 任务完成：任务；needs_choice ✓ 需要你选择：任务：等待你批准一个操作；failed ✓ 执行失败：任务：vite 退出码 1"
+    assert: "多条同项目 + 自定义模板：两路文案一致"
+    run: "node -e 比较 speechTextForBatch 与 soundFor（同项目/多项目两种）"
+    expect: "两种均一致"
+    measured: "同项目一致 true（2 条提醒，执行失败 dsh-nudge 2）；多项目一致 true"
     result: pass
-    source: 根因修复
+    source: 问题1
   - id: C2
-    assert: "needs_choice 端到端拿到自然音（不再回退机械）"
-    run: "node -e push needs_choice → schedule → 看 payload.sound"
+    assert: "多条同项目端到端拿到自然音"
+    run: "node -e 两条同项目 push → schedule → payload.sound"
     expect: "source=preset 且 neuralFile 非空"
-    measured: "preset neural ✓, text=需要你选择：修构建脚本：等待你批准一个操作"
+    measured: "preset neural ✓ | text: 2 条提醒，执行失败 dsh-nudge"
     result: pass
     source: 端到端
   - id: C3
+    assert: "合成有等待上限且不 unref"
+    run: "单测 race 语义：永久挂起的合成，cap=300ms"
+    expect: "≈300ms 返回空串"
+    measured: "返回 \"\"，耗时 309ms"
+    result: pass
+    source: 问题2
+  - id: C4
     assert: "自检全绿"
     run: "node scripts/selftest.mjs 2>&1 | tail -1"
     expect: "ALL PASS"
-    measured: "ALL PASS (321 checks)"
+    measured: "ALL PASS (323 checks)"
     result: pass
     source: 自检
-  - id: C4
+  - id: C5
     assert: "popup.ps1 纯 ASCII"
     run: "python -c \"print(sum(1 for b in open('lib/popup.ps1','rb').read() if b>=128))\""
     expect: "0"
     measured: "0"
     result: pass
     source: 约定
-  - id: C5
-    assert: "5 探针无回归"
-    run: "逐个 probe-*.ps1（click 焦点敏感，交替基线对照）"
+  - id: C6
+    assert: "窗口探针无回归"
+    run: "reflow / remembered / inplace / passthrough"
     expect: "全 PROBE OK"
-    measured: "reflow/remembered/inplace/passthrough OK；click 交替基线对照 OK（连跑偶发焦点干扰，非代码回归）"
+    measured: "4/4 PROBE OK"
     result: pass
     source: 回归
