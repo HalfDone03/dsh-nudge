@@ -1841,10 +1841,8 @@ const ROLE_LOOK = {
 								key: "listen",
 								type: "button",
 								className: "dsh-nudge-btn",
-								disabled: disabled || !bool("sound.enabled"),
-								title: bool("sound.enabled")
-									? "按现在的设置播一次；语音相关的改动会一起生效（其它改动仍留在草稿里）"
-									: "先把「卡片弹出时出声」打开",
+								disabled,
+								title: "按现在的设置播一次（语音总开关只影响真实提醒，试听照样出声）；语音相关的改动会一起生效（其它改动仍留在草稿里）",
 								onClick: () => {
 									// 试听必须反映「你刚改的」，而不只是「已应用的」：把草稿里所有
 									// sound.* 和试听信号一次性写下去，其它组的改动仍留在草稿里。

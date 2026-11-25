@@ -2012,7 +2012,8 @@ check(
 	clientSource.includes('path: ["sound", "previewNonce"]')
 		&& clientSource.includes('.filter(([path]) => path.startsWith("sound."))')
 		&& clientSource.includes('"试听"')
-		&& clientSource.includes('disabled: disabled || !bool("sound.enabled")')
+		// 试听不该被语音总开关禁用（总开关只决定真实提醒）
+		&& clientSource.includes('title: "按现在的设置播一次（语音总开关只影响真实提醒，试听照样出声）')
 		&& indexSource.includes("previewNonce: z.string().default(DEFAULTS.sound.previewNonce)")
 		&& indexSource.includes("playSoundOnly(items) {")
 		&& indexSource.includes('"-SoundOnly"')
@@ -2135,6 +2136,21 @@ check(
 		&& popupSource.includes("SpeechSynthesizer]::AllVoices"),
 	"list voices",
 );
+/* 2.3.6：试听不受语音总开关限制。 */
+check(
+	"试听按钮不再被语音总开关禁用",
+	!clientSource.includes('disabled: disabled || !bool("sound.enabled")')
+		&& clientSource.includes("语音总开关只影响真实提醒，试听照样出声"),
+	"audition ignores master switch",
+);
+check(
+	"试听 payload 强制 enabled，真实提醒仍尊重总开关",
+	indexSource.includes("trialSound.enabled = true;")
+		// 真实路径仍走 soundFor 的 enabled 判断
+		&& indexSource.includes("enabled: this.config.sound.enabled === true,"),
+	"audition forces enabled",
+);
+
 /* 2.3.5：maxChars 对预置语音可见；内存缓存有上限。 */
 check(
 	"最多念几个字对预置语音也可见（它对 preset 确实生效）",
